@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: Build and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -24,14 +24,14 @@ jobs:
         run: dotnet restore EasySave.sln
 
       - name: Build (warnings as errors)
-        run: dotnet build EasySave.sln --configuration Release --no-restore -warnaserror
+        run: dotnet build EasySave.sln --configuration Release --no-restore --warnaserror
 
       - name: Test
         run: dotnet test EasySave.sln --configuration Release --no-build --verbosity normal
 
   format:
     name: Format check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
