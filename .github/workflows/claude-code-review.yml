@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
       id-token: write
 
@@ -38,7 +38,12 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          prompt: |
+            Review PR ${{ github.repository }}/pull/${{ github.event.pull_request.number }}.
+            You MUST always post a summary comment on the PR, even when the code is fine.
+            - If there are issues (bugs, duplication, broken conventions, security), list them clearly.
+            - If everything looks good, post a short comment confirming it (e.g. "LGTM - no issues found" with a one-line justification).
+            Always end with a verdict line: "Verdict: OK" or "Verdict: Changes requested".
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
