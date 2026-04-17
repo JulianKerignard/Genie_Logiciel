@@ -1,0 +1,25 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasySave", "src\EasySave\EasySave.csproj", "{783511C6-04D5-4B1E-B38A-D9DE38E8B070}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyLog", "src\EasyLog\EasyLog.csproj", "{AB3D31C8-B01D-4F28-B6BA-300F749AC0D6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{783511C6-04D5-4B1E-B38A-D9DE38E8B070}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{783511C6-04D5-4B1E-B38A-D9DE38E8B070}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{783511C6-04D5-4B1E-B38A-D9DE38E8B070}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{783511C6-04D5-4B1E-B38A-D9DE38E8B070}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB3D31C8-B01D-4F28-B6BA-300F749AC0D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB3D31C8-B01D-4F28-B6BA-300F749AC0D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB3D31C8-B01D-4F28-B6BA-300F749AC0D6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB3D31C8-B01D-4F28-B6BA-300F749AC0D6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
