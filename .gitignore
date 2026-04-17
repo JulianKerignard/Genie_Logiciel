@@ -1,0 +1,31 @@
+# Build results
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# NuGet
+*.nupkg
+packages/
+
+# Tests
+TestResults/
+*.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
