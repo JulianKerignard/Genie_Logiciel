@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace EasyLog;
@@ -6,7 +7,10 @@ namespace EasyLog;
 /// Writes <see cref="LogEntry"/> instances to a daily JSON file
 /// named "yyyy-MM-dd.json" inside a configurable directory.
 /// Each file contains a JSON array of entries appended over the day.
-/// Writes are serialized with a lock to stay safe under concurrent calls.
+/// Writes are serialized with a lock to stay safe under concurrent calls
+/// and performed atomically via a temporary file to avoid partial writes.
+/// Note: each append rewrites the whole day file (O(n) on the daily count);
+/// this is acceptable for v1.0 volumes and can be revisited later if needed.
 /// </summary>
 public sealed class JsonDailyLogger : IDailyLogger
 {
@@ -45,14 +49,26 @@ public sealed class JsonDailyLogger : IDailyLogger
     {
         ArgumentNullException.ThrowIfNull(entry);
 
+        // Local date is intentional: daily files must align with the business day
+        // seen by the operator, not UTC.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.json");
 
         lock (_writeLock)
         {
             List<LogEntry> entries = ReadExisting(filePath);
             entries.Add(entry);
-            File.WriteAllText(filePath, JsonSerializer.Serialize(entries, SerializerOptions));
+            WriteAtomic(filePath, entries);
         }
+    }
+
+    private static void WriteAtomic(string filePath, List<LogEntry> entries)
+    {
+        // Write to a side file first, then move it over the target path.
+        // A same-volume File.Move with overwrite is atomic on NTFS and POSIX,
+        // so a process kill mid-write never leaves a half-written log.
+        string tmpPath = filePath + ".tmp";
+        File.WriteAllText(tmpPath, JsonSerializer.Serialize(entries, SerializerOptions));
+        File.Move(tmpPath, filePath, overwrite: true);
     }
 
     private static List<LogEntry> ReadExisting(string filePath)
@@ -72,9 +88,11 @@ public sealed class JsonDailyLogger : IDailyLogger
         {
             return JsonSerializer.Deserialize<List<LogEntry>>(raw) ?? new List<LogEntry>();
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            // File exists but is corrupted; start a fresh list rather than crashing the backup.
+            // Corrupted file: surface a warning so an incident can be diagnosed,
+            // then start fresh rather than crashing the backup job.
+            Trace.TraceWarning($"[EasyLog] Corrupted log file discarded: {filePath} - {ex.Message}");
             return new List<LogEntry>();
         }
     }
