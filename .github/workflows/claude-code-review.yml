@@ -36,14 +36,21 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
+          track_progress: true
           prompt: |
-            Review PR ${{ github.repository }}/pull/${{ github.event.pull_request.number }}.
-            You MUST always post a summary comment on the PR, even when the code is fine.
-            - If there are issues (bugs, duplication, broken conventions, security), list them clearly.
-            - If everything looks good, post a short comment confirming it (e.g. "LGTM - no issues found" with a one-line justification).
-            Always end with a verdict line: "Verdict: OK" or "Verdict: Changes requested".
+            You are reviewing pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Steps you MUST follow:
+            1. Use the `mcp__github_inline_comment__create_inline_comment` tool to attach inline comments on specific lines for any issue you find (bugs, duplication, broken conventions, security).
+            2. After the review, use the `Bash` tool to post ONE summary comment on the PR with this command:
+                gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "<your summary here>"
+               The summary MUST always be posted, even when the code is clean.
+               - If the code is clean: one short line confirming it (e.g. "LGTM - no issues found: <1 sentence justification>").
+               - If issues were found: bullet list referencing them.
+               - Always end with a line: "Verdict: OK" or "Verdict: Changes requested".
+
+            Do NOT skip step 2 — the summary comment is mandatory on every run.
+          claude_args: '--allowed-tools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*)"'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
