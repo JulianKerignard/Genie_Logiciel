@@ -69,7 +69,7 @@ public sealed class JsonDailyLogger : IDailyLogger
             File.WriteAllText(tmpPath, JsonSerializer.Serialize(entries, SerializerOptions));
             File.Move(tmpPath, filePath, overwrite: true);
         }
-        catch
+    catch (Exception)
         {
             try { File.Delete(tmpPath); } catch { }
             throw;
