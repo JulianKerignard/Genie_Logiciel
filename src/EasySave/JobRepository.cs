@@ -12,7 +12,7 @@ public sealed class JobRepository
     private JobRepository() { }
 
     // Loads the persisted list of backup jobs from disk.
-    public List<BackupJob> Load()
+    public IReadOnlyList<BackupJob> Load()
     {
         throw new NotImplementedException();
     }
