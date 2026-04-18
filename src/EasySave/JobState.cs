@@ -5,5 +5,5 @@ namespace EasySave;
 public enum JobState
 {
     Inactive = 0,
-    Active   = 1
+    Active = 1
 }
