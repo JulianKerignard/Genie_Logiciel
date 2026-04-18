@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace EasySave;
 
 // Singleton that tracks the real-time state of every backup job.
@@ -9,13 +11,15 @@ public sealed class StateTracker
     public static StateTracker Instance => _instance.Value;
 
     // In-memory store, keyed by job name (unique per workspace).
-    private readonly Dictionary<string, StateEntry> _entries = new();
+    // Concurrent so multiple backup managers can update safely in parallel.
+    private readonly ConcurrentDictionary<string, StateEntry> _entries = new();
 
     private StateTracker() { }
 
     // Inserts or replaces the snapshot for a job, then persists the full state.
     public void Update(StateEntry entry)
     {
+        ArgumentNullException.ThrowIfNull(entry);
         throw new NotImplementedException();
     }
 }
