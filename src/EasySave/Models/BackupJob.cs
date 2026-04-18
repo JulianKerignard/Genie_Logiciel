@@ -1,3 +1,5 @@
+using EasySave;
+
 namespace EasySave.Models;
 
 // POCO representing a user-defined backup job (v1.0 spec).
