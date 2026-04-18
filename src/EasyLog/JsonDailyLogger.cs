@@ -63,12 +63,17 @@ public sealed class JsonDailyLogger : IDailyLogger
 
     private static void WriteAtomic(string filePath, List<LogEntry> entries)
     {
-        // Write to a side file first, then move it over the target path.
-        // A same-volume File.Move with overwrite is atomic on NTFS and POSIX,
-        // so a process kill mid-write never leaves a half-written log.
-        string tmpPath = filePath + ".tmp";
-        File.WriteAllText(tmpPath, JsonSerializer.Serialize(entries, SerializerOptions));
-        File.Move(tmpPath, filePath, overwrite: true);
+        string tmpPath = $"{filePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(tmpPath, JsonSerializer.Serialize(entries, SerializerOptions));
+            File.Move(tmpPath, filePath, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tmpPath); } catch { }
+            throw;
+        }
     }
 
     private static List<LogEntry> ReadExisting(string filePath)
