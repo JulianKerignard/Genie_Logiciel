@@ -97,11 +97,11 @@ public sealed class JsonDailyLogger : IDailyLogger
         {
             // Preserve the corrupted file instead of overwriting it, so the
             // day's entries stay available for incident analysis.
-            string backupPath = $"{filePath}.corrupted-{DateTime.Now:yyyyMMddHHmmss}";
-            try { File.Move(filePath, backupPath); } catch { }
+            string backupPath = $"{filePath}.corrupted-{DateTime.Now:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
+            File.Move(filePath, backupPath);
 
             Trace.TraceWarning($"[EasyLog] Corrupted log file moved to {backupPath} - {ex.Message}");
-            Console.Error.WriteLine($"[EasyLog] Corrupted log file moved to {backupPath}");
+            Console.Error.WriteLine($"[EasyLog] Corrupted log file moved to {backupPath} ({ex.Message})");
             return new List<LogEntry>();
         }
     }
