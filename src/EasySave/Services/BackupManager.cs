@@ -7,18 +7,24 @@ namespace EasySave.Services;
 public class BackupManager
 {
     private readonly IDailyLogger _logger;
-    private readonly FullBackupStrategy _fullStrategy;
-    private readonly DifferentialBackupStrategy _diffStrategy;
+    private readonly IBackupStrategy _fullStrategy;
+    private readonly IBackupStrategy _diffStrategy;
     private readonly StateTracker _stateTracker;
     private readonly JobRepository _jobRepository;
 
     public BackupManager(
         IDailyLogger logger,
-        FullBackupStrategy fullStrategy,
-        DifferentialBackupStrategy diffStrategy,
+        IBackupStrategy fullStrategy,
+        IBackupStrategy diffStrategy,
         StateTracker stateTracker,
         JobRepository jobRepository)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(fullStrategy);
+        ArgumentNullException.ThrowIfNull(diffStrategy);
+        ArgumentNullException.ThrowIfNull(stateTracker);
+        ArgumentNullException.ThrowIfNull(jobRepository);
+
         _logger = logger;
         _fullStrategy = fullStrategy;
         _diffStrategy = diffStrategy;
