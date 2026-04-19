@@ -26,9 +26,10 @@ public sealed class AppConfig
     private AppConfig() { }
 
     // Loads the configuration from the given JSON file, or keeps the defaults if the file is missing or invalid.
-    public static void Load(string path = "appsettings.json")
+    // When path is null, appsettings.json is read from the executable directory.
+    public static void Load(string? path = null)
     {
-        ArgumentNullException.ThrowIfNull(path);
+        path ??= Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
 
         if (!File.Exists(path))
         {
