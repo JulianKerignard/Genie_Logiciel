@@ -95,9 +95,13 @@ public sealed class JsonDailyLogger : IDailyLogger
         }
         catch (JsonException ex)
         {
-            // Corrupted file: surface a warning so an incident can be diagnosed,
-            // then start fresh rather than crashing the backup job.
-            Trace.TraceWarning($"[EasyLog] Corrupted log file discarded: {filePath} - {ex.Message}");
+            // Preserve the corrupted file instead of overwriting it, so the
+            // day's entries stay available for incident analysis.
+            string backupPath = $"{filePath}.corrupted-{DateTime.Now:yyyyMMddHHmmss}";
+            try { File.Move(filePath, backupPath); } catch { }
+
+            Trace.TraceWarning($"[EasyLog] Corrupted log file moved to {backupPath} - {ex.Message}");
+            Console.Error.WriteLine($"[EasyLog] Corrupted log file moved to {backupPath}");
             return new List<LogEntry>();
         }
     }
