@@ -143,6 +143,10 @@ public class BackupManagerExecuteTests : IDisposable
         var stateFile = Path.Combine(_dataDir, "state.json");
         Assert.True(File.Exists(stateFile));
         var stateJson = File.ReadAllText(stateFile);
-        Assert.Contains("\"State\":0", stateJson); // Inactive = 0
+        var entries = System.Text.Json.JsonSerializer.Deserialize<List<StateEntry>>(stateJson);
+        Assert.NotNull(entries);
+        var entry = Assert.Single(entries);
+        Assert.Equal(JobState.Inactive, entry.State);
+        Assert.Equal(0, entry.FilesRemaining);
     }
 }

@@ -53,11 +53,12 @@ public class BackupManager
 
         var allFiles = sourceDir.EnumerateFiles("*", SearchOption.AllDirectories).ToList();
         var filesToCopy = allFiles
-            .Where(f => strategy.ShouldCopy(f, BuildTargetPath(f, sourceDir, job.TargetPath)))
+            .Select(f => (File: f, Target: BuildTargetPath(f, sourceDir, job.TargetPath)))
+            .Where(pair => strategy.ShouldCopy(pair.File, pair.Target))
             .ToList();
 
         int totalFiles = filesToCopy.Count;
-        long totalSize = filesToCopy.Sum(f => f.Length);
+        long totalSize = filesToCopy.Sum(pair => pair.File.Length);
 
         _stateTracker.Update(new StateEntry
         {
@@ -73,9 +74,8 @@ public class BackupManager
         int filesProcessed = 0;
         long sizeProcessed = 0;
 
-        foreach (var file in filesToCopy)
+        foreach (var (file, targetPath) in filesToCopy)
         {
-            string targetPath = BuildTargetPath(file, sourceDir, job.TargetPath);
 
             _stateTracker.Update(new StateEntry
             {
@@ -103,7 +103,7 @@ public class BackupManager
                 sw.Stop();
                 transferTimeMs = sw.ElapsedMilliseconds;
             }
-            catch
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 sw.Stop();
                 transferTimeMs = -1;
