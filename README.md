@@ -39,6 +39,11 @@ Console application providing the user interface for managing backup jobs.
 Reusable library that writes daily JSON log files (`yyyy-MM-dd.json`).
 Thread-safe, atomic writes, designed to be shared across ProSoft applications.
 
+## Documentation
+
+- [User manual](docs/user-manual.md) — end-user guide (1 page)
+- [Customer support guide](docs/support-client.md) — deployment, configuration, and support contacts
+
 ## Contributing
 
 - Follow [commit conventions](docs/COMMIT_CONVENTION.md)
