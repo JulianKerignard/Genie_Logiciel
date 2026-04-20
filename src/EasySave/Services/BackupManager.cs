@@ -47,8 +47,9 @@ public class BackupManager
         if (_jobs.Any(j => j.Name == job.Name))
             throw new InvalidOperationException($"Job '{job.Name}' already exists.");
 
+        var updated = new List<BackupJob>(_jobs) { job };
+        _jobRepository.Save(updated);
         _jobs.Add(job);
-        _jobRepository.Save(_jobs);
     }
 
     public void RemoveJob(string name) => throw new NotImplementedException();

@@ -80,4 +80,17 @@ public class BackupManagerAddJobTests : IDisposable
         var ex = Assert.Throws<InvalidOperationException>(() => manager.AddJob(MakeJob("backup-daily")));
         Assert.Contains("backup-daily", ex.Message);
     }
+
+    [Fact]
+    public void AddJob_PersistsAcrossInstances()
+    {
+        var manager = CreateManager();
+        manager.AddJob(MakeJob("persisted-job"));
+
+        var freshManager = CreateManager();
+        var jobs = freshManager.ListJobs();
+
+        Assert.Single(jobs);
+        Assert.Equal("persisted-job", jobs[0].Name);
+    }
 }
