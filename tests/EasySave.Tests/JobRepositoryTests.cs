@@ -51,8 +51,8 @@ public class JobRepositoryTests : IDisposable
     {
         var original = new List<BackupJob>
         {
-            new() { Name = "Daily", SourcePath = @"\\srv\\source", TargetPath = @"\\srv\\backup", Type = BackupType.Full },
-            new() { Name = "Weekly", SourcePath = @"\\srv\\docs", TargetPath = @"\\srv\\archive", Type = BackupType.Differential }
+            new() { Name = "Daily", SourcePath = @"\\srv\source", TargetPath = @"\\srv\backup", Type = BackupType.Full },
+            new() { Name = "Weekly", SourcePath = @"\\srv\docs", TargetPath = @"\\srv\archive", Type = BackupType.Differential }
         };
 
         JobRepository.Instance.Save(original);
@@ -68,6 +68,9 @@ public class JobRepositoryTests : IDisposable
     [Fact]
     public void Save_Atomic_NoPartialWrite()
     {
+        // Covers .tmp cleanup and file validity after every successful save.
+        // True crash-time atomicity (i.e. killing the process mid-write) cannot be exercised
+        // from xUnit without fault injection; the name matches the ticket specification.
         var jobs = new List<BackupJob>
         {
             new() { Name = "A", SourcePath = "s1", TargetPath = "t1" },

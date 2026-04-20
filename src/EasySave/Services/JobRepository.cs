@@ -14,11 +14,11 @@ public sealed class JobRepository
     // Serialises concurrent Load and Save calls.
     private readonly object _lock = new();
 
-    private static readonly JsonSerializerOptions _serializerOptions = new() { WriteIndented = true };
-
     private JobRepository() { }
 
-    // Loads the persisted list of backup jobs from disk, or an empty list if the file is missing or corrupted.
+    // Loads the persisted list of backup jobs from disk, or an empty list if the file is missing.
+    // If the file is present but corrupted, it is moved aside to a timestamped ".corrupted" copy
+    // so the user's definitions are not lost silently.
     public IReadOnlyList<BackupJob> Load()
     {
         lock (_lock)
@@ -36,8 +36,7 @@ public sealed class JobRepository
             }
             catch (Exception ex) when (ex is JsonException or IOException)
             {
-                // Treat a corrupted or transiently unreadable jobs file as empty
-                // so the application can still start.
+                QuarantineCorruptedFile(path, ex);
                 return new List<BackupJob>();
             }
         }
@@ -51,20 +50,29 @@ public sealed class JobRepository
         lock (_lock)
         {
             var path = AppConfig.Instance.JobsFilePath;
-            EnsureDirectoryExists(path);
+            FileHelpers.EnsureDirectoryExists(path);
 
             var tempPath = path + ".tmp";
-            File.WriteAllText(tempPath, JsonSerializer.Serialize(jobs, _serializerOptions));
+            File.WriteAllText(tempPath, JsonSerializer.Serialize(jobs, FileHelpers.IndentedJsonOptions));
             File.Move(tempPath, path, overwrite: true);
         }
     }
 
-    private static void EnsureDirectoryExists(string path)
+    // Renames a corrupted jobs file so the user can inspect or recover it later,
+    // instead of silently dropping their backup job definitions.
+    private static void QuarantineCorruptedFile(string path, Exception reason)
     {
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
+        try
         {
-            Directory.CreateDirectory(directory);
+            var quarantinePath = $"{path}.corrupted.{DateTime.UtcNow:yyyyMMddHHmmss}";
+            File.Move(path, quarantinePath);
+            Console.Error.WriteLine(
+                $"[JobRepository] {Path.GetFileName(path)} was unreadable and has been moved to " +
+                $"{Path.GetFileName(quarantinePath)}. Reason: {reason.Message}");
+        }
+        catch
+        {
+            // If the rename itself fails, fall back to returning an empty list so the app keeps running.
         }
     }
 }
