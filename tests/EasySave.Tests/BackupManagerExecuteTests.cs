@@ -4,6 +4,7 @@ using EasySave.Services;
 
 namespace EasySave.Tests;
 
+[Collection("StateCollection")]
 public class BackupManagerExecuteTests : IDisposable
 {
     private readonly string _tempDir;
