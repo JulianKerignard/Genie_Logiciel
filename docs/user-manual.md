@@ -1,6 +1,6 @@
 # EasySave — User Manual
 
-EasySave is a console backup tool for ProSoft. It manages up to **5 backup jobs** and runs them on demand (full or differential).
+EasySave is a console backup tool for ProSoft. It manages up to **5 backup jobs** and runs them on demand (full or differential). This manual describes the **v1.0 interface** as defined in the specification; command names and options are final for the v1.0 release.
 
 ## Launch
 

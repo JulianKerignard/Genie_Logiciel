@@ -28,17 +28,34 @@ After installation, the application directory contains:
     └── jobs.json            # Persisted job definitions
 ```
 
-The `<install-dir>` depends on the deployment method (MSI, ZIP extraction, or `dotnet publish` output). On a typical Windows install, it is `C:\Program Files\ProSoft\EasySave\`.
+The `<install-dir>` depends on the deployment method (MSI, ZIP extraction, or `dotnet publish` output). Typical locations per platform:
+
+- Windows: `C:\Program Files\ProSoft\EasySave\`
+- Linux: `/opt/prosoft/easysave/`
+- macOS: `/Applications/EasySave.app/Contents/MacOS/` or `/usr/local/prosoft/easysave/`
 
 ## Configurable locations
 
-All paths below can be overridden by editing `appsettings.json`:
+All paths below can be overridden by editing `appsettings.json`. Use the path syntax native to the target platform.
+
+Windows example:
 
 ```json
 {
   "LogDirectory": "\\\\fileserver\\ProSoft\\logs",
   "StateFilePath": "C:\\ProgramData\\ProSoft\\EasySave\\state.json",
   "JobsFilePath": "C:\\ProgramData\\ProSoft\\EasySave\\jobs.json",
+  "Language": "en"
+}
+```
+
+Linux / macOS example:
+
+```json
+{
+  "LogDirectory": "/var/log/prosoft/easysave",
+  "StateFilePath": "/var/lib/prosoft/easysave/state.json",
+  "JobsFilePath": "/var/lib/prosoft/easysave/jobs.json",
   "Language": "en"
 }
 ```
