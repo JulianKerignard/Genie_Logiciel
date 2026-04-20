@@ -7,11 +7,14 @@ namespace EasySave.Services;
 // Manages backup jobs: CRUD + execution with logging and state tracking.
 public class BackupManager
 {
+    private const int MaxJobs = 5;
+
     private readonly IDailyLogger _logger;
     private readonly IBackupStrategy _fullStrategy;
     private readonly IBackupStrategy _diffStrategy;
     private readonly StateTracker _stateTracker;
     private readonly JobRepository _jobRepository;
+    private readonly List<BackupJob> _jobs;
 
     public BackupManager(
         IDailyLogger logger,
@@ -31,18 +34,30 @@ public class BackupManager
         _diffStrategy = diffStrategy;
         _stateTracker = stateTracker;
         _jobRepository = jobRepository;
+        _jobs = new List<BackupJob>(_jobRepository.Load());
     }
 
-    public void AddJob(BackupJob job) => throw new NotImplementedException();
+    public void AddJob(BackupJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        if (_jobs.Count >= MaxJobs)
+            throw new InvalidOperationException($"Maximum {MaxJobs} jobs allowed.");
+
+        if (_jobs.Any(j => j.Name == job.Name))
+            throw new InvalidOperationException($"Job '{job.Name}' already exists.");
+
+        _jobs.Add(job);
+        _jobRepository.Save(_jobs);
+    }
 
     public void RemoveJob(string name) => throw new NotImplementedException();
 
-    public IReadOnlyList<BackupJob> ListJobs() => throw new NotImplementedException();
+    public IReadOnlyList<BackupJob> ListJobs() => _jobs.AsReadOnly();
 
     public void ExecuteJob(string name)
     {
-        var jobs = _jobRepository.Load();
-        var job = jobs.FirstOrDefault(j => j.Name == name)
+        var job = _jobs.FirstOrDefault(j => j.Name == name)
             ?? throw new InvalidOperationException($"Job '{name}' not found.");
 
         var strategy = job.Type == BackupType.Full ? _fullStrategy : _diffStrategy;
