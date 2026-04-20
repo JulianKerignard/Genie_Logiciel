@@ -80,7 +80,9 @@ public sealed class ConsoleUI
         }
         catch (InvalidOperationException ex)
         {
-            Console.WriteLine(_lang.T(ex.Message));
+            var colon = ex.Message.IndexOf(':');
+            var key = colon >= 0 ? ex.Message[..colon].Trim() : ex.Message;
+            Console.WriteLine(_lang.T(key));
         }
     }
 
