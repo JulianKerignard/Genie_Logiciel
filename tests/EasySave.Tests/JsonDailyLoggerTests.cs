@@ -62,7 +62,7 @@ public class JsonDailyLoggerTests : IDisposable
     }
 
     [Fact]
-    public void Append_ConvertsLocalPathToUncFormat()
+    public void Append_NormalizesLocalPath()
     {
         IDailyLogger logger = new JsonDailyLogger(_tempDir);
 
@@ -71,7 +71,7 @@ public class JsonDailyLoggerTests : IDisposable
 
         logger.Append(new LogEntry
         {
-            JobName = "local-to-unc",
+            JobName = "local-path",
             SourceFile = localSrc,
             TargetFile = localTgt,
         });
@@ -80,13 +80,14 @@ public class JsonDailyLoggerTests : IDisposable
 
         if (OperatingSystem.IsWindows())
         {
-            // On Windows, local drive paths get wrapped with the \\?\ UNC prefix.
-            Assert.StartsWith(@"\\", stored.SourceFile);
-            Assert.StartsWith(@"\\", stored.TargetFile);
+            // On Windows, a local drive path must be wrapped with the
+            // extended-length prefix exactly — don't just accept any \\ path.
+            Assert.StartsWith(@"\\?\", stored.SourceFile, StringComparison.Ordinal);
+            Assert.StartsWith(@"\\?\", stored.TargetFile, StringComparison.Ordinal);
         }
         else
         {
-            // On Unix there is no UNC concept, we just want a full path back.
+            // On Unix there's no equivalent, we just want a full absolute path back.
             Assert.True(Path.IsPathRooted(stored.SourceFile));
             Assert.True(Path.IsPathRooted(stored.TargetFile));
         }

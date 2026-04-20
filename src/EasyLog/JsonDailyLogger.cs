@@ -53,14 +53,16 @@ public sealed class JsonDailyLogger : IDailyLogger
         // seen by the operator, not UTC.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.json");
 
-        // Cahier requires UNC paths in the log, even when the caller passes
-        // a plain local path. Copy the entry so we don't mutate the caller's object.
+        // Cahier asks for UNC paths in the log. Real UNC only exists for
+        // network shares — for local paths we fall back to the Windows
+        // extended-length prefix (\\?\), which is the closest portable
+        // equivalent. Copy the entry so we don't mutate the caller's object.
         LogEntry normalized = new()
         {
             Timestamp = entry.Timestamp,
             JobName = entry.JobName,
-            SourceFile = ToUncFormat(entry.SourceFile),
-            TargetFile = ToUncFormat(entry.TargetFile),
+            SourceFile = ToNormalizedPath(entry.SourceFile),
+            TargetFile = ToNormalizedPath(entry.TargetFile),
             FileSize = entry.FileSize,
             FileTransferTimeMs = entry.FileTransferTimeMs,
         };
@@ -73,17 +75,18 @@ public sealed class JsonDailyLogger : IDailyLogger
         }
     }
 
-    private static string ToUncFormat(string path)
+    private static string ToNormalizedPath(string path)
     {
         if (string.IsNullOrEmpty(path)) return path;
 
-        // Already UNC (\\server\share\... or \\?\...), leave it alone.
+        // Already a \\-prefixed path (real UNC network share or extended-length),
+        // leave it alone.
         if (path.StartsWith(@"\\", StringComparison.Ordinal)) return path;
 
         string full = Path.GetFullPath(path);
 
-        // On Windows a local drive letter becomes an extended-length UNC path.
-        // On Unix UNC doesn't exist, so we just return the absolute path.
+        // On Windows, wrap a local drive path with the extended-length prefix.
+        // On Unix there's no equivalent, just return the absolute path.
         if (OperatingSystem.IsWindows() && full.Length > 1 && full[1] == ':')
         {
             return @"\\?\" + full;
