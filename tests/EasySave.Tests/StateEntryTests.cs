@@ -58,8 +58,10 @@ public class StateEntryTests
 
         Assert.Contains("daily-docs", text);
         Assert.Contains("Active", text);
-        Assert.Contains("60", text);
-        Assert.Contains("4", text);
-        Assert.Contains("2048", text);
+        // Match the decimal tolerantly: local culture may use '.' or ',' as separator.
+        Assert.Matches(@"60[.,]0", text);
+        Assert.Contains("%", text);
+        Assert.Contains("4 files", text);
+        Assert.Contains("2048 bytes", text);
     }
 }

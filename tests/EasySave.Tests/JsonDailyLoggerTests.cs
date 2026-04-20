@@ -29,6 +29,14 @@ public class JsonDailyLoggerTests : IDisposable
     }
 
     [Fact]
+    public void Append_NullEntry_Throws()
+    {
+        IDailyLogger logger = new JsonDailyLogger(_tempDir);
+
+        Assert.Throws<ArgumentNullException>(() => logger.Append(null!));
+    }
+
+    [Fact]
     public void Append_CreatesDailyFile()
     {
         IDailyLogger logger = new JsonDailyLogger(_tempDir);
