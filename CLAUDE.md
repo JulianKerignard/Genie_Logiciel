@@ -53,7 +53,7 @@ Do not propose changes that break any of these:
 
 ## Conventions
 
-- **Branch naming**: `feat/xxx`, `fix/xxx`, `refactor/xxx`, `docs/xxx`, `chore/xxx`, `ci/xxx`, `hotfix/xxx`. Kebab-case.
+- **Branch naming**: `feat/xxx`, `fix/xxx`, `refactor/xxx`, `docs/xxx`, `test/xxx`, `chore/xxx`, `ci/xxx`, `hotfix/xxx`, `perf/xxx`. Kebab-case.
 - **Commits**: Conventional Commits (`feat(scope): ...`), imperative, lowercase subject, no trailing period.
 - **PR target**: `staging`. Only the release merge goes to `main`.
 - **Tags**: `v1.0.0`, `v1.1.0`, `v2.0.0`, `v3.0.0` on `main` at each livrable. No intermediate alpha/beta tags.
