@@ -14,8 +14,6 @@ public sealed class StateTracker
     // Serialises concurrent writes coming from multiple backup managers.
     private readonly object _lock = new();
 
-    private static readonly JsonSerializerOptions _serializerOptions = new() { WriteIndented = true };
-
     private StateTracker() { }
 
     // Inserts or replaces the snapshot for a job, then rewrites the state file atomically.
@@ -26,22 +24,13 @@ public sealed class StateTracker
         lock (_lock)
         {
             var path = AppConfig.Instance.StateFilePath;
-            EnsureDirectoryExists(path);
+            FileHelpers.EnsureDirectoryExists(path);
 
             var states = ReadCurrentEntries(path);
             states.RemoveAll(s => s.Name == entry.Name);
             states.Add(entry);
 
             WriteAtomically(path, states);
-        }
-    }
-
-    private static void EnsureDirectoryExists(string path)
-    {
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
         }
     }
 
@@ -68,7 +57,7 @@ public sealed class StateTracker
     private static void WriteAtomically(string path, List<StateEntry> states)
     {
         var tempPath = path + ".tmp";
-        File.WriteAllText(tempPath, JsonSerializer.Serialize(states, _serializerOptions));
+        File.WriteAllText(tempPath, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
         File.Move(tempPath, path, overwrite: true);
     }
 }
