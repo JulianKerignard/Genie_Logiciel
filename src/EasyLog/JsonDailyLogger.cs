@@ -53,12 +53,46 @@ public sealed class JsonDailyLogger : IDailyLogger
         // seen by the operator, not UTC.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.json");
 
+        // Cahier asks for UNC paths in the log. Real UNC only exists for
+        // network shares — for local paths we fall back to the Windows
+        // extended-length prefix (\\?\), which is the closest portable
+        // equivalent. Copy the entry so we don't mutate the caller's object.
+        LogEntry normalized = new()
+        {
+            Timestamp = entry.Timestamp,
+            JobName = entry.JobName,
+            SourceFile = ToNormalizedPath(entry.SourceFile),
+            TargetFile = ToNormalizedPath(entry.TargetFile),
+            FileSize = entry.FileSize,
+            FileTransferTimeMs = entry.FileTransferTimeMs,
+        };
+
         lock (_writeLock)
         {
             List<LogEntry> entries = ReadExisting(filePath);
-            entries.Add(entry);
+            entries.Add(normalized);
             WriteAtomic(filePath, entries);
         }
+    }
+
+    private static string ToNormalizedPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+
+        // Already a \\-prefixed path (real UNC network share or extended-length),
+        // leave it alone.
+        if (path.StartsWith(@"\\", StringComparison.Ordinal)) return path;
+
+        string full = Path.GetFullPath(path);
+
+        // On Windows, wrap a local drive path with the extended-length prefix.
+        // On Unix there's no equivalent, just return the absolute path.
+        if (OperatingSystem.IsWindows() && full.Length > 1 && full[1] == ':')
+        {
+            return @"\\?\" + full;
+        }
+
+        return full;
     }
 
     private static void WriteAtomic(string filePath, List<LogEntry> entries)

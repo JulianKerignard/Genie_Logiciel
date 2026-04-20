@@ -62,6 +62,38 @@ public class JsonDailyLoggerTests : IDisposable
     }
 
     [Fact]
+    public void Append_NormalizesLocalPath()
+    {
+        IDailyLogger logger = new JsonDailyLogger(_tempDir);
+
+        var localSrc = Path.Combine(_tempDir, "source.txt");
+        var localTgt = Path.Combine(_tempDir, "target.txt");
+
+        logger.Append(new LogEntry
+        {
+            JobName = "local-path",
+            SourceFile = localSrc,
+            TargetFile = localTgt,
+        });
+
+        var stored = ReadEntries().Single();
+
+        if (OperatingSystem.IsWindows())
+        {
+            // On Windows, a local drive path must be wrapped with the
+            // extended-length prefix exactly — don't just accept any \\ path.
+            Assert.StartsWith(@"\\?\", stored.SourceFile, StringComparison.Ordinal);
+            Assert.StartsWith(@"\\?\", stored.TargetFile, StringComparison.Ordinal);
+        }
+        else
+        {
+            // On Unix there's no equivalent, we just want a full absolute path back.
+            Assert.True(Path.IsPathRooted(stored.SourceFile));
+            Assert.True(Path.IsPathRooted(stored.TargetFile));
+        }
+    }
+
+    [Fact]
     public void Append_PreservesUncPaths()
     {
         IDailyLogger logger = new JsonDailyLogger(_tempDir);
