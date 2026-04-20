@@ -57,9 +57,10 @@ public sealed class StateTracker
             var json = File.ReadAllText(path);
             return JsonSerializer.Deserialize<List<StateEntry>>(json) ?? new List<StateEntry>();
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException)
         {
-            // Treat a corrupted state file as empty rather than crashing the app.
+            // Treat a corrupted or transiently unreadable state file as empty
+            // rather than crashing the caller inside the lock.
             return new List<StateEntry>();
         }
     }

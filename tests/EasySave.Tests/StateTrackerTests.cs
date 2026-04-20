@@ -24,6 +24,10 @@ public class StateTrackerTests : IDisposable
         var configPath = Path.Combine(_tempDir, "appsettings.json");
         var payload = new { StateFilePath = _stateFilePath };
         File.WriteAllText(configPath, JsonSerializer.Serialize(payload));
+
+        // StateTracker reads AppConfig.Instance.StateFilePath on every Update,
+        // so reloading AppConfig here redirects writes to this test's temp dir
+        // without needing to reset the StateTracker singleton itself.
         AppConfig.Load(configPath);
     }
 
@@ -86,9 +90,9 @@ public class StateTrackerTests : IDisposable
             var content = File.ReadAllText(_stateFilePath);
             var parsed = JsonSerializer.Deserialize<List<StateEntry>>(content);
             Assert.NotNull(parsed);
-        }
 
-        Assert.False(File.Exists(_stateFilePath + ".tmp"));
+            Assert.False(File.Exists(_stateFilePath + ".tmp"));
+        }
     }
 
     [Fact]
