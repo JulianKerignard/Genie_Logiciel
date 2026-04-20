@@ -5,7 +5,7 @@ using EasySave.Models;
 namespace EasySave.Services;
 
 // Manages backup jobs: CRUD + execution with logging and state tracking.
-public class BackupManager
+public sealed class BackupManager
 {
     private const int MaxJobs = 5;
 
@@ -14,7 +14,6 @@ public class BackupManager
     private readonly IBackupStrategy _diffStrategy;
     private readonly StateTracker _stateTracker;
     private readonly JobRepository _jobRepository;
-    private readonly List<BackupJob> _jobs;
 
     public BackupManager(
         IDailyLogger logger,
@@ -34,95 +33,105 @@ public class BackupManager
         _diffStrategy = diffStrategy;
         _stateTracker = stateTracker;
         _jobRepository = jobRepository;
-        _jobs = new List<BackupJob>(_jobRepository.Load());
     }
 
     public void AddJob(BackupJob job)
     {
         ArgumentNullException.ThrowIfNull(job);
 
-        if (_jobs.Count >= MaxJobs)
-            throw new InvalidOperationException($"Maximum {MaxJobs} jobs allowed.");
+        var jobs = _jobRepository.Load().ToList();
 
-        if (_jobs.Any(j => j.Name == job.Name))
-            throw new InvalidOperationException($"Job '{job.Name}' already exists.");
+        if (jobs.Count >= MaxJobs)
+            throw new InvalidOperationException("error.max_jobs");
 
-        var updated = new List<BackupJob>(_jobs) { job };
-        _jobRepository.Save(updated);
-        _jobs.Add(job);
+        if (jobs.Any(j => j.Name.Equals(job.Name, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("error.duplicate_job");
+
+        jobs.Add(job);
+        _jobRepository.Save(jobs);
     }
 
-    public void RemoveJob(string name) => throw new NotImplementedException();
+    public void RemoveJob(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-    public IReadOnlyList<BackupJob> ListJobs() => _jobs.AsReadOnly();
+        var jobs = _jobRepository.Load().ToList();
+        var index = jobs.FindIndex(j => j.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+        if (index < 0)
+            throw new KeyNotFoundException(name);
+
+        jobs.RemoveAt(index);
+        _jobRepository.Save(jobs);
+    }
+
+    public IReadOnlyList<BackupJob> ListJobs() => _jobRepository.Load();
 
     public void ExecuteJob(string name)
     {
-        var job = _jobs.FirstOrDefault(j => j.Name == name)
-            ?? throw new InvalidOperationException($"Job '{name}' not found.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        var jobs = _jobRepository.Load();
+        var job = jobs.FirstOrDefault(j => j.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                  ?? throw new KeyNotFoundException(name);
+
+        RunJob(job);
+    }
+
+    public void ExecuteAll()
+    {
+        foreach (var job in _jobRepository.Load())
+        {
+            try { RunJob(job); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
+            }
+        }
+    }
+
+    private void RunJob(BackupJob job)
+    {
+        var sourceDir = new DirectoryInfo(job.SourcePath);
+        if (!sourceDir.Exists)
+            throw new DirectoryNotFoundException($"Source not found: {job.SourcePath}");
 
         var strategy = job.Type == BackupType.Full ? _fullStrategy : _diffStrategy;
-        var sourceDir = new DirectoryInfo(job.SourcePath);
 
-        if (!sourceDir.Exists)
-            throw new DirectoryNotFoundException($"Source directory not found: {job.SourcePath}");
-
-        var allFiles = sourceDir.EnumerateFiles("*", SearchOption.AllDirectories).ToList();
-        var filesToCopy = allFiles
-            .Select(f => (File: f, Target: BuildTargetPath(f, sourceDir, job.TargetPath)))
-            .Where(pair => strategy.ShouldCopy(pair.File, pair.Target))
+        var eligible = sourceDir
+            .GetFiles("*", SearchOption.AllDirectories)
+            .Select(f => (file: f, target: GetTargetPath(job, sourceDir, f)))
+            .Where(x => strategy.ShouldCopy(x.file, x.target))
             .ToList();
 
-        int totalFiles = filesToCopy.Count;
-        long totalSize = filesToCopy.Sum(pair => pair.File.Length);
-
-        _stateTracker.Update(new StateEntry
+        var state = new StateEntry
         {
             Name = job.Name,
-            LastActionTime = DateTimeOffset.Now,
             State = JobState.Active,
-            TotalFilesEligible = totalFiles,
-            TotalSize = totalSize,
-            FilesRemaining = totalFiles,
-            SizeRemaining = totalSize,
-        });
+            LastActionTime = DateTimeOffset.Now,
+            TotalFilesEligible = eligible.Count,
+            TotalSize = eligible.Sum(x => x.file.Length),
+            FilesRemaining = eligible.Count,
+            SizeRemaining = eligible.Sum(x => x.file.Length)
+        };
+        _stateTracker.Update(state);
 
-        int filesProcessed = 0;
-        long sizeProcessed = 0;
-
-        foreach (var (file, targetPath) in filesToCopy)
+        foreach (var (file, targetPath) in eligible)
         {
+            FileHelpers.EnsureDirectoryExists(targetPath);
 
-            _stateTracker.Update(new StateEntry
-            {
-                Name = job.Name,
-                LastActionTime = DateTimeOffset.Now,
-                State = JobState.Active,
-                TotalFilesEligible = totalFiles,
-                TotalSize = totalSize,
-                FilesRemaining = totalFiles - filesProcessed,
-                SizeRemaining = totalSize - sizeProcessed,
-                CurrentSource = file.FullName,
-                CurrentTarget = targetPath,
-            });
-
-            long transferTimeMs;
             var sw = Stopwatch.StartNew();
-
+            long transferMs;
             try
             {
-                string? targetDir = Path.GetDirectoryName(targetPath);
-                if (!string.IsNullOrEmpty(targetDir))
-                    Directory.CreateDirectory(targetDir);
-
                 File.Copy(file.FullName, targetPath, overwrite: true);
                 sw.Stop();
-                transferTimeMs = sw.ElapsedMilliseconds;
+                transferMs = sw.ElapsedMilliseconds;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 sw.Stop();
-                transferTimeMs = -1;
+                transferMs = -1;
             }
 
             _logger.Append(new LogEntry
@@ -132,30 +141,29 @@ public class BackupManager
                 SourceFile = file.FullName,
                 TargetFile = targetPath,
                 FileSize = file.Length,
-                FileTransferTimeMs = transferTimeMs,
+                FileTransferTimeMs = transferMs
             });
 
-            filesProcessed++;
-            sizeProcessed += file.Length;
+            state.FilesRemaining--;
+            state.SizeRemaining -= file.Length;
+            state.CurrentSource = file.FullName;
+            state.CurrentTarget = targetPath;
+            state.LastActionTime = DateTimeOffset.Now;
+            _stateTracker.Update(state);
         }
 
-        _stateTracker.Update(new StateEntry
-        {
-            Name = job.Name,
-            LastActionTime = DateTimeOffset.Now,
-            State = JobState.Inactive,
-            TotalFilesEligible = totalFiles,
-            TotalSize = totalSize,
-            FilesRemaining = 0,
-            SizeRemaining = 0,
-        });
+        state.State = JobState.Inactive;
+        state.FilesRemaining = 0;
+        state.SizeRemaining = 0;
+        state.CurrentSource = string.Empty;
+        state.CurrentTarget = string.Empty;
+        state.LastActionTime = DateTimeOffset.Now;
+        _stateTracker.Update(state);
     }
 
-    public void ExecuteAll() => throw new NotImplementedException();
-
-    private static string BuildTargetPath(FileInfo file, DirectoryInfo sourceDir, string targetRoot)
+    private static string GetTargetPath(BackupJob job, DirectoryInfo sourceDir, FileInfo file)
     {
-        string relativePath = Path.GetRelativePath(sourceDir.FullName, file.FullName);
-        return Path.Combine(targetRoot, relativePath);
+        var relativePath = Path.GetRelativePath(sourceDir.FullName, file.FullName);
+        return Path.Combine(job.TargetPath, relativePath);
     }
 }
