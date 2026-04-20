@@ -53,12 +53,43 @@ public sealed class JsonDailyLogger : IDailyLogger
         // seen by the operator, not UTC.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.json");
 
+        // Cahier requires UNC paths in the log, even when the caller passes
+        // a plain local path. Copy the entry so we don't mutate the caller's object.
+        LogEntry normalized = new()
+        {
+            Timestamp = entry.Timestamp,
+            JobName = entry.JobName,
+            SourceFile = ToUncFormat(entry.SourceFile),
+            TargetFile = ToUncFormat(entry.TargetFile),
+            FileSize = entry.FileSize,
+            FileTransferTimeMs = entry.FileTransferTimeMs,
+        };
+
         lock (_writeLock)
         {
             List<LogEntry> entries = ReadExisting(filePath);
-            entries.Add(entry);
+            entries.Add(normalized);
             WriteAtomic(filePath, entries);
         }
+    }
+
+    private static string ToUncFormat(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+
+        // Already UNC (\\server\share\... or \\?\...), leave it alone.
+        if (path.StartsWith(@"\\", StringComparison.Ordinal)) return path;
+
+        string full = Path.GetFullPath(path);
+
+        // On Windows a local drive letter becomes an extended-length UNC path.
+        // On Unix UNC doesn't exist, so we just return the absolute path.
+        if (OperatingSystem.IsWindows() && full.Length > 1 && full[1] == ':')
+        {
+            return @"\\?\" + full;
+        }
+
+        return full;
     }
 
     private static void WriteAtomic(string filePath, List<LogEntry> entries)
