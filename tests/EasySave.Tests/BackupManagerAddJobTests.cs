@@ -84,6 +84,9 @@ public class BackupManagerAddJobTests : IDisposable
     [Fact]
     public void AddJob_PersistsAcrossInstances()
     {
+        // Clear any leftover jobs from other tests
+        JobRepository.Instance.Save(new List<BackupJob>());
+
         var manager = CreateManager();
         manager.AddJob(MakeJob("persisted-job"));
 
