@@ -38,6 +38,9 @@ public sealed class BackupManager
     public void AddJob(BackupJob job)
     {
         ArgumentNullException.ThrowIfNull(job);
+        ArgumentException.ThrowIfNullOrWhiteSpace(job.Name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(job.SourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(job.TargetPath);
 
         var jobs = _jobRepository.Load().ToList();
 

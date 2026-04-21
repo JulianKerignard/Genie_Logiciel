@@ -78,6 +78,10 @@ public sealed class ConsoleUI
             _backupManager.AddJob(job);
             Console.WriteLine(_lang.T("confirm.job_added"));
         }
+        catch (ArgumentException)
+        {
+            Console.WriteLine(_lang.T("error.empty_field"));
+        }
         catch (InvalidOperationException ex)
         {
             var colon = ex.Message.IndexOf(':');

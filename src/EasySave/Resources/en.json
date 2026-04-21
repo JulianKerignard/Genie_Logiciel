@@ -14,6 +14,7 @@
   "error.invalid_selection": "Invalid job selection.",
   "error.invalid_backup_type": "Invalid backup type. Use Full or Differential.",
   "error.duplicate_job": "A job with this name already exists.",
+  "error.empty_field": "Name, source path and target path are required.",
   "error.invalid_language": "Invalid language. Supported: en, fr.",
   "error.source_not_found": "Source directory does not exist.",
   "error.execute_failed": "Execution error: {0}",
