@@ -25,30 +25,13 @@ if (cliArgs.Length > 0)
         return;
     }
 
-    var jobs = backupManager.ListJobs();
-    foreach (var idx in indices)
-    {
-        if (idx < 1 || idx > jobs.Count)
-        {
-            Console.Error.WriteLine(string.Format(langService.T("error.job_not_found"), idx));
-            continue;
-        }
-
-        Console.WriteLine(string.Format(langService.T("job.executing"), jobs[idx - 1].Name));
-        try
-        {
-            backupManager.ExecuteJob(jobs[idx - 1].Name);
-            Console.WriteLine(string.Format(langService.T("job.done"), jobs[idx - 1].Name));
-        }
-        catch (DirectoryNotFoundException)
-        {
-            Console.Error.WriteLine(langService.T("error.source_not_found"));
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine(string.Format(langService.T("error.execute_failed"), ex.Message));
-        }
-    }
+    JobSelectionRunner.Execute(
+        indices,
+        backupManager.ListJobs(),
+        backupManager,
+        langService,
+        Console.WriteLine,
+        Console.Error.WriteLine);
 }
 else
 {
