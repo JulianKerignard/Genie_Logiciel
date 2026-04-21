@@ -30,7 +30,7 @@ public sealed class StateTracker
             states.RemoveAll(s => s.Name == entry.Name);
             states.Add(entry);
 
-            WriteAtomically(path, states);
+            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
         }
     }
 
@@ -75,12 +75,5 @@ public sealed class StateTracker
         {
             // If the rename itself fails, fall back to returning an empty list so the app keeps running.
         }
-    }
-
-    private static void WriteAtomically(string path, List<StateEntry> states)
-    {
-        var tempPath = path + ".tmp";
-        File.WriteAllText(tempPath, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
-        File.Move(tempPath, path, overwrite: true);
     }
 }

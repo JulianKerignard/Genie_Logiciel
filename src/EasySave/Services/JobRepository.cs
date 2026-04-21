@@ -52,9 +52,7 @@ public sealed class JobRepository
             var path = AppConfig.Instance.JobsFilePath;
             FileHelpers.EnsureDirectoryExists(path);
 
-            var tempPath = path + ".tmp";
-            File.WriteAllText(tempPath, JsonSerializer.Serialize(jobs, FileHelpers.IndentedJsonOptions));
-            File.Move(tempPath, path, overwrite: true);
+            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(jobs, FileHelpers.IndentedJsonOptions));
         }
     }
 
