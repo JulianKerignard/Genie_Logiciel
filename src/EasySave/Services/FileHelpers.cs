@@ -30,7 +30,7 @@ internal static class FileHelpers
             File.WriteAllText(tempPath, contents);
             File.Move(tempPath, path, overwrite: true);
         }
-        catch
+        catch (Exception)
         {
             try { File.Delete(tempPath); }
             catch { /* best effort; do not mask the original exception */ }
