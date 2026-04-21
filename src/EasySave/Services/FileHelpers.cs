@@ -17,4 +17,24 @@ internal static class FileHelpers
             Directory.CreateDirectory(directory);
         }
     }
+
+    // Writes the given text to the target path via a unique temp file, then renames it
+    // over the target in a single OS call. The GUID-suffixed temp name avoids collisions
+    // between concurrent processes writing to the same target, and a failed write deletes
+    // the temp file instead of leaving an orphan on disk.
+    public static void WriteAllTextAtomic(string path, string contents)
+    {
+        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(tempPath, contents);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tempPath); }
+            catch { /* best effort; do not mask the original exception */ }
+            throw;
+        }
+    }
 }

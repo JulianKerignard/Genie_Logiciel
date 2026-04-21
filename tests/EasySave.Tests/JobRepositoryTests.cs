@@ -86,7 +86,8 @@ public class JobRepositoryTests : IDisposable
             Assert.NotNull(parsed);
             Assert.Equal(2, parsed!.Count);
 
-            Assert.False(File.Exists(_jobsFilePath + ".tmp"));
+            // Temp names now carry a GUID suffix; verify no *.tmp orphan in the dir.
+            Assert.Empty(Directory.GetFiles(_tempDir, "*.tmp"));
         }
     }
 }
