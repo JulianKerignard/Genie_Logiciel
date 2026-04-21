@@ -38,6 +38,8 @@ Console application providing the user interface for managing backup jobs.
 
 Reusable library that writes daily JSON log files (`yyyy-MM-dd.json`).
 Thread-safe, atomic writes, designed to be shared across ProSoft applications.
+See [src/EasyLog/README.md](src/EasyLog/README.md) for the public API, usage
+examples, and versioning policy.
 
 ## Documentation
 
