@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `AppConfig` defaults now resolve to the OS-standard per-user application data directory instead of `data/` next to the executable. `LogDirectory`, `StateFilePath`, and `JobsFilePath` now default under `%AppData%\ProSoft\EasySave\` on Windows and `~/.config/ProSoft/EasySave/` on Linux/macOS. All three remain overridable from `appsettings.json`.
+
 ## [1.0.0] — 2026-04-21
 
 First release delivered to ProSoft. Console backup tool with up to 5 jobs,
