@@ -46,11 +46,34 @@ public sealed class StateTracker
             var json = File.ReadAllText(path);
             return JsonSerializer.Deserialize<List<StateEntry>>(json) ?? new List<StateEntry>();
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (JsonException ex)
         {
-            // Treat a corrupted or transiently unreadable state file as empty
-            // rather than crashing the caller inside the lock.
+            QuarantineCorruptedFile(path, ex);
             return new List<StateEntry>();
+        }
+        catch (IOException)
+        {
+            // Transient read error (file locked by another process): treat as empty
+            // without quarantining, so the next Update rewrites the file.
+            return new List<StateEntry>();
+        }
+    }
+
+    // Renames a corrupted state file so operators can inspect it later,
+    // instead of silently wiping all job states on the next Update.
+    private static void QuarantineCorruptedFile(string path, Exception reason)
+    {
+        try
+        {
+            var quarantinePath = $"{path}.corrupted-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
+            File.Move(path, quarantinePath);
+            Console.Error.WriteLine(
+                $"[StateTracker] {Path.GetFileName(path)} was unreadable and has been moved to " +
+                $"{Path.GetFileName(quarantinePath)}. Reason: {reason.Message}");
+        }
+        catch
+        {
+            // If the rename itself fails, fall back to returning an empty list so the app keeps running.
         }
     }
 

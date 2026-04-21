@@ -1,6 +1,6 @@
 namespace EasySave.Services;
 
-public class DifferentialBackupStrategy : IBackupStrategy
+public sealed class DifferentialBackupStrategy : IBackupStrategy
 {
     public bool ShouldCopy(FileInfo source, string targetPath)
     {

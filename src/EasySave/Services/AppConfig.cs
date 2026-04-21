@@ -42,7 +42,7 @@ public sealed class AppConfig
             var json = File.ReadAllText(path);
             Instance = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException)
         {
             Instance = new AppConfig();
         }
