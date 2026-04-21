@@ -157,29 +157,7 @@ public sealed class ConsoleUI
             return;
         }
 
-        foreach (var idx in indices)
-        {
-            if (idx < 1 || idx > jobs.Count)
-            {
-                Console.WriteLine(string.Format(_lang.T("error.job_not_found"), idx));
-                continue;
-            }
-
-            Console.WriteLine(string.Format(_lang.T("job.executing"), jobs[idx - 1].Name));
-            try
-            {
-                _backupManager.ExecuteJob(jobs[idx - 1].Name);
-                Console.WriteLine(string.Format(_lang.T("job.done"), jobs[idx - 1].Name));
-            }
-            catch (DirectoryNotFoundException)
-            {
-                Console.WriteLine(_lang.T("error.source_not_found"));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(string.Format(_lang.T("error.execute_failed"), ex.Message));
-            }
-        }
+        JobSelectionRunner.Execute(indices, jobs, _backupManager, _lang, Console.WriteLine, Console.WriteLine);
     }
 
     private void ChangeLanguage()

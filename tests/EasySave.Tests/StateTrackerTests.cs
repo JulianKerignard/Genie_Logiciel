@@ -91,7 +91,8 @@ public class StateTrackerTests : IDisposable
             var parsed = JsonSerializer.Deserialize<List<StateEntry>>(content);
             Assert.NotNull(parsed);
 
-            Assert.False(File.Exists(_stateFilePath + ".tmp"));
+            // Temp names now carry a GUID suffix; verify no *.tmp orphan in the dir.
+            Assert.Empty(Directory.GetFiles(_tempDir, "*.tmp"));
         }
     }
 
