@@ -30,7 +30,7 @@ public sealed class StateTracker
             states.RemoveAll(s => s.Name == entry.Name);
             states.Add(entry);
 
-            WriteAtomically(path, states);
+            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
         }
     }
 
@@ -48,7 +48,7 @@ public sealed class StateTracker
         }
         catch (JsonException ex)
         {
-            QuarantineCorruptedFile(path, ex);
+            FileHelpers.QuarantineCorruptedFile(path, ex, "StateTracker");
             return new List<StateEntry>();
         }
         catch (IOException)
@@ -57,30 +57,5 @@ public sealed class StateTracker
             // without quarantining, so the next Update rewrites the file.
             return new List<StateEntry>();
         }
-    }
-
-    // Renames a corrupted state file so operators can inspect it later,
-    // instead of silently wiping all job states on the next Update.
-    private static void QuarantineCorruptedFile(string path, Exception reason)
-    {
-        try
-        {
-            var quarantinePath = $"{path}.corrupted-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
-            File.Move(path, quarantinePath);
-            Console.Error.WriteLine(
-                $"[StateTracker] {Path.GetFileName(path)} was unreadable and has been moved to " +
-                $"{Path.GetFileName(quarantinePath)}. Reason: {reason.Message}");
-        }
-        catch
-        {
-            // If the rename itself fails, fall back to returning an empty list so the app keeps running.
-        }
-    }
-
-    private static void WriteAtomically(string path, List<StateEntry> states)
-    {
-        var tempPath = path + ".tmp";
-        File.WriteAllText(tempPath, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
-        File.Move(tempPath, path, overwrite: true);
     }
 }

@@ -15,17 +15,18 @@ The runtime can be downloaded from <https://dotnet.microsoft.com/download/dotnet
 
 ## Installation layout
 
-After installation, the application directory contains:
+The application is split between the install directory (binaries, read-only) and the per-user data directory (runtime files, writable).
+
+### Install directory
 
 ```
 <install-dir>/
 ├── EasySave(.exe)           # Entry point
 ├── EasyLog.dll              # Logger library
 ├── appsettings.json         # Configuration file (editable)
-└── data/
-    ├── logs/                # Daily log files (yyyy-MM-dd.json)
-    ├── state.json           # Real-time state of the 5 jobs
-    └── jobs.json            # Persisted job definitions
+└── Resources/
+    ├── en.json
+    └── fr.json
 ```
 
 The `<install-dir>` depends on the deployment method (MSI, ZIP extraction, or `dotnet publish` output). Typical locations per platform:
@@ -33,6 +34,23 @@ The `<install-dir>` depends on the deployment method (MSI, ZIP extraction, or `d
 - Windows: `C:\Program Files\ProSoft\EasySave\`
 - Linux: `/opt/prosoft/easysave/`
 - macOS: `/Applications/EasySave.app/Contents/MacOS/` or `/usr/local/prosoft/easysave/`
+
+### Runtime data directory (per user)
+
+Logs, state, and job definitions are written under the OS-standard per-user application data directory — never in `C:\temp` nor in the install directory (which would require elevation on Windows):
+
+- Windows: `%AppData%\ProSoft\EasySave\` (resolves to `C:\Users\<user>\AppData\Roaming\ProSoft\EasySave\`)
+- Linux: `~/.config/ProSoft/EasySave/`
+- macOS: `~/.config/ProSoft/EasySave/`
+
+```
+<data-dir>/
+├── Logs/                   # Daily log files (yyyy-MM-dd.json)
+├── state.json              # Real-time state of the 5 jobs
+└── jobs.json               # Persisted job definitions
+```
+
+The directory is created automatically on the first run. All three paths are overridable via `appsettings.json` (see below) if the customer needs to redirect them to a network share or a service account.
 
 ## Configurable locations
 
@@ -60,12 +78,12 @@ Linux / macOS example:
 }
 ```
 
-| Key | Purpose | Default |
-| --- | --- | --- |
-| `LogDirectory` | Folder where daily JSON logs are written | `./data/logs/` |
-| `StateFilePath` | Full path of the single `state.json` | `./data/state.json` |
-| `JobsFilePath` | Full path of the job definitions file | `./data/jobs.json` |
-| `Language` | UI language (`en` or `fr`) | `en` |
+| Key | Purpose | Default (Windows) | Default (Linux / macOS) |
+| --- | --- | --- | --- |
+| `LogDirectory` | Folder where daily JSON logs are written | `%AppData%\ProSoft\EasySave\Logs` | `~/.config/ProSoft/EasySave/Logs` |
+| `StateFilePath` | Full path of the single `state.json` | `%AppData%\ProSoft\EasySave\state.json` | `~/.config/ProSoft/EasySave/state.json` |
+| `JobsFilePath` | Full path of the job definitions file | `%AppData%\ProSoft\EasySave\jobs.json` | `~/.config/ProSoft/EasySave/jobs.json` |
+| `Language` | UI language (`en` or `fr`) | `en` | `en` |
 
 Network shares must be given in **UNC format** (`\\server\share\folder`). Changes take effect on the next application startup.
 

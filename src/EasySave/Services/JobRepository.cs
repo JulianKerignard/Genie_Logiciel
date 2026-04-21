@@ -36,7 +36,7 @@ public sealed class JobRepository
             }
             catch (Exception ex) when (ex is JsonException or IOException)
             {
-                QuarantineCorruptedFile(path, ex);
+                FileHelpers.QuarantineCorruptedFile(path, ex, "JobRepository");
                 return new List<BackupJob>();
             }
         }
@@ -52,27 +52,7 @@ public sealed class JobRepository
             var path = AppConfig.Instance.JobsFilePath;
             FileHelpers.EnsureDirectoryExists(path);
 
-            var tempPath = path + ".tmp";
-            File.WriteAllText(tempPath, JsonSerializer.Serialize(jobs, FileHelpers.IndentedJsonOptions));
-            File.Move(tempPath, path, overwrite: true);
-        }
-    }
-
-    // Renames a corrupted jobs file so the user can inspect or recover it later,
-    // instead of silently dropping their backup job definitions.
-    private static void QuarantineCorruptedFile(string path, Exception reason)
-    {
-        try
-        {
-            var quarantinePath = $"{path}.corrupted.{DateTime.UtcNow:yyyyMMddHHmmss}";
-            File.Move(path, quarantinePath);
-            Console.Error.WriteLine(
-                $"[JobRepository] {Path.GetFileName(path)} was unreadable and has been moved to " +
-                $"{Path.GetFileName(quarantinePath)}. Reason: {reason.Message}");
-        }
-        catch
-        {
-            // If the rename itself fails, fall back to returning an empty list so the app keeps running.
+            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(jobs, FileHelpers.IndentedJsonOptions));
         }
     }
 }

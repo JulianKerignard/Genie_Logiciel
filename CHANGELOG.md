@@ -6,6 +6,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-04-21
+
+Production hardening and documentation pass. No public API change —
+`EasyLog.dll` v1.x contract is preserved; existing `appsettings.json`
+overrides keep working unchanged.
+
+### Fixed
+
+- `AppConfig.Load` now also catches `IOException`, so a locked or
+  unreadable `appsettings.json` falls back to defaults instead of
+  crashing the process at startup.
+- `StateTracker` quarantines a corrupted `state.json` as
+  `*.corrupted-<ts>-<guid>` and logs to stderr, instead of silently
+  wiping every other job's state on the next `Update`. Mirrors the
+  `JobRepository` behaviour.
+
+### Changed
+
+- `AppConfig` defaults now resolve to the OS-standard per-user
+  application data directory instead of `data/` next to the executable.
+  `LogDirectory`, `StateFilePath`, and `JobsFilePath` default under
+  `%AppData%\ProSoft\EasySave\` on Windows and
+  `~/.config/ProSoft/EasySave/` on Linux/macOS. Avoids UAC issues when
+  the app is installed under `C:\Program Files`. All three paths remain
+  overridable from `appsettings.json`.
+- `FullBackupStrategy` and `DifferentialBackupStrategy` marked `sealed`
+  for consistency with every other concrete service class.
+- `FileHelpers.QuarantineCorruptedFile` centralises the corrupted-file
+  rename + stderr log pattern previously duplicated across
+  `JobRepository` and `StateTracker`.
+- New `CLI/JobSelectionRunner` centralises the execute-loop previously
+  duplicated between `Program.cs` (direct CLI mode) and
+  `ConsoleUI.ExecuteJobs` (interactive menu).
+
+### Documentation
+
+- `docs/architecture.md` — high-level overview of the layered design,
+  design patterns map, atomic-write contract, execution flow, and MVC
+  mapping for the upcoming v2.0 WPF migration.
+- `src/EasyLog/README.md` — DLL public API reference, usage examples,
+  SemVer policy, and v1.x frozen contract.
+- `docs/adrs/0001-strategy-pattern-for-backup-types.md` — first
+  Architecture Decision Record.
+- `BackupManager` gained full XML documentation on its public surface.
+
 ## [1.0.0] — 2026-04-21
 
 First release delivered to ProSoft. Console backup tool with up to 5 jobs,
@@ -50,5 +95,6 @@ full and differential strategies, daily JSON logging, and English/French UI.
 
 - Log and state paths default to paths under the executable — no hardcoded `C:\temp` or similar.
 
-[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/releases/tag/v1.0.0
