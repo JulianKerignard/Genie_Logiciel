@@ -54,7 +54,7 @@ internal static class FileHelpers
         }
         catch
         {
-            // If the rename itself fails, fall back to returning an empty list so the app keeps running.
+            // best effort — if the rename fails the caller continues with empty state
         }
     }
 }

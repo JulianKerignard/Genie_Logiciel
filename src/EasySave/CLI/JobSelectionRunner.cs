@@ -3,20 +3,9 @@ using EasySave.Services;
 
 namespace EasySave.CLI;
 
-/// <summary>
-/// Runs a pre-parsed list of job indices against the backup manager and reports
-/// each result through the language service. Shared by the interactive menu
-/// (<see cref="ConsoleUI"/>) and the direct-mode CLI (<c>Program.Main</c>) so
-/// the execution feedback stays consistent and i18n-correct everywhere.
-/// </summary>
 internal static class JobSelectionRunner
 {
-    /// <summary>
-    /// Executes each <paramref name="indices"/> entry against the matching job in
-    /// <paramref name="jobs"/>. Invalid indices and job failures are reported via
-    /// <paramref name="writeError"/>; successes via <paramref name="writeInfo"/>.
-    /// Continues on failure so a single bad job does not abort the batch.
-    /// </summary>
+    // indices are 1-based; writeError and writeInfo let callers route to stdout vs stderr
     public static void Execute(
         IReadOnlyList<int> indices,
         IReadOnlyList<BackupJob> jobs,
