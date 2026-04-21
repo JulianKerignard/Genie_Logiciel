@@ -37,4 +37,24 @@ internal static class FileHelpers
             throw;
         }
     }
+
+    // Renames a corrupted persistence file to a timestamped backup so operators can inspect
+    // it later. Used by JobRepository and StateTracker to avoid silently dropping user data
+    // when jobs.json or state.json cannot be deserialized. If the rename itself fails, the
+    // caller keeps running with empty state (best effort, we never mask the original error).
+    public static void QuarantineCorruptedFile(string path, Exception reason, string loggerTag)
+    {
+        try
+        {
+            var quarantinePath = $"{path}.corrupted-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
+            File.Move(path, quarantinePath);
+            Console.Error.WriteLine(
+                $"[{loggerTag}] {Path.GetFileName(path)} was unreadable and has been moved to " +
+                $"{Path.GetFileName(quarantinePath)}. Reason: {reason.Message}");
+        }
+        catch
+        {
+            // If the rename itself fails, fall back to returning an empty list so the app keeps running.
+        }
+    }
 }
