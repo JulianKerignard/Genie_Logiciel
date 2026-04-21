@@ -4,9 +4,14 @@ using EasySave.Models;
 
 namespace EasySave.Services;
 
-// Manages backup jobs: CRUD + execution with logging and state tracking.
+/// <summary>
+/// Orchestrates the lifecycle of backup jobs: CRUD operations against the
+/// persistent store, execution using the strategy pattern, real-time state
+/// updates, and per-file logging. Enforces the v1.0 cahier limit of 5 jobs.
+/// </summary>
 public sealed class BackupManager
 {
+    /// <summary>Maximum number of jobs allowed at any time (cahier v1.0).</summary>
     private const int MaxJobs = 5;
 
     private readonly IDailyLogger _logger;
@@ -15,6 +20,15 @@ public sealed class BackupManager
     private readonly StateTracker _stateTracker;
     private readonly JobRepository _jobRepository;
 
+    /// <summary>
+    /// Wires the manager with its dependencies. All parameters are required;
+    /// null arguments throw <see cref="ArgumentNullException"/>.
+    /// </summary>
+    /// <param name="logger">Daily log writer, shared across jobs.</param>
+    /// <param name="fullStrategy">Strategy used for <see cref="BackupType.Full"/> jobs.</param>
+    /// <param name="diffStrategy">Strategy used for <see cref="BackupType.Differential"/> jobs.</param>
+    /// <param name="stateTracker">Singleton state writer persisting to <c>state.json</c>.</param>
+    /// <param name="jobRepository">Singleton repository persisting to <c>jobs.json</c>.</param>
     public BackupManager(
         IDailyLogger logger,
         IBackupStrategy fullStrategy,
@@ -35,6 +49,17 @@ public sealed class BackupManager
         _jobRepository = jobRepository;
     }
 
+    /// <summary>
+    /// Registers a new backup job and persists the updated list to disk.
+    /// The job name is matched case-insensitively for duplicate detection.
+    /// </summary>
+    /// <param name="job">Job definition with non-empty Name, SourcePath, and TargetPath.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="job"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when any of Name/SourcePath/TargetPath is null or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the repository already holds 5 jobs (key <c>error.max_jobs</c>)
+    /// or when a job with the same name exists (key <c>error.duplicate_job</c>).
+    /// </exception>
     public void AddJob(BackupJob job)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -54,6 +79,13 @@ public sealed class BackupManager
         _jobRepository.Save(jobs);
     }
 
+    /// <summary>
+    /// Removes the job matching <paramref name="name"/> (case-insensitive) and
+    /// persists the updated list to disk.
+    /// </summary>
+    /// <param name="name">Name of the job to remove.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
+    /// <exception cref="KeyNotFoundException">Thrown when no job with that name exists.</exception>
     public void RemoveJob(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -68,8 +100,18 @@ public sealed class BackupManager
         _jobRepository.Save(jobs);
     }
 
+    /// <summary>Returns the current list of configured jobs, read from disk.</summary>
     public IReadOnlyList<BackupJob> ListJobs() => _jobRepository.Load();
 
+    /// <summary>
+    /// Runs a single job by name. Copies eligible files according to the job's
+    /// strategy, logs each file (success or failure), and updates the state
+    /// tracker at start, per file, and on completion.
+    /// </summary>
+    /// <param name="name">Name of the job to execute (case-insensitive).</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
+    /// <exception cref="KeyNotFoundException">Thrown when no job with that name exists.</exception>
+    /// <exception cref="DirectoryNotFoundException">Thrown when the source directory does not exist.</exception>
     public void ExecuteJob(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -81,6 +123,10 @@ public sealed class BackupManager
         RunJob(job);
     }
 
+    /// <summary>
+    /// Runs every configured job sequentially. A failure on one job is logged
+    /// to <see cref="Console.Error"/> but does not stop the following jobs.
+    /// </summary>
     public void ExecuteAll()
     {
         foreach (var job in _jobRepository.Load())
