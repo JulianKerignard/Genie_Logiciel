@@ -97,4 +97,20 @@ public class BackupManagerAddJobTests : IDisposable
         Assert.Single(jobs);
         Assert.Equal("persisted-job", jobs[0].Name);
     }
+
+    [Theory]
+    [InlineData("", "/src", "/dst")]
+    [InlineData("   ", "/src", "/dst")]
+    [InlineData("job", "", "/dst")]
+    [InlineData("job", "/src", "")]
+    public void AddJob_EmptyField_Throws(string name, string source, string target)
+    {
+        JobRepository.Instance.Save(new List<BackupJob>());
+        var manager = CreateManager();
+
+        var job = new BackupJob { Name = name, SourcePath = source, TargetPath = target, Type = BackupType.Full };
+
+        Assert.Throws<ArgumentException>(() => manager.AddJob(job));
+        Assert.Empty(manager.ListJobs());
+    }
 }
