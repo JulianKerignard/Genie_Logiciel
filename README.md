@@ -18,14 +18,23 @@ EasySave.sln
 └── docs/                  # Conventions and documentation
 ```
 
-## Build & Run
+## Build, run & test
 
 ```bash
 # Restore and build
 dotnet build EasySave.sln
 
-# Run the console app
+# Run the console app (interactive menu)
 dotnet run --project src/EasySave
+
+# Run the console app (direct CLI mode — executes jobs 1 to 3 and 5)
+dotnet run --project src/EasySave -- "1-3;5"
+
+# Run the full test suite
+dotnet test EasySave.sln
+
+# Check formatting (CI runs this with --verify-no-changes)
+dotnet format --severity warn
 ```
 
 ## Modules
@@ -43,11 +52,13 @@ examples, and versioning policy.
 
 ## Documentation
 
+- [Architecture overview](docs/architecture.md) — layered design, patterns, persistence, execution flow
 - [User manual](docs/user-manual.md) — end-user guide (1 page)
 - [Customer support guide](docs/support-client.md) — deployment, configuration, and support contacts
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
 - [Architecture Decision Records](docs/adrs/) — design decisions and their rationale
 - [UML diagrams](docs/diagrams/) — use case, class, activity, sequence
+- [EasyLog DLL documentation](src/EasyLog/README.md) — public API and versioning policy
 
 ## Contributing
 
