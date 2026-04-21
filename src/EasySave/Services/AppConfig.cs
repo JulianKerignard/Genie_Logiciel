@@ -7,17 +7,25 @@ namespace EasySave.Services;
 // Any service that needs a file path or a user-facing setting reads from AppConfig.Instance.
 public sealed class AppConfig
 {
+    // Per-user application data root. Resolves to %AppData%\ProSoft\EasySave on Windows
+    // and ~/.config/ProSoft/EasySave on Linux / macOS. Avoids C:\temp or the install
+    // directory (which would require UAC under C:\Program Files).
+    private static readonly string DataRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "ProSoft",
+        "EasySave");
+
     // Current configuration. Replaced once at startup by Load().
     public static AppConfig Instance { get; private set; } = new AppConfig();
 
-    // Directory where daily log files are written. Anchored to the executable directory.
-    public string LogDirectory { get; init; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "logs");
+    // Directory where daily log files are written.
+    public string LogDirectory { get; init; } = Path.Combine(DataRoot, "Logs");
 
-    // Full path of the real-time state file. Anchored to the executable directory.
-    public string StateFilePath { get; init; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "state.json");
+    // Full path of the real-time state file.
+    public string StateFilePath { get; init; } = Path.Combine(DataRoot, "state.json");
 
-    // Full path of the backup jobs definitions file. Anchored to the executable directory.
-    public string JobsFilePath { get; init; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "jobs.json");
+    // Full path of the backup jobs definitions file.
+    public string JobsFilePath { get; init; } = Path.Combine(DataRoot, "jobs.json");
 
     // UI language code (ISO 639-1), e.g. "en" or "fr".
     public string Language { get; init; } = "en";

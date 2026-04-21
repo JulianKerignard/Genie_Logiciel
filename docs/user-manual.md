@@ -41,6 +41,6 @@ The UI supports **English** and **French**.
 
 ## Where are the logs?
 
-Daily logs are written in real time as JSON files named `yyyy-MM-dd.json` inside the log directory. The default location is `data/logs/` next to the executable, and it is configurable from `appsettings.json` (see the support guide). Each entry records the job name, source, target, size, and transfer time.
+Daily logs are written in real time as JSON files named `yyyy-MM-dd.json` inside the log directory. The default location is the per-user application data directory (`%AppData%\ProSoft\EasySave\Logs\` on Windows, `~/.config/ProSoft/EasySave/Logs/` on Linux/macOS), and it is configurable from `appsettings.json` (see the support guide). Each entry records the job name, source, target, size, and transfer time.
 
 A failed file copy is recorded with a **negative transfer time** (`FileTransferTimeMs < 0`).
