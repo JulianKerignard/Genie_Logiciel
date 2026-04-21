@@ -1,0 +1,46 @@
+name: .NET Build
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore EasySave.sln
+
+      - name: Build (warnings as errors)
+        run: dotnet build EasySave.sln --configuration Release --no-restore --warnaserror
+
+      - name: Test
+        run: dotnet test EasySave.sln --configuration Release --no-build --verbosity normal
+
+  format:
+    name: Format check
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify C# formatting
+        run: dotnet format EasySave.sln --verify-no-changes --severity warn
