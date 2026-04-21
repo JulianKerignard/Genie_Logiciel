@@ -68,6 +68,58 @@ are in the constructor. Singletons (`StateTracker`, `JobRepository`) are
 fetched via `Instance` and passed in explicitly — they are never located
 from inside a service.
 
+## MVC mapping — ready for the v2.0 WPF migration
+
+The layered architecture above maps cleanly onto the MVC triad the cahier
+requires for v2.0 (WPF / MVVM). Nothing in the business layer is tied to the
+console; swapping the view is a localised change in `Program.Main`.
+
+| MVC role | v1.0 implementation | Files |
+| --- | --- | --- |
+| **Model** | Domain types + business services. No UI dependency. | `src/EasySave/Models/BackupJob.cs`, `src/EasySave/StateEntry.cs`, `src/EasySave/BackupType.cs`, `src/EasySave/JobState.cs`, `src/EasySave/Services/BackupManager.cs`, `src/EasySave/Services/{Full,Differential}BackupStrategy.cs`, `src/EasySave/Services/{StateTracker,JobRepository,AppConfig,LanguageService}.cs`, `src/EasyLog/*` |
+| **View** | Rendering + user input. No business rule. | `src/EasySave/CLI/ConsoleUI.cs` |
+| **Controller** | Input parsing + orchestration between View and Model. | `src/EasySave/CLI/CommandParser.cs`, menu dispatcher in `ConsoleUI.Run()`, direct-mode dispatcher in `src/EasySave/Program.cs` |
+
+### What the View is **not** allowed to do (v1.0 audit)
+
+`ConsoleUI` has been reviewed against these rules and is compliant today:
+
+- No call to `File.Copy`, `File.WriteAllText`, `Directory.CreateDirectory`, or any filesystem API.
+- No JSON serialization or deserialization.
+- No backup-type decision — it only passes `BackupType` to `BackupManager`.
+- No enforcement of the 5-job limit, duplicate-name check, or path validation — these live in `BackupManager`.
+- No direct access to `StateTracker`, `JobRepository`, or `AppConfig` — it only talks to `BackupManager` and `LanguageService`.
+
+Service-layer exceptions carry **translation keys** (`"error.max_jobs"`, `"error.duplicate_job"`, ...), not prose. The View translates; it never invents the policy.
+
+### v1.0 → v2.0 migration path
+
+Switching from console to WPF is a two-line change in `Program.Main`:
+
+```csharp
+// v1.0 — console
+var ui = new ConsoleUI(backupManager, langService);
+ui.Run();
+```
+
+becomes:
+
+```csharp
+// v2.0 — WPF/MVVM (hypothetical)
+var app = new App();
+app.MainViewModel = new MainViewModel(backupManager, langService);
+app.Run();
+```
+
+`backupManager`, `langService`, and every service/model behind them stay
+untouched. The new `MainViewModel` consumes the exact same public API
+(`AddJob`, `RemoveJob`, `ListJobs`, `ExecuteJob`, `ExecuteAll`, `T(key)`),
+binds to WPF controls, and subscribes to progress by polling or wrapping
+`StateTracker` in a v2 event source.
+
+The `EasyLog` DLL v1.x contract is frozen (see [`src/EasyLog/README.md`](../src/EasyLog/README.md))
+and is reused as-is in v2.0 — no recompilation, no adapter.
+
 ## Design patterns
 
 | Pattern | Where | Why |
