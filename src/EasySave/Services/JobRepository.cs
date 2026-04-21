@@ -34,9 +34,16 @@ public sealed class JobRepository
                 var json = File.ReadAllText(path);
                 return JsonSerializer.Deserialize<List<BackupJob>>(json) ?? new List<BackupJob>();
             }
-            catch (Exception ex) when (ex is JsonException or IOException)
+            catch (JsonException ex)
             {
                 FileHelpers.QuarantineCorruptedFile(path, ex, "JobRepository");
+                return new List<BackupJob>();
+            }
+            catch (IOException)
+            {
+                // Transient read error (file locked by another process): treat as empty
+                // without quarantining, so the user's jobs.json is not lost if an antivirus
+                // or backup agent holds the file briefly.
                 return new List<BackupJob>();
             }
         }
