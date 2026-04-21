@@ -157,7 +157,7 @@ public sealed class ConsoleUI
             return;
         }
 
-        JobSelectionRunner.Execute(indices, jobs, _backupManager, _lang, Console.WriteLine, Console.WriteLine);
+        JobSelectionRunner.Execute(indices, jobs, _backupManager, _lang, Console.WriteLine, Console.Error.WriteLine);
     }
 
     private void ChangeLanguage()
