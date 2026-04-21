@@ -43,6 +43,9 @@ Thread-safe, atomic writes, designed to be shared across ProSoft applications.
 
 - [User manual](docs/user-manual.md) — end-user guide (1 page)
 - [Customer support guide](docs/support-client.md) — deployment, configuration, and support contacts
+- [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
+- [Architecture Decision Records](docs/adrs/) — design decisions and their rationale
+- [UML diagrams](docs/diagrams/) — use case, class, activity, sequence
 
 ## Contributing
 
