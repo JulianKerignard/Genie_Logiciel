@@ -7,10 +7,10 @@ namespace EasySave.Models;
 public sealed class AppSettings
 {
     [JsonPropertyName("encrypted_extensions")]
-    public List<string> EncryptedExtensions { get; init; } = new();
+    public IReadOnlyList<string> EncryptedExtensions { get; init; } = Array.Empty<string>();
 
     [JsonPropertyName("business_software_list")]
-    public List<string> BusinessSoftwareList { get; init; } = new();
+    public IReadOnlyList<string> BusinessSoftwareList { get; init; } = Array.Empty<string>();
 
     [JsonPropertyName("log_format")]
     public string LogFormat { get; init; } = "json";
