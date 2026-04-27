@@ -28,6 +28,9 @@ public sealed class AppConfig
     // Full path of the backup jobs definitions file.
     public string JobsFilePath { get; init; } = Path.Combine(DataRoot, "jobs.json");
 
+    // Full path of the user-managed settings file persisted by SettingsRepository.
+    public string SettingsFilePath { get; init; } = Path.Combine(DataRoot, "settings.json");
+
     // UI language code (ISO 639-1), e.g. "en" or "fr".
     public string Language { get; init; } = "en";
 
