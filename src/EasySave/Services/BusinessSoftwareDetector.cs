@@ -76,7 +76,12 @@ public sealed class BusinessSoftwareDetector : IDisposable
         if (started) Refresh();
     }
 
-    /// <summary>Stops the periodic timer. Safe to call multiple times.</summary>
+    /// <summary>
+    /// Stops the periodic timer. Safe to call multiple times. Note that
+    /// <see cref="System.Threading.Timer.Dispose()"/> is not synchronous: a
+    /// callback already in flight when Stop is called can still complete and
+    /// raise events afterwards.
+    /// </summary>
     public void Stop()
     {
         lock (_lock)
@@ -92,21 +97,24 @@ public sealed class BusinessSoftwareDetector : IDisposable
     /// </summary>
     public void Refresh()
     {
+        // Run the (potentially slow, 50–200 ms) OS call outside the lock so
+        // concurrent readers of IsAnyBusinessSoftwareRunning / CurrentlyRunning
+        // are not stalled for the full poll duration.
+        var running = _provider.GetRunningProcessNames();
+
         HashSet<string> appeared;
         HashSet<string> disappeared;
-
         lock (_lock)
         {
-            (appeared, disappeared) = ComputeTransitions();
+            (appeared, disappeared) = ComputeTransitions(running);
         }
 
         foreach (var name in appeared) BusinessSoftwareDetected?.Invoke(this, name);
         foreach (var name in disappeared) BusinessSoftwareClosed?.Invoke(this, name);
     }
 
-    private (HashSet<string> appeared, HashSet<string> disappeared) ComputeTransitions()
+    private (HashSet<string> appeared, HashSet<string> disappeared) ComputeTransitions(IReadOnlyCollection<string> running)
     {
-        var running = _provider.GetRunningProcessNames();
         var current = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in running)
         {

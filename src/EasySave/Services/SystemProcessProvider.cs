@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace EasySave.Services;
@@ -22,9 +23,13 @@ public sealed class SystemProcessProvider : IProcessProvider
                 {
                     names.Add(p.ProcessName);
                 }
-                catch (InvalidOperationException)
+                catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
                 {
-                    // The process exited between GetProcesses() and ProcessName access.
+                    // InvalidOperationException: the process exited between
+                    // GetProcesses() and ProcessName access.
+                    // Win32Exception: the OS denied access (protected/elevated process).
+                    // An unhandled exception here would crash the Timer thread and
+                    // terminate the host on .NET 8, so swallow both deliberately.
                 }
             }
             return names;

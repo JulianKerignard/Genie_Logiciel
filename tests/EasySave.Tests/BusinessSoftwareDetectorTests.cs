@@ -102,4 +102,25 @@ public class BusinessSoftwareDetectorTests
         Assert.Throws<ArgumentNullException>(() =>
             new BusinessSoftwareDetector(new FakeProcessProvider(), null!));
     }
+
+    [Fact]
+    public void Start_PerformsInitialPollSynchronously()
+    {
+        var provider = new FakeProcessProvider { Running = { "outlook" } };
+        // Long interval so the timer cannot fire before the assertion.
+        var detector = new BusinessSoftwareDetector(provider, new[] { "outlook" }, TimeSpan.FromMinutes(5));
+        var detected = new List<string>();
+        detector.BusinessSoftwareDetected += (_, name) => detected.Add(name);
+
+        detector.Start();
+        try
+        {
+            Assert.Equal(new[] { "outlook" }, detected);
+            Assert.True(detector.IsAnyBusinessSoftwareRunning);
+        }
+        finally
+        {
+            detector.Stop();
+        }
+    }
 }
