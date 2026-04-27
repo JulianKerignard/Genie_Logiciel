@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using EasySave.Models;
 
 namespace EasySave.Services;
 
@@ -30,17 +31,9 @@ public sealed class AppConfig
     // UI language code (ISO 639-1), e.g. "en" or "fr".
     public string Language { get; init; } = "en";
 
-    // Absolute path to the CryptoSoft executable used for v2.0 file encryption.
-    // Empty string means "not deployed yet"; consumers must skip encryption rather than fail.
-    public string CryptoSoftPath { get; init; } = string.Empty;
-
-    // Comma-separated list of file extensions (e.g. ".docx,.pdf") that must be encrypted
-    // when CryptoSoftPath is set. An empty list means no file is encrypted.
-    public string CryptoSoftExtensions { get; init; } = string.Empty;
-
-    // Per-file timeout (in milliseconds) for the CryptoSoft child process.
-    // Beyond this delay EasySave kills the process and logs the file as a failure.
-    public int CryptoSoftTimeoutMs { get; init; } = 30000;
+    // User-managed v2.0 settings parsed from the same appsettings.json.
+    // The keys live at the top level (encrypted_extensions, business_software_list, log_format, crypto_soft).
+    public AppSettings Settings { get; private set; } = new();
 
     [JsonConstructor]
     private AppConfig() { }
@@ -60,7 +53,9 @@ public sealed class AppConfig
         try
         {
             var json = File.ReadAllText(path);
-            Instance = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+            var config = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+            config.Settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            Instance = config;
         }
         catch (Exception ex) when (ex is JsonException or IOException)
         {

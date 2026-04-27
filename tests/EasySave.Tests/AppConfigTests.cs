@@ -66,33 +66,39 @@ public class AppConfigTests : IDisposable
     }
 
     [Fact]
-    public void Load_MissingCryptoKeys_KeepsCryptoDefaults()
+    public void Load_MissingFile_KeepsSettingsDefaults()
     {
-        var missing = Path.Combine(_tempDir, "no-crypto.json");
+        var missing = Path.Combine(_tempDir, "no-settings.json");
 
         AppConfig.Load(missing);
 
-        Assert.Equal(string.Empty, AppConfig.Instance.CryptoSoftPath);
-        Assert.Equal(string.Empty, AppConfig.Instance.CryptoSoftExtensions);
-        Assert.Equal(30000, AppConfig.Instance.CryptoSoftTimeoutMs);
+        Assert.Empty(AppConfig.Instance.Settings.EncryptedExtensions);
+        Assert.Empty(AppConfig.Instance.Settings.BusinessSoftwareList);
+        Assert.Equal("json", AppConfig.Instance.Settings.LogFormat);
+        Assert.Equal(string.Empty, AppConfig.Instance.Settings.CryptoSoft.Path);
     }
 
     [Fact]
-    public void Load_CryptoKeysProvided_RoundTrip()
+    public void Load_SettingsProvided_BindsAppSettings()
     {
-        var file = Path.Combine(_tempDir, "crypto-settings.json");
-        var payload = new
+        var file = Path.Combine(_tempDir, "settings.json");
+        var payload = """
         {
-            CryptoSoftPath = "/opt/cryptosoft/CryptoSoft.exe",
-            CryptoSoftExtensions = ".docx,.pdf",
-            CryptoSoftTimeoutMs = 5000
-        };
-        File.WriteAllText(file, JsonSerializer.Serialize(payload));
+            "Language": "fr",
+            "encrypted_extensions": [".pdf", ".docx"],
+            "business_software_list": ["calc.exe", "notepad.exe"],
+            "log_format": "xml",
+            "crypto_soft": { "path": "/opt/cryptosoft/CryptoSoft.exe" }
+        }
+        """;
+        File.WriteAllText(file, payload);
 
         AppConfig.Load(file);
 
-        Assert.Equal("/opt/cryptosoft/CryptoSoft.exe", AppConfig.Instance.CryptoSoftPath);
-        Assert.Equal(".docx,.pdf", AppConfig.Instance.CryptoSoftExtensions);
-        Assert.Equal(5000, AppConfig.Instance.CryptoSoftTimeoutMs);
+        Assert.Equal("fr", AppConfig.Instance.Language);
+        Assert.Equal(new[] { ".pdf", ".docx" }, AppConfig.Instance.Settings.EncryptedExtensions);
+        Assert.Equal(new[] { "calc.exe", "notepad.exe" }, AppConfig.Instance.Settings.BusinessSoftwareList);
+        Assert.Equal("xml", AppConfig.Instance.Settings.LogFormat);
+        Assert.Equal("/opt/cryptosoft/CryptoSoft.exe", AppConfig.Instance.Settings.CryptoSoft.Path);
     }
 }
