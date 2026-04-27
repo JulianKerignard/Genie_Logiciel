@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="EasySave.Tests" />
+    <InternalsVisibleTo Include="EasySave.Tests.V2" />
   </ItemGroup>
 
   <ItemGroup>
