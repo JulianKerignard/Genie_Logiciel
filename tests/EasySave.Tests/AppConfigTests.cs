@@ -64,4 +64,35 @@ public class AppConfigTests : IDisposable
 
         Assert.Equal("en", AppConfig.Instance.Language);
     }
+
+    [Fact]
+    public void Load_MissingCryptoKeys_KeepsCryptoDefaults()
+    {
+        var missing = Path.Combine(_tempDir, "no-crypto.json");
+
+        AppConfig.Load(missing);
+
+        Assert.Equal(string.Empty, AppConfig.Instance.CryptoSoftPath);
+        Assert.Equal(string.Empty, AppConfig.Instance.CryptoSoftExtensions);
+        Assert.Equal(30000, AppConfig.Instance.CryptoSoftTimeoutMs);
+    }
+
+    [Fact]
+    public void Load_CryptoKeysProvided_RoundTrip()
+    {
+        var file = Path.Combine(_tempDir, "crypto-settings.json");
+        var payload = new
+        {
+            CryptoSoftPath = "/opt/cryptosoft/CryptoSoft.exe",
+            CryptoSoftExtensions = ".docx,.pdf",
+            CryptoSoftTimeoutMs = 5000
+        };
+        File.WriteAllText(file, JsonSerializer.Serialize(payload));
+
+        AppConfig.Load(file);
+
+        Assert.Equal("/opt/cryptosoft/CryptoSoft.exe", AppConfig.Instance.CryptoSoftPath);
+        Assert.Equal(".docx,.pdf", AppConfig.Instance.CryptoSoftExtensions);
+        Assert.Equal(5000, AppConfig.Instance.CryptoSoftTimeoutMs);
+    }
 }
