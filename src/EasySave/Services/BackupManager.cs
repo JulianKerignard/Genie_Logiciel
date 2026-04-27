@@ -165,49 +165,68 @@ public sealed class BackupManager
         };
         _stateTracker.Update(state);
 
-        foreach (var (file, targetPath) in eligible)
+        bool succeeded = false;
+        try
         {
-            FileHelpers.EnsureDirectoryExists(targetPath);
+            foreach (var (file, targetPath) in eligible)
+            {
+                FileHelpers.EnsureDirectoryExists(targetPath);
 
-            var sw = Stopwatch.StartNew();
-            long transferMs;
+                var sw = Stopwatch.StartNew();
+                long transferMs;
+                try
+                {
+                    File.Copy(file.FullName, targetPath, overwrite: true);
+                    sw.Stop();
+                    transferMs = sw.ElapsedMilliseconds;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    sw.Stop();
+                    transferMs = -1;
+                }
+
+                _logger.Append(new LogEntry
+                {
+                    Timestamp = DateTimeOffset.Now.ToString("o"),
+                    JobName = job.Name,
+                    SourceFile = file.FullName,
+                    TargetFile = targetPath,
+                    FileSize = file.Length,
+                    FileTransferTimeMs = transferMs
+                });
+
+                state.FilesRemaining--;
+                state.SizeRemaining -= file.Length;
+                state.CurrentSource = file.FullName;
+                state.CurrentTarget = targetPath;
+                state.LastActionTime = DateTimeOffset.Now;
+                _stateTracker.Update(state);
+            }
+            succeeded = true;
+        }
+        finally
+        {
+            // Always flip the state back to Inactive, even if the loop above
+            // throws (logger I/O error, state writer failure, permission glitch).
+            // The conditional catch below only swallows on the failure path so
+            // the in-flight exception is not masked by a follow-up state-writer
+            // failure; on the success path any state-writer error propagates.
             try
             {
-                File.Copy(file.FullName, targetPath, overwrite: true);
-                sw.Stop();
-                transferMs = sw.ElapsedMilliseconds;
+                state.State = JobState.Inactive;
+                state.FilesRemaining = 0;
+                state.SizeRemaining = 0;
+                state.CurrentSource = string.Empty;
+                state.CurrentTarget = string.Empty;
+                state.LastActionTime = DateTimeOffset.Now;
+                _stateTracker.Update(state);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch when (!succeeded)
             {
-                sw.Stop();
-                transferMs = -1;
+                // Failure path only: do not replace the in-flight exception.
             }
-
-            _logger.Append(new LogEntry
-            {
-                Timestamp = DateTimeOffset.Now.ToString("o"),
-                JobName = job.Name,
-                SourceFile = file.FullName,
-                TargetFile = targetPath,
-                FileSize = file.Length,
-                FileTransferTimeMs = transferMs
-            });
-
-            state.FilesRemaining--;
-            state.SizeRemaining -= file.Length;
-            state.CurrentSource = file.FullName;
-            state.CurrentTarget = targetPath;
-            state.LastActionTime = DateTimeOffset.Now;
-            _stateTracker.Update(state);
         }
-
-        state.State = JobState.Inactive;
-        state.FilesRemaining = 0;
-        state.SizeRemaining = 0;
-        state.CurrentSource = string.Empty;
-        state.CurrentTarget = string.Empty;
-        state.LastActionTime = DateTimeOffset.Now;
-        _stateTracker.Update(state);
     }
 
     private static string GetTargetPath(BackupJob job, DirectoryInfo sourceDir, FileInfo file)
