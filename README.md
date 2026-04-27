@@ -85,9 +85,9 @@ public API), so v2.0 reuses the library without recompilation.
   available as a fallback for scripting and CI.
 - **File encryption via CryptoSoft** — selected file extensions (configured in
   `appsettings.json`) are passed through the external CryptoSoft binary during a
-  backup. Encryption time and failures are recorded in the daily log. See
-  [`docs/cryptosoft-integration.md`](docs/cryptosoft-integration.md) for the
-  integration contract.
+  backup. Encryption time and failures are recorded in the daily log. Integration
+  contract documented in `docs/cryptosoft-integration.md` (added by PR #71, lands
+  on staging once that PR merges).
 - **XML logger formatter** — `EasyLog` gains an `ILogFormatter` abstraction so
   daily logs can be written in JSON (current) or XML (with XSD schema). Choice
   exposed in `appsettings.json`.

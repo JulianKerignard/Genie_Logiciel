@@ -7,7 +7,9 @@ This file is loaded by the Claude Code Action during PR reviews. Keep reviews al
 - **EasySave** — console backup tool for the fictional editor **ProSoft**
 - School project: CESI PGE A3 FISE INFO, Software Engineering track
 - Team of 4 developers, solo owners per zone (see `docs/COMMIT_CONVENTION.md`)
-- This is **v1.0**. v2.0 will bring WPF/MVVM. v3.0 spec unknown for now.
+- v1.0 is released. v2.0 is in progress.
+- v2.0 GUI: the cahier mentions WPF/MVVM. The team chose **Avalonia** (cross-platform MVVM, same pattern as WPF) so the macOS members can run the app natively. Reviews must accept Avalonia as the v2.0 GUI framework.
+- v3.0 spec unknown for now.
 
 ## Solution layout
 
