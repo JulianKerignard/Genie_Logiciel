@@ -24,7 +24,8 @@ Path is resolved through `appsettings.json` via two new keys:
 {
   "Language": "en",
   "CryptoSoftPath": "C:\\Program Files\\ProSoft\\CryptoSoft\\CryptoSoft.exe",
-  "CryptoSoftExtensions": ".docx,.pdf,.xlsx"
+  "CryptoSoftExtensions": ".docx,.pdf,.xlsx",
+  "CryptoSoftTimeoutMs": 30000
 }
 ```
 
@@ -32,9 +33,11 @@ Path is resolved through `appsettings.json` via two new keys:
 |---|---|---|---|
 | `CryptoSoftPath` | string | `""` | Absolute path to the executable. Empty = encryption disabled. |
 | `CryptoSoftExtensions` | string | `""` | Comma-separated list of file extensions to encrypt (lowercase, leading dot). Empty = nothing is encrypted. |
+| `CryptoSoftTimeoutMs` | int | `30000` | Per-file timeout for the CryptoSoft child process, in milliseconds. |
 
 When `CryptoSoftPath` is empty, EasySave **must not fail**: the file is copied as-is
-and the log entry records `EncryptionTimeMs = 0` (no encryption performed).
+and the log entry records `EncryptionTimeMs = 0` (no encryption performed). See
+[Log entry contract](#log-entry-contract) below.
 
 ## CLI contract
 
@@ -61,11 +64,27 @@ CryptoSoft signals the elapsed encryption time **through the process exit code**
 | `>= 0` | Encryption succeeded. Value = elapsed time in milliseconds. |
 | `< 0` | Encryption failed. The negative value is an opaque error code. |
 
-EasySave logs this value into `LogEntry.FileTransferTimeMs` (consistent with the
-v1.0 convention: negative = failure).
+EasySave logs this value into a new `LogEntry.EncryptionTimeMs` field (see
+[Log entry contract](#log-entry-contract)). The v1.0 `FileTransferTimeMs`
+field stays reserved for the file copy duration and is unaffected.
 
-A timeout on the EasySave side wraps the call (default: 30 seconds per file). If
-the timeout fires, EasySave kills the process and logs `EncryptionTimeMs = -1`.
+A timeout on the EasySave side wraps the call. The duration is configurable via
+`CryptoSoftTimeoutMs` in `appsettings.json` (default: 30000 ms). If the timeout
+fires, EasySave kills the process and logs `EncryptionTimeMs = -1`.
+
+## Log entry contract
+
+EasySave logs **two distinct durations per file** in v2.0:
+
+| Field | Source | Meaning |
+|---|---|---|
+| `FileTransferTimeMs` | Stopwatch around `File.Copy` | File copy duration in ms (v1.0 contract, unchanged). Negative = copy failed. |
+| `EncryptionTimeMs` | CryptoSoft exit code | Encryption duration in ms. `0` = encryption not performed (path empty or extension out of scope). Negative = encryption failed. |
+
+> **Open point with Dev1 (EasyLog owner)**: the v1.0 `EasyLog.LogEntry` API is
+> frozen, so adding `EncryptionTimeMs` requires a coordinated EasyLog v1.1 release.
+> The new field must be additive (default `0`) so v1.0 consumers keep parsing the
+> log files unchanged.
 
 ## Single-instance constraint
 

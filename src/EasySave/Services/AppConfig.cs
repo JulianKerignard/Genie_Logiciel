@@ -38,6 +38,10 @@ public sealed class AppConfig
     // when CryptoSoftPath is set. An empty list means no file is encrypted.
     public string CryptoSoftExtensions { get; init; } = string.Empty;
 
+    // Per-file timeout (in milliseconds) for the CryptoSoft child process.
+    // Beyond this delay EasySave kills the process and logs the file as a failure.
+    public int CryptoSoftTimeoutMs { get; init; } = 30000;
+
     [JsonConstructor]
     private AppConfig() { }
 
