@@ -30,6 +30,14 @@ public sealed class AppConfig
     // UI language code (ISO 639-1), e.g. "en" or "fr".
     public string Language { get; init; } = "en";
 
+    // Absolute path to the CryptoSoft executable used for v2.0 file encryption.
+    // Empty string means "not deployed yet"; consumers must skip encryption rather than fail.
+    public string CryptoSoftPath { get; init; } = string.Empty;
+
+    // Comma-separated list of file extensions (e.g. ".docx,.pdf") that must be encrypted
+    // when CryptoSoftPath is set. An empty list means no file is encrypted.
+    public string CryptoSoftExtensions { get; init; } = string.Empty;
+
     [JsonConstructor]
     private AppConfig() { }
 
