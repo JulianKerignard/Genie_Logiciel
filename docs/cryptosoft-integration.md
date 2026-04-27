@@ -110,7 +110,7 @@ encryption failures on the loser.
 - Missing executable → `FileNotFoundException` raised by `Process.Start`. EasySave
   logs `EncryptionTimeMs = -1` and continues with the next file.
 - Non-zero negative exit code → log `EncryptionTimeMs = <code>` and continue.
-- Process hang → enforce the 30 s timeout, kill, log `-1`, continue.
+- Process hang → enforce the `CryptoSoftTimeoutMs` timeout, kill, log `-1`, continue.
 
 In every failure case the **backup job itself does not stop**. The user gets a
 warning message at the end summarizing the count of failed encryptions.
