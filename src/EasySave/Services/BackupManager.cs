@@ -165,6 +165,7 @@ public sealed class BackupManager
         };
         _stateTracker.Update(state);
 
+        bool succeeded = false;
         try
         {
             foreach (var (file, targetPath) in eligible)
@@ -202,25 +203,28 @@ public sealed class BackupManager
                 state.LastActionTime = DateTimeOffset.Now;
                 _stateTracker.Update(state);
             }
+            succeeded = true;
         }
         finally
         {
             // Always flip the state back to Inactive, even if the loop above
             // throws (logger I/O error, state writer failure, permission glitch).
-            // A nested try/catch keeps the original exception from being masked
-            // by a follow-up failure inside the state tracker.
+            // The conditional catch below only swallows on the failure path so
+            // the in-flight exception is not masked by a follow-up state-writer
+            // failure; on the success path any state-writer error propagates.
             try
             {
                 state.State = JobState.Inactive;
+                state.FilesRemaining = 0;
+                state.SizeRemaining = 0;
                 state.CurrentSource = string.Empty;
                 state.CurrentTarget = string.Empty;
                 state.LastActionTime = DateTimeOffset.Now;
                 _stateTracker.Update(state);
             }
-            catch
+            catch when (!succeeded)
             {
-                // Swallow on purpose: we are in a finally and must not replace
-                // the in-flight exception with a state-write follow-up.
+                // Failure path only: do not replace the in-flight exception.
             }
         }
     }
