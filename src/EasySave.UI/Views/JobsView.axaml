@@ -1,0 +1,121 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EasySave.UI.ViewModels"
+             xmlns:markup="using:EasySave.UI.Markup"
+             xmlns:models="using:EasySave.Models"
+             x:Class="EasySave.UI.Views.JobsView"
+             x:DataType="vm:JobsViewModel"
+             x:CompileBindings="False">
+
+    <DockPanel Margin="32,28,32,24">
+
+        <!-- Header row -->
+        <Grid DockPanel.Dock="Top"
+              ColumnDefinitions="*,Auto,Auto"
+              Margin="0,0,0,20">
+
+            <TextBlock Grid.Column="0"
+                       Text="{markup:T Key=jobs.title}"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+
+            <Button Grid.Column="1"
+                    Command="{Binding RunAllCommand}"
+                    Margin="0,0,8,0"
+                    Padding="14,8">
+                <TextBlock Text="{markup:T Key=jobs.run_all}" />
+            </Button>
+
+            <Button Grid.Column="2"
+                    Command="{Binding AddJobCommand}"
+                    Background="{StaticResource AccentBrush}"
+                    Foreground="White"
+                    Padding="14,8">
+                <TextBlock Text="{markup:T Key=jobs.add}" />
+            </Button>
+        </Grid>
+
+        <!-- Jobs list -->
+        <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="8">
+
+                <!-- Empty state -->
+                <TextBlock Text="{markup:T Key=jobs.empty}"
+                           HorizontalAlignment="Center"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="14"
+                           Margin="0,40,0,0"
+                           IsVisible="{Binding IsEmpty}" />
+
+                <!-- Job cards -->
+                <ItemsControl ItemsSource="{Binding Jobs}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:BackupJob">
+                            <Border Background="{StaticResource CardBackgroundBrush}"
+                                    CornerRadius="8"
+                                    Padding="16,14"
+                                    BoxShadow="0 1 4 0 #15000000">
+
+                                <Grid ColumnDefinitions="*,Auto">
+
+                                    <!-- Job info -->
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontSize="15"
+                                                   FontWeight="SemiBold" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding SourcePath}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource MutedTextBrush}" />
+                                            <TextBlock Text="→"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource MutedTextBrush}" />
+                                            <TextBlock Text="{Binding TargetPath}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource MutedTextBrush}" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Type}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource AccentBrush}" />
+                                    </StackPanel>
+
+                                    <!-- Action buttons -->
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="6"
+                                                VerticalAlignment="Center">
+
+                                        <Button Command="{Binding $parent[ItemsControl].DataContext.RunJobCommand}"
+                                                CommandParameter="{Binding}"
+                                                Padding="10,6"
+                                                FontSize="12">
+                                            <TextBlock Text="{markup:T Key=jobs.run}" />
+                                        </Button>
+
+                                        <Button Command="{Binding $parent[ItemsControl].DataContext.EditJobCommand}"
+                                                CommandParameter="{Binding}"
+                                                Padding="10,6"
+                                                FontSize="12">
+                                            <TextBlock Text="{markup:T Key=jobs.edit}" />
+                                        </Button>
+
+                                        <Button Command="{Binding $parent[ItemsControl].DataContext.DeleteJobCommand}"
+                                                CommandParameter="{Binding}"
+                                                Padding="10,6"
+                                                FontSize="12"
+                                                Foreground="#EF4444">
+                                            <TextBlock Text="{markup:T Key=jobs.delete}" />
+                                        </Button>
+
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
+</UserControl>
