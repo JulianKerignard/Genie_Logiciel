@@ -76,6 +76,38 @@ public class BusinessSoftwareDetectorTests
     }
 
     [Fact]
+    public void Refresh_WatchedHasExeSuffix_MatchesBareName()
+    {
+        // Process.ProcessName strips ".exe" on Windows; operators commonly write
+        // "calc.exe" in appsettings.json. The detector must accept both forms.
+        var provider = new FakeProcessProvider { Running = { "calc" } };
+        var detector = NewDetector(provider, "calc.exe");
+        var detected = new List<string>();
+        detector.BusinessSoftwareDetected += (_, name) => detected.Add(name);
+
+        detector.Refresh();
+
+        Assert.Single(detected);
+        Assert.True(detector.IsAnyBusinessSoftwareRunning);
+    }
+
+    [Fact]
+    public void Refresh_RunningHasExeSuffix_MatchesBareWatch()
+    {
+        // Symmetric case: a non-Windows or future provider that returns "calc.exe"
+        // must still match a "calc" watch entry.
+        var provider = new FakeProcessProvider { Running = { "calc.exe" } };
+        var detector = NewDetector(provider, "calc");
+        var detected = new List<string>();
+        detector.BusinessSoftwareDetected += (_, name) => detected.Add(name);
+
+        detector.Refresh();
+
+        Assert.Single(detected);
+        Assert.True(detector.IsAnyBusinessSoftwareRunning);
+    }
+
+    [Fact]
     public void Refresh_NoTransition_NoDuplicateEvent()
     {
         var provider = new FakeProcessProvider { Running = { "outlook" } };

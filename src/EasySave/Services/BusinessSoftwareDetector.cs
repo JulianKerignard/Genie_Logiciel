@@ -20,10 +20,19 @@ public sealed class BusinessSoftwareDetector : IDisposable
     private System.Threading.Timer? _timer;
     private HashSet<string> _lastDetected = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Raised once for each watched process that appears between two polls.</summary>
+    /// <summary>
+    /// Raised once for each watched process that appears between two polls.
+    /// The string argument is the canonical (normalized) process name without
+    /// any <c>.exe</c> suffix, regardless of how the watch list or provider
+    /// reported it.
+    /// </summary>
     public event EventHandler<string>? BusinessSoftwareDetected;
 
-    /// <summary>Raised once for each watched process that disappears between two polls.</summary>
+    /// <summary>
+    /// Raised once for each watched process that disappears between two polls.
+    /// The string argument follows the same canonical (normalized) form as
+    /// <see cref="BusinessSoftwareDetected"/>.
+    /// </summary>
     public event EventHandler<string>? BusinessSoftwareClosed;
 
     /// <param name="provider">Source of the running process names. Required.</param>
@@ -38,7 +47,13 @@ public sealed class BusinessSoftwareDetector : IDisposable
         ArgumentNullException.ThrowIfNull(watchedProcessNames);
 
         _provider = provider;
-        _watched = new HashSet<string>(watchedProcessNames, StringComparer.OrdinalIgnoreCase);
+        // Normalise once at construction so the per-poll comparison is a plain
+        // hash lookup. Stripping ".exe" lets operators write either "calc" or
+        // "calc.exe" in appsettings.json — Process.ProcessName always returns
+        // the bare name on Windows.
+        _watched = new HashSet<string>(
+            watchedProcessNames.Select(NormalizeProcessName),
+            StringComparer.OrdinalIgnoreCase);
         _pollInterval = pollInterval ?? DefaultPollInterval;
     }
 
@@ -118,7 +133,10 @@ public sealed class BusinessSoftwareDetector : IDisposable
         var current = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in running)
         {
-            if (_watched.Contains(name)) current.Add(name);
+            // Normalise the running name with the same rule used for _watched
+            // so providers that report "calc.exe" still match a "calc" watch.
+            var normalized = NormalizeProcessName(name);
+            if (_watched.Contains(normalized)) current.Add(normalized);
         }
 
         var appeared = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
@@ -129,6 +147,14 @@ public sealed class BusinessSoftwareDetector : IDisposable
 
         _lastDetected = current;
         return (appeared, disappeared);
+    }
+
+    private static string NormalizeProcessName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+        return name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? name[..^4]
+            : name;
     }
 
     /// <inheritdoc />
