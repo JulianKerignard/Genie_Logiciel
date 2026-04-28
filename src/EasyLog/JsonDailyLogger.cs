@@ -65,6 +65,7 @@ public sealed class JsonDailyLogger : IDailyLogger
             TargetFile = ToNormalizedPath(entry.TargetFile),
             FileSize = entry.FileSize,
             FileTransferTimeMs = entry.FileTransferTimeMs,
+            EncryptionTimeMs = entry.EncryptionTimeMs,
         };
 
         lock (_writeLock)
