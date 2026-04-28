@@ -71,24 +71,22 @@ public sealed class StateTracker
         lock (_lock)
         {
             var path = AppConfig.Instance.StateFilePath;
-            if (!File.Exists(path))
+            if (File.Exists(path))
             {
-                _jobs.TryRemove(name, out _);
-                return;
-            }
+                var states = ReadCurrentEntries(path);
+                var initialCount = states.Count;
+                states.RemoveAll(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 
-            var states = ReadCurrentEntries(path);
-            var initialCount = states.Count;
-            states.RemoveAll(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-
-            if (states.Count != initialCount)
-            {
-                FileHelpers.EnsureDirectoryExists(path);
-                FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+                if (states.Count != initialCount)
+                {
+                    FileHelpers.EnsureDirectoryExists(path);
+                    FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+                }
             }
         }
 
         // Outside the lock — same reasoning as Update for observable side-effects.
+        // Case-insensitive lookup so an entry added under a different casing is still evicted.
         var match = _jobs.Keys.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
         if (match is not null)
         {

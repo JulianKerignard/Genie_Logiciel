@@ -98,9 +98,16 @@ public class StateTrackerRemoveTests : IDisposable
     }
 
     [Fact]
-    public void Remove_NoStateFile_DoesNotThrow()
+    public void Remove_NoStateFile_StillEvictsJobProgress()
     {
-        var ex = Record.Exception(() => StateTracker.Instance.Remove("anything"));
+        var name = "no-file-" + Guid.NewGuid().ToString("N");
+        StateTracker.Instance.Update(new StateEntry { Name = name, State = JobState.Inactive });
+        File.Delete(_stateFilePath);
+        Assert.True(StateTracker.Instance.Jobs.ContainsKey(name));
+
+        var ex = Record.Exception(() => StateTracker.Instance.Remove(name.ToUpperInvariant()));
+
         Assert.Null(ex);
+        Assert.False(StateTracker.Instance.Jobs.ContainsKey(name));
     }
 }
