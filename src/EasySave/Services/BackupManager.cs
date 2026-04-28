@@ -17,6 +17,8 @@ public sealed class BackupManager
     private readonly IBackupStrategy _diffStrategy;
     private readonly StateTracker _stateTracker;
     private readonly JobRepository _jobRepository;
+    private readonly IEncryptionService _encryption;
+    private readonly HashSet<string> _encryptedExtensions;
 
     /// <summary>
     /// Wires the manager with its dependencies. All parameters are required;
@@ -27,24 +29,32 @@ public sealed class BackupManager
     /// <param name="diffStrategy">Strategy used for <see cref="BackupType.Differential"/> jobs.</param>
     /// <param name="stateTracker">Singleton state writer persisting to <c>state.json</c>.</param>
     /// <param name="jobRepository">Singleton repository persisting to <c>jobs.json</c>.</param>
+    /// <param name="encryption">Encryption side-channel; pass a <see cref="NoOpEncryptionService"/> to disable encryption.</param>
+    /// <param name="encryptedExtensions">File extensions (lowercase, leading dot) that must go through <paramref name="encryption"/> instead of a plain copy. Pass an empty list to disable.</param>
     public BackupManager(
         IDailyLogger logger,
         IBackupStrategy fullStrategy,
         IBackupStrategy diffStrategy,
         StateTracker stateTracker,
-        JobRepository jobRepository)
+        JobRepository jobRepository,
+        IEncryptionService encryption,
+        IEnumerable<string> encryptedExtensions)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(fullStrategy);
         ArgumentNullException.ThrowIfNull(diffStrategy);
         ArgumentNullException.ThrowIfNull(stateTracker);
         ArgumentNullException.ThrowIfNull(jobRepository);
+        ArgumentNullException.ThrowIfNull(encryption);
+        ArgumentNullException.ThrowIfNull(encryptedExtensions);
 
         _logger = logger;
         _fullStrategy = fullStrategy;
         _diffStrategy = diffStrategy;
         _stateTracker = stateTracker;
         _jobRepository = jobRepository;
+        _encryption = encryption;
+        _encryptedExtensions = new HashSet<string>(encryptedExtensions, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -166,19 +176,7 @@ public sealed class BackupManager
             {
                 FileHelpers.EnsureDirectoryExists(targetPath);
 
-                var sw = Stopwatch.StartNew();
-                long transferMs;
-                try
-                {
-                    File.Copy(file.FullName, targetPath, overwrite: true);
-                    sw.Stop();
-                    transferMs = sw.ElapsedMilliseconds;
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    sw.Stop();
-                    transferMs = -1;
-                }
+                var (transferMs, encryptionMs) = ProcessFile(file, targetPath);
 
                 _logger.Append(new LogEntry
                 {
@@ -187,7 +185,8 @@ public sealed class BackupManager
                     SourceFile = file.FullName,
                     TargetFile = targetPath,
                     FileSize = file.Length,
-                    FileTransferTimeMs = transferMs
+                    FileTransferTimeMs = transferMs,
+                    EncryptionTimeMs = encryptionMs,
                 });
 
                 state.FilesRemaining--;
@@ -227,5 +226,45 @@ public sealed class BackupManager
     {
         var relativePath = Path.GetRelativePath(sourceDir.FullName, file.FullName);
         return Path.Combine(job.TargetPath, relativePath);
+    }
+
+    // Routes a single file either through the encryption side-channel (if its
+    // extension is in the configured list) or through a plain File.Copy.
+    // Returns the two times to log: file transfer (always set, negative on
+    // failure) and encryption (null when no encryption was attempted).
+    private (long transferMs, long? encryptionMs) ProcessFile(FileInfo file, string targetPath)
+    {
+        if (ShouldEncrypt(file.Name))
+        {
+            var sw = Stopwatch.StartNew();
+            var result = _encryption.Encrypt(file.FullName, targetPath);
+            sw.Stop();
+
+            // CryptoSoft writes the encrypted bytes to targetPath itself, so the
+            // wall-clock duration of the Encrypt call doubles as the file
+            // transfer time for v1.0 log consumers.
+            long transferMs = result.Success ? sw.ElapsedMilliseconds : -1;
+            return (transferMs, result.EncryptionTimeMs);
+        }
+
+        var copyTimer = Stopwatch.StartNew();
+        try
+        {
+            File.Copy(file.FullName, targetPath, overwrite: true);
+            copyTimer.Stop();
+            return (copyTimer.ElapsedMilliseconds, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            copyTimer.Stop();
+            return (-1, null);
+        }
+    }
+
+    private bool ShouldEncrypt(string fileName)
+    {
+        if (_encryptedExtensions.Count == 0) return false;
+        var ext = Path.GetExtension(fileName);
+        return !string.IsNullOrEmpty(ext) && _encryptedExtensions.Contains(ext);
     }
 }
