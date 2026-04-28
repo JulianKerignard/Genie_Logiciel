@@ -240,6 +240,11 @@ public sealed class BackupManager
             var result = _encryption.Encrypt(file.FullName, targetPath);
             sw.Stop();
 
+            if (result.Success)
+            {
+                AlignTargetMtime(file, targetPath);
+            }
+
             // CryptoSoft writes the encrypted bytes to targetPath itself, so the
             // wall-clock duration of the Encrypt call doubles as the file
             // transfer time for v1.0 log consumers.
@@ -252,11 +257,30 @@ public sealed class BackupManager
         {
             File.Copy(file.FullName, targetPath, overwrite: true);
             copyTimer.Stop();
+            AlignTargetMtime(file, targetPath);
             return (copyTimer.ElapsedMilliseconds, null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return (-1, null);
+        }
+    }
+
+    // Carries the source file's LastWriteTimeUtc onto the target so the next
+    // run of DifferentialBackupStrategy can decide based on dates alone.
+    // This is what lets diff backups work for encrypted files (whose size
+    // never matches the source) without storing a parallel history file.
+    private static void AlignTargetMtime(FileInfo source, string targetPath)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(targetPath, source.LastWriteTimeUtc);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The copy already succeeded; failing to stamp the mtime only
+            // means the next diff run will re-copy this file. Better to keep
+            // going than to fail the whole job over a metadata write.
         }
     }
 
