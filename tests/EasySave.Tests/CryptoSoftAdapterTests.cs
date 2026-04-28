@@ -60,16 +60,14 @@ public class CryptoSoftAdapterTests
         Assert.ThrowsAny<ArgumentException>(() => adapter.Encrypt("/tmp/src", null!));
     }
 
-    [Fact]
+    [SkippableFact]
     public void Encrypt_TrueCommandUnix_ReturnsZeroMs()
     {
         // /bin/true exits with code 0 immediately and ignores arguments. Lets
         // us verify that the adapter parses exit code 0 as Succeeded(0).
-        // Skipped on Windows where there is no equivalent built-in.
-        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
-        {
-            return;
-        }
+        // Reported as Skipped (not Passed) on Windows so test results stay honest.
+        Skip.IfNot(OperatingSystem.IsLinux() || OperatingSystem.IsMacOS(),
+            "Requires /usr/bin/true; no built-in Windows equivalent.");
 
         var adapter = new CryptoSoftAdapter(new CryptoSoftSettings
         {
