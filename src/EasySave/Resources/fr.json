@@ -10,7 +10,6 @@
   "menu.invalid_choice": "Choix invalide. Veuillez réessayer.",
   "error.not_implemented": "Non implémenté.",
   "error.job_not_found": "Sauvegarde introuvable : {0}",
-  "error.max_jobs": "Maximum de 5 sauvegardes autorisées.",
   "error.invalid_selection": "Sélection invalide.",
   "error.invalid_backup_type": "Type invalide. Utilisez Full ou Differential.",
   "error.duplicate_job": "Un job avec ce nom existe déjà.",

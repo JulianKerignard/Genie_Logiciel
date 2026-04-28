@@ -7,13 +7,11 @@ namespace EasySave.Services;
 /// <summary>
 /// Orchestrates the lifecycle of backup jobs: CRUD operations against the
 /// persistent store, execution using the strategy pattern, real-time state
-/// updates, and per-file logging. Enforces the v1.0 cahier limit of 5 jobs.
+/// updates, and per-file logging. v2.0 lifts the v1.0 5-job cap; the number
+/// of jobs is now unlimited.
 /// </summary>
 public sealed class BackupManager
 {
-    /// <summary>Maximum number of jobs allowed at any time (cahier v1.0).</summary>
-    private const int MaxJobs = 5;
-
     private readonly IDailyLogger _logger;
     private readonly IBackupStrategy _fullStrategy;
     private readonly IBackupStrategy _diffStrategy;
@@ -57,8 +55,7 @@ public sealed class BackupManager
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="job"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when any of Name/SourcePath/TargetPath is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the repository already holds 5 jobs (key <c>error.max_jobs</c>)
-    /// or when a job with the same name exists (key <c>error.duplicate_job</c>).
+    /// Thrown when a job with the same name already exists (key <c>error.duplicate_job</c>).
     /// </exception>
     public void AddJob(BackupJob job)
     {
@@ -68,9 +65,6 @@ public sealed class BackupManager
         ArgumentException.ThrowIfNullOrWhiteSpace(job.TargetPath);
 
         var jobs = _jobRepository.Load().ToList();
-
-        if (jobs.Count >= MaxJobs)
-            throw new InvalidOperationException($"error.max_jobs: Maximum {MaxJobs} jobs allowed.");
 
         if (jobs.Any(j => j.Name.Equals(job.Name, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException($"error.duplicate_job: Job '{job.Name}' already exists.");
