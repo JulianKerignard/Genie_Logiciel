@@ -20,10 +20,19 @@ public sealed class BusinessSoftwareDetector : IDisposable
     private System.Threading.Timer? _timer;
     private HashSet<string> _lastDetected = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Raised once for each watched process that appears between two polls.</summary>
+    /// <summary>
+    /// Raised once for each watched process that appears between two polls.
+    /// The string argument is the canonical (normalized) process name without
+    /// any <c>.exe</c> suffix, regardless of how the watch list or provider
+    /// reported it.
+    /// </summary>
     public event EventHandler<string>? BusinessSoftwareDetected;
 
-    /// <summary>Raised once for each watched process that disappears between two polls.</summary>
+    /// <summary>
+    /// Raised once for each watched process that disappears between two polls.
+    /// The string argument follows the same canonical (normalized) form as
+    /// <see cref="BusinessSoftwareDetected"/>.
+    /// </summary>
     public event EventHandler<string>? BusinessSoftwareClosed;
 
     /// <param name="provider">Source of the running process names. Required.</param>

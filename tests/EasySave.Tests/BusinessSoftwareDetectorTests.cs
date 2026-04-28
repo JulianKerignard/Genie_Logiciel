@@ -104,6 +104,7 @@ public class BusinessSoftwareDetectorTests
         detector.Refresh();
 
         Assert.Single(detected);
+        Assert.True(detector.IsAnyBusinessSoftwareRunning);
     }
 
     [Fact]
