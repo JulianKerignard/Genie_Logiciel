@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Schema for EasySave daily log files produced by EasyLog v2 XmlFormatter.
+  Root element is <Logs> with zero or more <Entry> children appended over the day.
+  Embedded in the EasyLog assembly under logical name
+  "EasyLog.Schemas.easysave-log.xsd" so consumers can validate logs at runtime.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="qualified">
+
+  <xs:element name="Logs">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Entry" type="LogEntry"
+                    minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="LogEntry">
+    <xs:sequence>
+      <xs:element name="Timestamp"          type="xs:string"/>
+      <xs:element name="JobName"            type="xs:string"/>
+      <xs:element name="SourceFile"         type="xs:string"/>
+      <xs:element name="TargetFile"         type="xs:string"/>
+      <xs:element name="FileSize"           type="xs:long"/>
+      <xs:element name="FileTransferTimeMs" type="xs:long"/>
+      <xs:element name="EncryptionTimeMs"   type="xs:long" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>
