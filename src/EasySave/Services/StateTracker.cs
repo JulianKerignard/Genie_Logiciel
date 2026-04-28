@@ -61,6 +61,41 @@ public sealed class StateTracker
         JobProgressChanged?.Invoke(this, entry);
     }
 
+    // Drops the state entry for the given job name (case-insensitive) and rewrites state.json.
+    // No-op if no entry matches. Also evicts the matching JobProgress observable so the GUI
+    // stops binding to a deleted job.
+    public void Remove(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        lock (_lock)
+        {
+            var path = AppConfig.Instance.StateFilePath;
+            if (!File.Exists(path))
+            {
+                _jobs.TryRemove(name, out _);
+                return;
+            }
+
+            var states = ReadCurrentEntries(path);
+            var initialCount = states.Count;
+            states.RemoveAll(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+
+            if (states.Count != initialCount)
+            {
+                FileHelpers.EnsureDirectoryExists(path);
+                FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+            }
+        }
+
+        // Outside the lock — same reasoning as Update for observable side-effects.
+        var match = _jobs.Keys.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+        {
+            _jobs.TryRemove(match, out _);
+        }
+    }
+
     private static List<StateEntry> ReadCurrentEntries(string path)
     {
         if (!File.Exists(path))
