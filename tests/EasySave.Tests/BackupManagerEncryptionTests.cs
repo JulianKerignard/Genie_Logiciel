@@ -181,4 +181,38 @@ public class BackupManagerEncryptionTests : IDisposable
         manager.ExecuteJob("diff-crypto");
         Assert.Single(stub.Calls); // still one call, not two
     }
+
+    [Fact]
+    public void Execute_DiffStrategy_EncryptedFileModified_ReEncrypted()
+    {
+        // v2.0 grille +1: when the plaintext source is modified after a first
+        // diff backup, the second run must re-encrypt the file even though the
+        // encrypted target's size is still different from the source's.
+        var sourceFile = Path.Combine(_sourceDir, "secret.pdf");
+        File.WriteAllText(sourceFile, "secret");
+        JobRepository.Instance.Save(new List<BackupJob>
+        {
+            new()
+            {
+                Name = "diff-crypto-mod",
+                SourcePath = _sourceDir,
+                TargetPath = _targetDir,
+                Type = BackupType.Differential,
+            },
+        });
+
+        var stub = new StubEncryption(EncryptResult.Succeeded(5));
+        var manager = CreateManager(stub, ".pdf");
+
+        manager.ExecuteJob("diff-crypto-mod");
+        Assert.Single(stub.Calls);
+
+        // Touch the source: rewrite content and bump LastWriteTimeUtc clearly
+        // forward so the strategy sees a newer source.
+        File.WriteAllText(sourceFile, "secret v2");
+        File.SetLastWriteTimeUtc(sourceFile, DateTime.UtcNow.AddMinutes(1));
+
+        manager.ExecuteJob("diff-crypto-mod");
+        Assert.Equal(2, stub.Calls.Count);
+    }
 }
