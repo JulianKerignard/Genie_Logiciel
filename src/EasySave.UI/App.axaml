@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="EasySave.UI.App"
              xmlns:local="using:EasySave.UI"
+             xmlns:converters="using:EasySave.UI.Converters"
              RequestedThemeVariant="Default">
 
     <Application.DataTemplates>
@@ -14,6 +15,9 @@
 
     <Application.Resources>
         <ResourceDictionary>
+            <!-- Converters -->
+            <converters:StateToColorConverter x:Key="StateToColorConverter" />
+
             <!-- Sidebar palette -->
             <SolidColorBrush x:Key="SidebarBrush" Color="#1A1D2E" />
             <SolidColorBrush x:Key="SidebarHoverBrush" Color="#252840" />
