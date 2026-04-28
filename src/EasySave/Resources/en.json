@@ -17,6 +17,7 @@
   "error.invalid_language": "Invalid language. Supported: en, fr.",
   "error.source_not_found": "Source directory does not exist.",
   "error.execute_failed": "Execution error: {0}",
+  "error.persistence_unavailable": "Backup configuration file is temporarily locked. Please retry in a moment.",
   "prompt.job_name": "Enter job name: ",
   "prompt.source_path": "Enter source path: ",
   "prompt.target_path": "Enter target path: ",

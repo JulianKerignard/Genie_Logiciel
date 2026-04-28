@@ -94,6 +94,9 @@ public sealed class StateTracker
         }
     }
 
+    // Transient IOException is propagated to the caller (Update / Remove): swallowing it
+    // and returning [] would cause the next atomic write to overwrite state.json with only
+    // the current job's entry, wiping every other job's live state (issue #69).
     private static List<StateEntry> ReadCurrentEntries(string path)
     {
         if (!File.Exists(path))
@@ -109,12 +112,6 @@ public sealed class StateTracker
         catch (JsonException ex)
         {
             FileHelpers.QuarantineCorruptedFile(path, ex, "StateTracker");
-            return new List<StateEntry>();
-        }
-        catch (IOException)
-        {
-            // Transient read error (file locked by another process): treat as empty
-            // without quarantining, so the next Update rewrites the file.
             return new List<StateEntry>();
         }
     }

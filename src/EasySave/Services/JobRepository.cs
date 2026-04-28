@@ -19,6 +19,9 @@ public sealed class JobRepository
     // Loads the persisted list of backup jobs from disk, or an empty list if the file is missing.
     // If the file is present but corrupted, it is moved aside to a timestamped ".corrupted" copy
     // so the user's definitions are not lost silently.
+    // Transient IOException (antivirus / backup agent holding the file) is propagated:
+    // returning [] here would let the caller add a job and Save() over the existing file,
+    // wiping every previously-saved job (issue #69).
     public IReadOnlyList<BackupJob> Load()
     {
         lock (_lock)
@@ -37,13 +40,6 @@ public sealed class JobRepository
             catch (JsonException ex)
             {
                 FileHelpers.QuarantineCorruptedFile(path, ex, "JobRepository");
-                return new List<BackupJob>();
-            }
-            catch (IOException)
-            {
-                // Transient read error (file locked by another process): treat as empty
-                // without quarantining, so the user's jobs.json is not lost if an antivirus
-                // or backup agent holds the file briefly.
                 return new List<BackupJob>();
             }
         }

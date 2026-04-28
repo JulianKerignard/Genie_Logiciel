@@ -88,6 +88,10 @@ public sealed class ConsoleUI
             var key = colon >= 0 ? ex.Message[..colon].Trim() : ex.Message;
             Console.WriteLine(_lang.T(key));
         }
+        catch (IOException)
+        {
+            Console.WriteLine(_lang.T("error.persistence_unavailable"));
+        }
     }
 
     private void RemoveJob()
@@ -117,6 +121,10 @@ public sealed class ConsoleUI
         catch (KeyNotFoundException ex)
         {
             Console.WriteLine(string.Format(_lang.T("error.job_not_found"), ex.Message));
+        }
+        catch (IOException)
+        {
+            Console.WriteLine(_lang.T("error.persistence_unavailable"));
         }
     }
 
