@@ -35,8 +35,6 @@ public sealed class StateTracker
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        EventHandler<StateEntry>? handler;
-
         lock (_lock)
         {
             var path = AppConfig.Instance.StateFilePath;
@@ -47,18 +45,20 @@ public sealed class StateTracker
             states.Add(entry);
 
             FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
-
-            // Inside the lock so concurrent Updates for the same job name cannot interleave
-            // and produce a torn JobProgress (current_file from one call, percent from another).
-            var progress = _jobs.GetOrAdd(entry.Name, name => new JobProgress(name));
-            progress.CurrentFile = entry.CurrentSource;
-            progress.FilesRemaining = entry.FilesRemaining;
-            progress.Percent = entry.Progress;
-
-            handler = JobProgressChanged;
         }
 
-        handler?.Invoke(this, entry);
+        // Observable side-effects run outside _lock on purpose: PropertyChanged subscribers
+        // (Avalonia bindings, log forwarders) may call back into Update. Keeping them under
+        // _lock would deadlock or violate the lock invariant on re-entry.
+        // The trade-off is eventually-consistent JobProgress (state.json is always consistent;
+        // the in-memory observable can briefly see interleaved values under concurrent updates
+        // for the same job — acceptable for a transient progress display).
+        var progress = _jobs.GetOrAdd(entry.Name, name => new JobProgress(name));
+        progress.CurrentFile = entry.CurrentSource;
+        progress.FilesRemaining = entry.FilesRemaining;
+        progress.Percent = entry.Progress;
+
+        JobProgressChanged?.Invoke(this, entry);
     }
 
     private static List<StateEntry> ReadCurrentEntries(string path)
