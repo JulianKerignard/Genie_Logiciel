@@ -1,55 +1,74 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EasySave.Models;
+using EasySave.UI.Services;
 
 namespace EasySave.UI.ViewModels;
 
-/// <summary>
-/// Root view model for the application shell. Owns the active-view state
-/// and exposes navigation commands bound to the sidebar buttons.
-/// </summary>
 public sealed partial class MainWindowViewModel : ViewModelBase
 {
-    /// <summary>The view model currently rendered in the main content area.</summary>
+    private readonly IBackupManagerAdapter _backup;
+    private readonly BusinessWatcherService _watcher;
+
+    private JobsViewModel? _jobsVm;
+    private RunProgressViewModel? _progressVm;
+
     [ObservableProperty]
     private ViewModelBase _currentView = null!;
 
-    public MainWindowViewModel()
+    public MainWindowViewModel(IBackupManagerAdapter backup, BusinessWatcherService watcher)
     {
+        _backup = backup;
+        _watcher = watcher;
         NavigateToJobs();
     }
 
-    // ── Navigation ──────────────────────────────────────────────────────────
+    // ── Navigation ────────────────────────────────────────────────────────────
 
-    /// <summary>Switches the content area to the backup jobs list.</summary>
     [RelayCommand]
     private void NavigateToJobs()
     {
-        CurrentView = new JobsViewModel(openEdit: job => ShowJobEdit(job));
+        CurrentView = GetOrCreateJobsVm();
     }
 
-    /// <summary>Switches the content area to the settings screen.</summary>
     [RelayCommand]
     private void NavigateToSettings()
     {
         CurrentView = new SettingsViewModel();
     }
 
-    /// <summary>Switches the content area to the logs viewer.</summary>
     [RelayCommand]
     private void NavigateToLogs()
     {
         CurrentView = new LogsViewModel();
     }
 
-    // ── Sub-navigation ───────────────────────────────────────────────────────
+    // ── Sub-navigation ────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Navigates to the job create/edit form.
-    /// Pass <c>null</c> for a new job, or an existing <see cref="BackupJob"/> to edit.
-    /// </summary>
-    public void ShowJobEdit(BackupJob? job)
+    private void ShowJobEdit(BackupJob? job)
     {
         CurrentView = new JobEditViewModel(job, onDone: NavigateToJobs);
+    }
+
+    private void ShowRunProgress()
+    {
+        var jobsVm = GetOrCreateJobsVm();
+        if (_progressVm is null)
+        {
+            _progressVm = new RunProgressViewModel(jobsVm);
+            _progressVm.CloseRequested = () => CurrentView = jobsVm;
+        }
+        CurrentView = _progressVm;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private JobsViewModel GetOrCreateJobsVm()
+    {
+        if (_jobsVm is not null) return _jobsVm;
+        _jobsVm = new JobsViewModel(_backup, _watcher);
+        _jobsVm.RequestOpenJobEdit  = job => ShowJobEdit(job);
+        _jobsVm.RequestShowProgress = () => ShowRunProgress();
+        return _jobsVm;
     }
 }

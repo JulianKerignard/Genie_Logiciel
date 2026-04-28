@@ -8,11 +8,16 @@
   "jobs.edit": "Modifier",
   "jobs.delete": "Supprimer",
   "jobs.run": "Lancer",
+  "jobs.pause": "Pause",
+  "jobs.resume": "Reprendre",
   "jobs.name": "Nom",
   "jobs.source": "Source",
   "jobs.destination": "Destination",
   "jobs.type": "Type",
   "jobs.empty": "Aucune sauvegarde configurée.",
+  "jobs.state.active": "En cours",
+  "jobs.state.paused": "En pause",
+  "jobs.state.idle": "Prêt",
   "settings.title": "Paramètres",
   "settings.save": "Enregistrer",
   "settings.log_format": "Format des logs",
@@ -40,5 +45,9 @@
   "edit.type_diff": "Différentielle",
   "logs.title": "Journaux",
   "logs.empty": "Aucun journal disponible.",
-  "logs.coming_soon": "Affichage des journaux — disponible en phase 3."
+  "logs.coming_soon": "Affichage des journaux — disponible en phase 4.",
+  "progress.title": "Progression des sauvegardes",
+  "progress.files_remaining": "Fichiers restants :",
+  "progress.business_pause": "Jobs en pause — logiciel métier détecté :",
+  "progress.close": "Fermer la progression"
 }
