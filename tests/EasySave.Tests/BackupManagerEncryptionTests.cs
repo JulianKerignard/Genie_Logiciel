@@ -151,4 +151,34 @@ public class BackupManagerEncryptionTests : IDisposable
 
         Assert.Single(stub.Calls);
     }
+
+    [Fact]
+    public void Execute_DiffStrategy_EncryptedFileUnchanged_NotReEncrypted()
+    {
+        // v2.0 grille +1: differential backup must skip encrypted files when
+        // the plaintext source is unchanged, even though the target file's
+        // size never matches the source's.
+        File.WriteAllText(Path.Combine(_sourceDir, "secret.pdf"), "secret");
+        JobRepository.Instance.Save(new List<BackupJob>
+        {
+            new()
+            {
+                Name = "diff-crypto",
+                SourcePath = _sourceDir,
+                TargetPath = _targetDir,
+                Type = BackupType.Differential,
+            },
+        });
+
+        var stub = new StubEncryption(EncryptResult.Succeeded(5));
+        var manager = CreateManager(stub, ".pdf");
+
+        // First run: file is new, encryption fires.
+        manager.ExecuteJob("diff-crypto");
+        Assert.Single(stub.Calls);
+
+        // Second run: nothing on disk changed, so DiffStrategy must skip the file.
+        manager.ExecuteJob("diff-crypto");
+        Assert.Single(stub.Calls); // still one call, not two
+    }
 }
