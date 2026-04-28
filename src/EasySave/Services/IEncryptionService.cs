@@ -18,10 +18,3 @@ public interface IEncryptionService
     /// <param name="dest">Absolute path where the encrypted file is written. Parent directory must exist.</param>
     EncryptResult Encrypt(string source, string dest);
 }
-
-/// <summary>
-/// Outcome of a single <see cref="IEncryptionService.Encrypt"/> call.
-/// <paramref name="EncryptionTimeMs"/> follows the v2.0 logging convention:
-/// non-negative value = elapsed encryption time, negative value = failure.
-/// </summary>
-public record EncryptResult(bool Success, long EncryptionTimeMs);
