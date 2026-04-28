@@ -11,8 +11,8 @@ public sealed class StateToColorConverter : IValueConverter
         (UiJobState?)value switch
         {
             UiJobState.Running => new SolidColorBrush(Colors.Green),
-            UiJobState.Paused  => new SolidColorBrush(Color.Parse("#FF6B35")),
-            _                  => new SolidColorBrush(Color.Parse("#6B7280")),
+            UiJobState.Paused => new SolidColorBrush(Color.Parse("#FF6B35")),
+            _ => new SolidColorBrush(Color.Parse("#6B7280")),
         };
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

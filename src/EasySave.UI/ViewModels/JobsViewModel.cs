@@ -35,7 +35,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         LoadJobs();
         _backup.StateUpdated += OnStateUpdated;
         _watcher.BusinessSoftwareDetected += OnBusinessSoftwareDetected;
-        _watcher.BusinessSoftwareGone     += OnBusinessSoftwareGone;
+        _watcher.BusinessSoftwareGone += OnBusinessSoftwareGone;
         _watcher.Start();
     }
 

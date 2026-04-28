@@ -8,7 +8,7 @@ public sealed partial class BackupJobVM : ObservableObject
 {
     public BackupJob Model { get; }
 
-    public string Name       => Model.Name;
+    public string Name => Model.Name;
     public string SourcePath => Model.SourcePath;
     public string TargetPath => Model.TargetPath;
 
@@ -27,13 +27,13 @@ public sealed partial class BackupJobVM : ObservableObject
     [ObservableProperty] private int _filesRemaining;
 
     public bool IsRunning => UiState == UiJobState.Running;
-    public bool IsPaused  => UiState == UiJobState.Paused;
+    public bool IsPaused => UiState == UiJobState.Paused;
 
     public string StateDisplayName => UiState switch
     {
         UiJobState.Running => TranslationSource.Instance["jobs.state.active"],
-        UiJobState.Paused  => TranslationSource.Instance["jobs.state.paused"],
-        _                  => TranslationSource.Instance["jobs.state.idle"],
+        UiJobState.Paused => TranslationSource.Instance["jobs.state.paused"],
+        _ => TranslationSource.Instance["jobs.state.idle"],
     };
 
     public BackupJobVM(BackupJob model) => Model = model;

@@ -11,7 +11,7 @@ public sealed partial class RunProgressViewModel : ViewModelBase
     public ObservableCollection<BackupJobVM> Jobs => _jobsVm.Jobs;
 
     public bool IsBusinessSoftwareDetected => _jobsVm.IsBusinessSoftwareDetected;
-    public string DetectedSoftwareName     => _jobsVm.DetectedSoftwareName;
+    public string DetectedSoftwareName => _jobsVm.DetectedSoftwareName;
 
     // Set by MainWindowViewModel so this VM can trigger navigation back.
     public Action? CloseRequested { get; set; }
