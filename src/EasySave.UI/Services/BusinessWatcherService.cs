@@ -26,7 +26,7 @@ public sealed class BusinessWatcherService : IDisposable
 
         _detector = new BusinessSoftwareDetector(new SystemProcessProvider(), processNames!);
         _detector.BusinessSoftwareDetected += OnDetected;
-        _detector.BusinessSoftwareClosed    += OnClosed;
+        _detector.BusinessSoftwareClosed += OnClosed;
         _detector.Start();
     }
 
@@ -49,7 +49,7 @@ public sealed class BusinessWatcherService : IDisposable
         if (_detector is not null)
         {
             _detector.BusinessSoftwareDetected -= OnDetected;
-            _detector.BusinessSoftwareClosed   -= OnClosed;
+            _detector.BusinessSoftwareClosed -= OnClosed;
             _detector.Dispose();
         }
     }

@@ -67,7 +67,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         if (_jobsVm is not null) return _jobsVm;
         _jobsVm = new JobsViewModel(_backup, _watcher);
-        _jobsVm.RequestOpenJobEdit  = job => ShowJobEdit(job);
+        _jobsVm.RequestOpenJobEdit = job => ShowJobEdit(job);
         _jobsVm.RequestShowProgress = () => ShowRunProgress();
         return _jobsVm;
     }
