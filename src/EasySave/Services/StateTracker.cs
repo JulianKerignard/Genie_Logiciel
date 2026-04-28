@@ -17,11 +17,14 @@ public sealed class StateTracker
     private readonly ConcurrentDictionary<string, JobProgress> _jobs = new();
 
     // Raised after every Update with the snapshot just persisted.
-    // Subscribers receive the immutable StateEntry for inspection / logging.
+    // Subscribers receive the StateEntry passed to Update — treat it as a snapshot
+    // and do not mutate; StateEntry currently has public setters but is used as a DTO.
     public event EventHandler<StateEntry>? JobProgressChanged;
 
     // Live observable views, indexed by job name. The same instance is reused across updates
-    // so GUI bindings stay attached for the lifetime of the job.
+    // so GUI bindings stay attached for the lifetime of a job.
+    // Entries are never auto-removed: finished jobs stay in the map so the GUI keeps showing
+    // their final progress until the consumer explicitly chooses to filter or evict them.
     public IReadOnlyDictionary<string, JobProgress> Jobs => _jobs;
 
     private StateTracker() { }
@@ -31,6 +34,8 @@ public sealed class StateTracker
     public void Update(StateEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
+
+        EventHandler<StateEntry>? handler;
 
         lock (_lock)
         {
@@ -42,14 +47,17 @@ public sealed class StateTracker
             states.Add(entry);
 
             FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+
+            // Inside the lock so concurrent Updates for the same job name cannot interleave
+            // and produce a torn JobProgress (current_file from one call, percent from another).
+            var progress = _jobs.GetOrAdd(entry.Name, name => new JobProgress(name));
+            progress.CurrentFile = entry.CurrentSource;
+            progress.FilesRemaining = entry.FilesRemaining;
+            progress.Percent = entry.Progress;
+
+            handler = JobProgressChanged;
         }
 
-        var progress = _jobs.GetOrAdd(entry.Name, name => new JobProgress(name));
-        progress.CurrentFile = entry.CurrentSource;
-        progress.FilesRemaining = entry.FilesRemaining;
-        progress.Percent = entry.Progress;
-
-        var handler = JobProgressChanged;
         handler?.Invoke(this, entry);
     }
 
