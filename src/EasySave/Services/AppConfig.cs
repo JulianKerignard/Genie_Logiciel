@@ -39,6 +39,13 @@ public sealed class AppConfig
     [JsonConstructor]
     private AppConfig() { }
 
+    // Case-insensitive matching so a V1 appsettings.json ({"Language":"en"}) still binds
+    // to AppSettings.Language (declared as JsonPropertyName "language") at upgrade time.
+    private static readonly JsonSerializerOptions DeserializeOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     // Loads the configuration from the given JSON file, or keeps the defaults if the file is missing or invalid.
     // When path is null, appsettings.json is read from the executable directory.
     public static void Load(string? path = null)
@@ -54,8 +61,8 @@ public sealed class AppConfig
         try
         {
             var json = File.ReadAllText(path);
-            var config = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
-            config.Settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            var config = JsonSerializer.Deserialize<AppConfig>(json, DeserializeOptions) ?? new AppConfig();
+            config.Settings = JsonSerializer.Deserialize<AppSettings>(json, DeserializeOptions) ?? new AppSettings();
             Instance = config;
         }
         catch (Exception ex) when (ex is JsonException or IOException)
