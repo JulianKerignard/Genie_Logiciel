@@ -38,19 +38,20 @@ public sealed class CryptoSoftAdapter : IEncryptionService
             FileName = _settings.Path,
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            // Standard streams are intentionally NOT redirected: the contract
+            // (docs/cryptosoft-integration.md) communicates only via the exit
+            // code. Redirecting without draining the OS pipes would deadlock
+            // CryptoSoft as soon as it writes past the pipe buffer (~64 KB).
         };
         psi.ArgumentList.Add(source);
         psi.ArgumentList.Add(dest);
 
         try
         {
-            using var process = Process.Start(psi);
-            if (process is null)
-            {
-                return EncryptResult.Failed();
-            }
+            // Process.Start with UseShellExecute=false returns a live Process
+            // or throws — it never returns null. The null-forgiving operator
+            // documents that contract for static analysis.
+            using var process = Process.Start(psi)!;
 
             var timeoutMs = _settings.TimeoutMs > 0 ? _settings.TimeoutMs : 30000;
             if (!process.WaitForExit(timeoutMs))

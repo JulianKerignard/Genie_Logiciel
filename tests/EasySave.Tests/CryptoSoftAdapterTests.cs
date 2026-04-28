@@ -47,7 +47,9 @@ public class CryptoSoftAdapterTests
     {
         var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = "anything" });
 
-        Assert.Throws<ArgumentException>(() => adapter.Encrypt(null!, "/tmp/dst"));
+        // ArgumentException.ThrowIfNullOrWhiteSpace surfaces ArgumentNullException
+        // for null and ArgumentException for whitespace; ThrowsAny accepts both.
+        Assert.ThrowsAny<ArgumentException>(() => adapter.Encrypt(null!, "/tmp/dst"));
     }
 
     [Fact]
@@ -55,7 +57,7 @@ public class CryptoSoftAdapterTests
     {
         var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = "anything" });
 
-        Assert.Throws<ArgumentException>(() => adapter.Encrypt("/tmp/src", null!));
+        Assert.ThrowsAny<ArgumentException>(() => adapter.Encrypt("/tmp/src", null!));
     }
 
     [Fact]

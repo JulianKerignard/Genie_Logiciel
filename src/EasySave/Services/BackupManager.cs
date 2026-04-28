@@ -256,7 +256,6 @@ public sealed class BackupManager
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            copyTimer.Stop();
             return (-1, null);
         }
     }
