@@ -18,24 +18,29 @@ on the CryptoSoft side that breaks one of these points must be coordinated with 
 
 ## Configuration
 
-Path is resolved through `appsettings.json` via two new keys:
+Three keys in `appsettings.json` drive the integration. They live alongside the
+other v2.0 settings parsed by `AppSettings`:
 
 ```json
 {
-  "Language": "en",
-  "CryptoSoftPath": "C:\\Program Files\\ProSoft\\CryptoSoft\\CryptoSoft.exe",
-  "CryptoSoftExtensions": ".docx,.pdf,.xlsx",
-  "CryptoSoftTimeoutMs": 30000
+  "language": "en",
+  "encrypted_extensions": [".pdf", ".docx", ".xlsx"],
+  "business_software": ["calc.exe", "notepad.exe"],
+  "log_format": "json",
+  "crypto_soft": {
+    "path": "C:\\Program Files\\ProSoft\\CryptoSoft\\CryptoSoft.exe",
+    "timeout_ms": 30000
+  }
 }
 ```
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `CryptoSoftPath` | string | `""` | Absolute path to the executable. Empty = encryption disabled. |
-| `CryptoSoftExtensions` | string | `""` | Comma-separated list of file extensions to encrypt (lowercase, leading dot). Empty = nothing is encrypted. |
-| `CryptoSoftTimeoutMs` | int | `30000` | Per-file timeout for the CryptoSoft child process, in milliseconds. |
+| JSON key | C# property | Type | Default | Meaning |
+|---|---|---|---|---|
+| `crypto_soft.path` | `AppSettings.CryptoSoft.Path` | string | `""` | Absolute path to the executable. Empty = encryption disabled. |
+| `crypto_soft.timeout_ms` | `AppSettings.CryptoSoft.TimeoutMs` | int | `30000` | Per-file timeout for the CryptoSoft child process, in milliseconds. |
+| `encrypted_extensions` | `AppSettings.EncryptedExtensions` | string array | `[]` | File extensions (lowercase, leading dot) that must be encrypted. Empty = nothing is encrypted. |
 
-When `CryptoSoftPath` is empty, EasySave **must not fail**: the file is copied as-is
+When `crypto_soft.path` is empty, EasySave **must not fail**: the file is copied as-is
 and the log entry records `EncryptionTimeMs = 0` (no encryption performed). See
 [Log entry contract](#log-entry-contract) below.
 
@@ -69,7 +74,7 @@ EasySave logs this value into a new `LogEntry.EncryptionTimeMs` field (see
 field stays reserved for the file copy duration and is unaffected.
 
 A timeout on the EasySave side wraps the call. The duration is configurable via
-`CryptoSoftTimeoutMs` in `appsettings.json` (default: 30000 ms). If the timeout
+`crypto_soft.timeout_ms` in `appsettings.json` (default: 30000 ms). If the timeout
 fires, EasySave kills the process and logs `EncryptionTimeMs = -1`.
 
 ## Log entry contract
@@ -110,7 +115,7 @@ encryption failures on the loser.
 - Missing executable → `FileNotFoundException` raised by `Process.Start`. EasySave
   logs `EncryptionTimeMs = -1` and continues with the next file.
 - Non-zero negative exit code → log `EncryptionTimeMs = <code>` and continue.
-- Process hang → enforce the `CryptoSoftTimeoutMs` timeout, kill, log `-1`, continue.
+- Process hang → enforce the `crypto_soft.timeout_ms` timeout, kill, log `-1`, continue.
 
 In every failure case the **backup job itself does not stop**. The user gets a
 warning message at the end summarizing the count of failed encryptions.

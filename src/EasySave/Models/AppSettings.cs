@@ -27,4 +27,9 @@ public sealed class CryptoSoftSettings
 {
     [JsonPropertyName("path")]
     public string Path { get; init; } = string.Empty;
+
+    // Per-file timeout for the CryptoSoft child process. EasySave kills the
+    // process and logs the file as a failure once this delay elapses.
+    [JsonPropertyName("timeout_ms")]
+    public int TimeoutMs { get; init; } = 30000;
 }
