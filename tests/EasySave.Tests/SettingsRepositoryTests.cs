@@ -49,7 +49,7 @@ public class SettingsRepositoryTests : IDisposable
     [Fact]
     public void Save_ThenLoad_RoundTrip()
     {
-        var saved = new GeneralSettings
+        var saved = new AppSettings
         {
             EncryptedExtensions = new[] { ".pdf", ".docx" },
             BusinessSoftware = new[] { "calc.exe" },
@@ -69,12 +69,12 @@ public class SettingsRepositoryTests : IDisposable
     [Fact]
     public void Save_RaisesSettingsChanged()
     {
-        GeneralSettings? received = null;
-        EventHandler<GeneralSettings> handler = (_, s) => received = s;
+        AppSettings? received = null;
+        EventHandler<AppSettings> handler = (_, s) => received = s;
         SettingsRepository.Instance.SettingsChanged += handler;
         try
         {
-            var settings = new GeneralSettings { Language = "fr" };
+            var settings = new AppSettings { Language = "fr" };
             SettingsRepository.Instance.Save(settings);
         }
         finally
@@ -89,7 +89,7 @@ public class SettingsRepositoryTests : IDisposable
     [Fact]
     public void Save_LeavesNoTempFiles()
     {
-        SettingsRepository.Instance.Save(new GeneralSettings { Language = "fr" });
+        SettingsRepository.Instance.Save(new AppSettings { Language = "fr" });
 
         Assert.Empty(Directory.GetFiles(_tempDir, "*.tmp"));
     }

@@ -13,42 +13,42 @@ public sealed class SettingsRepository
 
     private readonly object _lock = new();
 
-    public event EventHandler<GeneralSettings>? SettingsChanged;
+    public event EventHandler<AppSettings>? SettingsChanged;
 
     private SettingsRepository() { }
 
     // Loads the persisted settings from disk, or defaults if the file is missing.
     // A corrupted file is moved aside to a timestamped ".corrupted" copy so the user's
     // values are not lost silently.
-    public GeneralSettings Load()
+    public AppSettings Load()
     {
         lock (_lock)
         {
             var path = AppConfig.Instance.SettingsFilePath;
             if (!File.Exists(path))
             {
-                return new GeneralSettings();
+                return new AppSettings();
             }
 
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<GeneralSettings>(json) ?? new GeneralSettings();
+                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
             }
             catch (JsonException ex)
             {
                 FileHelpers.QuarantineCorruptedFile(path, ex, "SettingsRepository");
-                return new GeneralSettings();
+                return new AppSettings();
             }
             catch (IOException)
             {
-                return new GeneralSettings();
+                return new AppSettings();
             }
         }
     }
 
     // Persists the given settings atomically and notifies subscribers.
-    public void Save(GeneralSettings settings)
+    public void Save(AppSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
