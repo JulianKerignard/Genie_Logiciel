@@ -127,6 +127,14 @@
                                                 <TextBlock Text="{markup:T Key=jobs.pause}" />
                                             </Button>
 
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.ResumeJobCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Padding="10,6"
+                                                    FontSize="12"
+                                                    IsVisible="{Binding IsPaused}">
+                                                <TextBlock Text="{markup:T Key=jobs.resume}" />
+                                            </Button>
+
                                             <Button Command="{Binding $parent[ItemsControl].DataContext.EditJobCommand}"
                                                     CommandParameter="{Binding}"
                                                     Padding="10,6"

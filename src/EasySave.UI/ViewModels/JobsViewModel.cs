@@ -12,6 +12,8 @@ public sealed partial class JobsViewModel : ViewModelBase
 {
     private readonly IBackupManagerAdapter _backup;
     private readonly BusinessWatcherService _watcher;
+    // Tracks jobs paused by the watcher (distinct from user-initiated pauses).
+    private readonly HashSet<string> _watcherPausedJobs = new();
 
     // Set by MainWindowViewModel after construction.
     public Action<BackupJob?>? RequestOpenJobEdit { get; set; }
@@ -54,9 +56,18 @@ public sealed partial class JobsViewModel : ViewModelBase
             vm.Progress = (int)entry.Progress;
             vm.CurrentFile = entry.CurrentSource;
             vm.FilesRemaining = entry.FilesRemaining;
-            // Don't override a watcher-imposed Paused state.
-            if (vm.UiState != UiJobState.Paused)
-                vm.UiState = entry.State == JobState.Active ? UiJobState.Running : UiJobState.Idle;
+            if (entry.State == JobState.Active)
+            {
+                // Only promote Idle → Running; don't touch a user-paused job.
+                if (vm.UiState == UiJobState.Idle) vm.UiState = UiJobState.Running;
+            }
+            else
+            {
+                // Backend finished (Inactive): always reset to Idle so a job that
+                // ran to completion while "paused" doesn't stay stuck on Paused.
+                vm.UiState = UiJobState.Idle;
+                _watcherPausedJobs.Remove(vm.Name);
+            }
         });
     }
 
@@ -68,6 +79,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         DetectedSoftwareName = name;
         foreach (var job in Jobs.Where(j => j.UiState == UiJobState.Running).ToList())
         {
+            _watcherPausedJobs.Add(job.Name);
             job.UiState = UiJobState.Paused;
             _backup.PauseJob(job.Name);
         }
@@ -77,8 +89,11 @@ public sealed partial class JobsViewModel : ViewModelBase
     {
         IsBusinessSoftwareDetected = false;
         DetectedSoftwareName = string.Empty;
-        foreach (var job in Jobs.Where(j => j.UiState == UiJobState.Paused).ToList())
+        // Only resume jobs that the watcher itself paused; leave user-paused jobs alone.
+        foreach (var job in Jobs.Where(j => j.UiState == UiJobState.Paused
+                                         && _watcherPausedJobs.Contains(j.Name)).ToList())
         {
+            _watcherPausedJobs.Remove(job.Name);
             job.UiState = UiJobState.Running;
             _backup.ResumeJob(job.Name);
         }

@@ -18,6 +18,7 @@ public sealed partial class BackupJobVM : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning))]
+    [NotifyPropertyChangedFor(nameof(IsPaused))]
     [NotifyPropertyChangedFor(nameof(StateDisplayName))]
     private UiJobState _uiState = UiJobState.Idle;
 
@@ -26,6 +27,7 @@ public sealed partial class BackupJobVM : ObservableObject
     [ObservableProperty] private int _filesRemaining;
 
     public bool IsRunning => UiState == UiJobState.Running;
+    public bool IsPaused  => UiState == UiJobState.Paused;
 
     public string StateDisplayName => UiState switch
     {

@@ -52,12 +52,18 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
             await Task.Run(() => _manager.ExecuteJob(jobName), cts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
-        catch (Exception) { throw; }
         finally
         {
+            // Fix: read IsCancellationRequested before releasing the CTS so the
+            // race window between ExecuteJob returning and this finally block is
+            // closed — PauseJob may have added the job to _pausedByUs during that
+            // window; if the task completed normally we must evict the stale entry
+            // to prevent an unwanted re-run on the next Resume call.
+            bool cancelledByPause = cts.IsCancellationRequested;
             lock (_lock)
             {
                 _running.Remove(jobName);
+                if (!cancelledByPause) _pausedByUs.Remove(jobName);
                 cts.Dispose();
             }
             if (!HasRunningJobs()) StopPolling();
