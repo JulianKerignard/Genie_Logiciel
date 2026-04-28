@@ -102,6 +102,7 @@ public sealed class BackupManager
 
         jobs.RemoveAt(index);
         _jobRepository.Save(jobs);
+        _stateTracker.Remove(name);
     }
 
     /// <summary>Returns the current list of configured jobs, read from disk.</summary>
