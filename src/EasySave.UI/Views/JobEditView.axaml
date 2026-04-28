@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EasySave.UI.ViewModels"
+             xmlns:markup="using:EasySave.UI.Markup"
+             x:Class="EasySave.UI.Views.JobEditView"
+             x:DataType="vm:JobEditViewModel"
+             x:CompileBindings="False">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="40,32" Spacing="0" MaxWidth="560">
+
+            <!-- Title -->
+            <TextBlock Text="{Binding Title}"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,28" />
+
+            <!-- Job Name -->
+            <TextBlock Text="{markup:T Key=edit.name}"
+                       FontSize="13"
+                       FontWeight="Medium"
+                       Margin="0,0,0,6" />
+            <TextBox Text="{Binding Name}"
+                     PlaceholderText="My Backup Job"
+                     Margin="0,0,0,18" />
+
+            <!-- Source Path -->
+            <TextBlock Text="{markup:T Key=edit.source}"
+                       FontSize="13"
+                       FontWeight="Medium"
+                       Margin="0,0,0,6" />
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,18">
+                <TextBox Grid.Column="0"
+                         Text="{Binding SourcePath}"
+                         PlaceholderText="C:\Users\user\Documents"
+                         Margin="0,0,8,0" />
+                <Button Grid.Column="1"
+                        Command="{Binding BrowseSourceCommand}"
+                        Padding="12,8">
+                    <TextBlock Text="{markup:T Key=edit.browse}" />
+                </Button>
+            </Grid>
+
+            <!-- Destination Path -->
+            <TextBlock Text="{markup:T Key=edit.destination}"
+                       FontSize="13"
+                       FontWeight="Medium"
+                       Margin="0,0,0,6" />
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,18">
+                <TextBox Grid.Column="0"
+                         Text="{Binding DestinationPath}"
+                         PlaceholderText="D:\Backup\Documents"
+                         Margin="0,0,8,0" />
+                <Button Grid.Column="1"
+                        Command="{Binding BrowseDestinationCommand}"
+                        Padding="12,8">
+                    <TextBlock Text="{markup:T Key=edit.browse}" />
+                </Button>
+            </Grid>
+
+            <!-- Backup Type -->
+            <TextBlock Text="{markup:T Key=edit.type}"
+                       FontSize="13"
+                       FontWeight="Medium"
+                       Margin="0,0,0,6" />
+            <ComboBox ItemsSource="{Binding BackupTypes}"
+                      SelectedItem="{Binding BackupType}"
+                      HorizontalAlignment="Stretch"
+                      Margin="0,0,0,32" />
+
+            <!-- Action buttons -->
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12"
+                        HorizontalAlignment="Right">
+                <Button Command="{Binding CancelCommand}"
+                        Padding="16,10">
+                    <TextBlock Text="{markup:T Key=edit.cancel}" />
+                </Button>
+                <Button Command="{Binding SaveCommand}"
+                        Background="{StaticResource AccentBrush}"
+                        Foreground="White"
+                        Padding="16,10">
+                    <TextBlock Text="{markup:T Key=edit.save}" />
+                </Button>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

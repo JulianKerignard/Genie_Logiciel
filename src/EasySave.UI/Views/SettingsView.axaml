@@ -1,0 +1,173 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EasySave.UI.ViewModels"
+             xmlns:markup="using:EasySave.UI.Markup"
+             x:Class="EasySave.UI.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel"
+             x:CompileBindings="False">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="32,28" Spacing="0" MaxWidth="640">
+
+            <!-- Title -->
+            <TextBlock Text="{markup:T Key=settings.title}"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,28" />
+
+            <!-- ── Section: Encrypted Extensions ───────────────────────────── -->
+            <TextBlock Text="{markup:T Key=settings.encrypted_extensions}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,10" />
+
+            <Border Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="16"
+                    Margin="0,0,0,8"
+                    BoxShadow="0 1 4 0 #10000000">
+                <StackPanel Spacing="6">
+                    <ItemsControl ItemsSource="{Binding EncryptedExtensions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding}"
+                                               VerticalAlignment="Center"
+                                               FontFamily="Cascadia Code, Consolas, monospace" />
+                                    <Button Grid.Column="1"
+                                            Command="{Binding $parent[ItemsControl].DataContext.RemoveExtensionCommand}"
+                                            CommandParameter="{Binding}"
+                                            Padding="8,4"
+                                            FontSize="12"
+                                            Foreground="#EF4444">
+                                        <TextBlock Text="{markup:T Key=settings.remove}" />
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Add row -->
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding NewExtensionInput}"
+                                 PlaceholderText=".docx"
+                                 Margin="0,0,8,0" />
+                        <Button Grid.Column="1"
+                                Command="{Binding AddExtensionCommand}"
+                                CommandParameter="{Binding NewExtensionInput}"
+                                Padding="10,8">
+                            <TextBlock Text="{markup:T Key=settings.add}" />
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Section: Business Software ─────────────────────────────── -->
+            <TextBlock Text="{markup:T Key=settings.business_software}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0,16,0,10" />
+
+            <Border Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="16"
+                    Margin="0,0,0,8"
+                    BoxShadow="0 1 4 0 #10000000">
+                <StackPanel Spacing="6">
+                    <ItemsControl ItemsSource="{Binding BusinessSoftwareList}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding}"
+                                               VerticalAlignment="Center"
+                                               FontFamily="Cascadia Code, Consolas, monospace" />
+                                    <Button Grid.Column="1"
+                                            Command="{Binding $parent[ItemsControl].DataContext.RemoveBusinessSoftwareCommand}"
+                                            CommandParameter="{Binding}"
+                                            Padding="8,4"
+                                            FontSize="12"
+                                            Foreground="#EF4444">
+                                        <TextBlock Text="{markup:T Key=settings.remove}" />
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Add row -->
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding NewSoftwareInput}"
+                                 PlaceholderText="notepad.exe"
+                                 Margin="0,0,8,0" />
+                        <Button Grid.Column="1"
+                                Command="{Binding AddBusinessSoftwareCommand}"
+                                CommandParameter="{Binding NewSoftwareInput}"
+                                Padding="10,8">
+                            <TextBlock Text="{markup:T Key=settings.add}" />
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Section: Log Format ────────────────────────────────────── -->
+            <TextBlock Text="{markup:T Key=settings.log_format}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0,16,0,10" />
+
+            <Border Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="16"
+                    Margin="0,0,0,8"
+                    BoxShadow="0 1 4 0 #10000000">
+                <ComboBox ItemsSource="{Binding LogFormatOptions}"
+                          SelectedItem="{Binding LogFormat}"
+                          HorizontalAlignment="Left"
+                          MinWidth="200" />
+            </Border>
+
+            <!-- ── Section: CryptoSoft Path ──────────────────────────────── -->
+            <TextBlock Text="{markup:T Key=settings.cryptosoft_path}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0,16,0,10" />
+
+            <Border Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="16"
+                    Margin="0,0,0,24"
+                    BoxShadow="0 1 4 0 #10000000">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding CryptosoftPath}"
+                             PlaceholderText="C:\Tools\CryptoSoft.exe"
+                             Margin="0,0,8,0" />
+                    <Button Grid.Column="1"
+                            Command="{Binding BrowseCryptosoftPathCommand}"
+                            Padding="10,8">
+                        <TextBlock Text="{markup:T Key=settings.browse}" />
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Save button + confirmation -->
+            <StackPanel Spacing="10" HorizontalAlignment="Right">
+                <TextBlock Text="{Binding SaveConfirmation}"
+                           Foreground="#22C55E"
+                           HorizontalAlignment="Right"
+                           IsVisible="{Binding SaveConfirmation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <Button Command="{Binding SaveCommand}"
+                        Background="{StaticResource AccentBrush}"
+                        Foreground="White"
+                        Padding="20,10">
+                    <TextBlock Text="{markup:T Key=settings.save}" />
+                </Button>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
