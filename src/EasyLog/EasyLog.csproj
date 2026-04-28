@@ -7,4 +7,10 @@
     <Description>Daily JSON logger reusable across ProSoft applications.</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\schemas\easysave-log.xsd">
+      <LogicalName>EasyLog.Schemas.easysave-log.xsd</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>
