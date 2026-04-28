@@ -52,12 +52,22 @@ public partial class App : Application
         services.AddSingleton<IDailyLogger>(_ =>
             new JsonDailyLogger(AppConfig.Instance.LogDirectory));
 
+        services.AddSingleton<IEncryptionService>(_ =>
+        {
+            var cryptoSettings = AppConfig.Instance.Settings.CryptoSoft;
+            return string.IsNullOrWhiteSpace(cryptoSettings.Path)
+                ? new NoOpEncryptionService()
+                : (IEncryptionService)new CryptoSoftAdapter(cryptoSettings);
+        });
+
         services.AddSingleton<BackupManager>(sp => new BackupManager(
             sp.GetRequiredService<IDailyLogger>(),
             new FullBackupStrategy(),
             new DifferentialBackupStrategy(),
             StateTracker.Instance,
-            JobRepository.Instance));
+            JobRepository.Instance,
+            sp.GetRequiredService<IEncryptionService>(),
+            AppConfig.Instance.Settings.EncryptedExtensions));
 
         // UI adapter layer
         services.AddSingleton<IBackupManagerAdapter, BackupManagerAdapter>();

@@ -16,7 +16,7 @@ public sealed class BusinessWatcherService : IDisposable
 
     public void Start()
     {
-        var softwareList = AppConfig.Instance.Settings.BusinessSoftwareList;
+        var softwareList = AppConfig.Instance.Settings.BusinessSoftware;
 
         // BusinessSoftwareDetector matches process names without extension.
         var processNames = softwareList
