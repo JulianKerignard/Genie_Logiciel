@@ -20,6 +20,11 @@ public class AppSettingsLiveFileTests
         Assert.Contains("notepad.exe", AppConfig.Instance.Settings.BusinessSoftware);
         Assert.Equal("json", AppConfig.Instance.Settings.LogFormat);
         Assert.NotNull(AppConfig.Instance.Settings.CryptoSoft);
+        // Sanity-check the CryptoSoft sub-section keys documented in
+        // docs/cryptosoft-integration.md so the doc and the live appsettings
+        // cannot drift apart silently.
+        Assert.Equal(string.Empty, AppConfig.Instance.Settings.CryptoSoft.Path);
+        Assert.Equal(30000, AppConfig.Instance.Settings.CryptoSoft.TimeoutMs);
     }
 
     private static string FindRepoRoot()
