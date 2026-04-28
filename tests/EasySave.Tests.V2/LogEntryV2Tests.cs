@@ -26,13 +26,15 @@ public class LogEntryV2Tests
     }
 
     [Fact]
-    public void Serialize_NonNullEncryptionTime_IncludesProperty()
+    public void Serialize_NonNullEncryptionTime_IsRoundtripPreserved()
     {
         var entry = new LogEntry { JobName = "encrypted", EncryptionTimeMs = 42 };
 
         var json = JsonSerializer.Serialize(entry);
+        var roundtripped = JsonSerializer.Deserialize<LogEntry>(json);
 
-        Assert.Contains("\"EncryptionTimeMs\":42", json);
+        Assert.NotNull(roundtripped);
+        Assert.Equal(42, roundtripped!.EncryptionTimeMs);
     }
 
     [Fact]

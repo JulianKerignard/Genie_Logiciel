@@ -5,12 +5,15 @@ namespace EasySave.Tests.V2;
 public class ILogFormatterContractTests
 {
     [Fact]
-    public void Interface_IsPublic()
+    public void Interface_HasExpectedPublicMembers()
     {
-        // Cheap sanity check that the public surface is reachable from outside the assembly,
-        // which is the whole point of shipping ILogFormatter to other ProSoft applications.
-        Assert.True(typeof(ILogFormatter).IsInterface);
-        Assert.True(typeof(ILogFormatter).IsPublic);
+        // Guards against accidental rename/removal of the v2 contract that
+        // EasyLog ships to other ProSoft applications.
+        var type = typeof(ILogFormatter);
+
+        Assert.True(type.IsPublic);
+        Assert.NotNull(type.GetMethod(nameof(ILogFormatter.Format), new[] { typeof(LogEntry) }));
+        Assert.NotNull(type.GetProperty(nameof(ILogFormatter.FileExtension)));
     }
 
     [Fact]
