@@ -17,6 +17,7 @@
   "error.invalid_language": "Langue invalide. Supportées : en, fr.",
   "error.source_not_found": "Le dossier source n'existe pas.",
   "error.execute_failed": "Erreur d'exécution : {0}",
+  "error.persistence_unavailable": "Le fichier de configuration des sauvegardes est temporairement verrouillé. Réessayez dans un instant.",
   "prompt.job_name": "Nom de la sauvegarde : ",
   "prompt.source_path": "Chemin source : ",
   "prompt.target_path": "Chemin cible : ",

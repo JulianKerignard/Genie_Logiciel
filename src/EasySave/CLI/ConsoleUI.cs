@@ -24,17 +24,27 @@ public sealed class ConsoleUI
         {
             DisplayMenu();
             string choice = Console.ReadLine() ?? string.Empty;
-            switch (choice.Trim())
+            try
             {
-                case "1": AddJob(); break;
-                case "2": RemoveJob(); break;
-                case "3": ListJobs(); break;
-                case "4": ExecuteJobs(); break;
-                case "5": ChangeLanguage(); break;
-                case "0": running = false; break;
-                default:
-                    Console.WriteLine(_lang.T("menu.invalid_choice"));
-                    break;
+                switch (choice.Trim())
+                {
+                    case "1": AddJob(); break;
+                    case "2": RemoveJob(); break;
+                    case "3": ListJobs(); break;
+                    case "4": ExecuteJobs(); break;
+                    case "5": ChangeLanguage(); break;
+                    case "0": running = false; break;
+                    default:
+                        Console.WriteLine(_lang.T("menu.invalid_choice"));
+                        break;
+                }
+            }
+            catch (IOException)
+            {
+                // Any unguarded Load() call (jobs.json or state.json read briefly held by an
+                // antivirus / backup agent) bubbles here. Tell the user and continue the loop
+                // — see issue #69.
+                Console.WriteLine(_lang.T("error.persistence_unavailable"));
             }
         }
     }
