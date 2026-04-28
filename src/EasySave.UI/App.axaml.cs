@@ -47,7 +47,5 @@ public partial class App : Application
     {
         services.AddSingleton<ILanguageService, LanguageService>();
         services.AddTransient<MainWindowViewModel>();
-        services.AddTransient<SettingsViewModel>();
-        services.AddTransient<LogsViewModel>();
     }
 }

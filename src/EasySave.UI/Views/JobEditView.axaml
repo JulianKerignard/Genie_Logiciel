@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:EasySave.UI.ViewModels"
              xmlns:markup="using:EasySave.UI.Markup"
-             xmlns:models="using:EasySave"
              x:Class="EasySave.UI.Views.JobEditView"
              x:DataType="vm:JobEditViewModel"
              x:CompileBindings="False">

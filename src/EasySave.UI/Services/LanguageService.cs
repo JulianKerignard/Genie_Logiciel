@@ -37,8 +37,11 @@ public sealed class LanguageService : ILanguageService
             _translations = JsonSerializer.Deserialize<Dictionary<string, string>>(json)
                             ?? new Dictionary<string, string>();
         }
-        catch
+        catch (Exception ex) when (ex is FileNotFoundException or InvalidOperationException
+                                       or JsonException or IOException)
         {
+            System.Diagnostics.Trace.TraceWarning(
+                $"[LanguageService] Failed to load locale '{locale}': {ex.Message}");
             _translations = new Dictionary<string, string>();
         }
     }

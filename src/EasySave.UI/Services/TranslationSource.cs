@@ -16,9 +16,15 @@ public sealed class TranslationSource : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    /// <summary>Wires the language service. Must be called once at startup.</summary>
+    /// <summary>
+    /// Wires the language service. Idempotent — subsequent calls are no-ops so
+    /// a second <c>Initialize</c> call never stacks duplicate subscribers.
+    /// </summary>
     public void Initialize(ILanguageService service)
     {
+        if (_service is not null)
+            return;
+
         _service = service;
         _service.LanguageChanged += (_, _) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));

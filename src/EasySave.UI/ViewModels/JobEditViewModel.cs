@@ -3,6 +3,7 @@ using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EasySave.Models;
+using EasySave.UI.Services;
 using Application = Avalonia.Application;
 
 namespace EasySave.UI.ViewModels;
@@ -40,8 +41,10 @@ public sealed partial class JobEditViewModel : ViewModelBase
     /// <summary>True when editing an existing job; false for creation.</summary>
     public bool IsEditing => _originalJob is not null;
 
-    /// <summary>Form title adapted to creation vs edit context.</summary>
-    public string Title => IsEditing ? "Edit Backup Job" : "New Backup Job";
+    /// <summary>Form title in the active locale, adapted to creation vs edit context.</summary>
+    public string Title => IsEditing
+        ? TranslationSource.Instance["edit.title_edit"]
+        : TranslationSource.Instance["edit.title_create"];
 
     public JobEditViewModel(BackupJob? job, Action onDone)
     {

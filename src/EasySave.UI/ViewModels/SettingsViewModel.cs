@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EasySave.UI.Services;
 using Application = Avalonia.Application;
 
 namespace EasySave.UI.ViewModels;
@@ -90,7 +91,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private void Save()
     {
         // TODO: call SettingsRepository.Save(settings) once wired (dev3)
-        SaveConfirmation = "Settings saved.";
+        SaveConfirmation = TranslationSource.Instance["settings.saved"];
     }
 
     /// <summary>Opens a file picker to set <see cref="CryptosoftPath"/>.</summary>
