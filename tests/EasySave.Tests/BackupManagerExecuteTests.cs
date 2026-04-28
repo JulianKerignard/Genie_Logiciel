@@ -46,7 +46,14 @@ public class BackupManagerExecuteTests : IDisposable
     private BackupManager CreateManager(IBackupStrategy fullStrategy, IBackupStrategy diffStrategy)
     {
         var logger = new JsonDailyLogger(_logDir);
-        return new BackupManager(logger, fullStrategy, diffStrategy, StateTracker.Instance, JobRepository.Instance);
+        return new BackupManager(
+            logger,
+            fullStrategy,
+            diffStrategy,
+            StateTracker.Instance,
+            JobRepository.Instance,
+            new NoOpEncryptionService(),
+            Array.Empty<string>());
     }
 
     private void SeedJob(string name, BackupType type)
@@ -163,7 +170,9 @@ public class BackupManagerExecuteTests : IDisposable
             new FullBackupStrategy(),
             new DifferentialBackupStrategy(),
             StateTracker.Instance,
-            JobRepository.Instance);
+            JobRepository.Instance,
+            new NoOpEncryptionService(),
+            Array.Empty<string>());
 
         Assert.Throws<IOException>(() => manager.ExecuteJob("logger-fail"));
 

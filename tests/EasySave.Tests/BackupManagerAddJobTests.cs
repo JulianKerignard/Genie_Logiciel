@@ -38,7 +38,9 @@ public class BackupManagerAddJobTests : IDisposable
             new FullBackupStrategy(),
             new DifferentialBackupStrategy(),
             StateTracker.Instance,
-            JobRepository.Instance);
+            JobRepository.Instance,
+            new NoOpEncryptionService(),
+            Array.Empty<string>());
     }
 
     private static BackupJob MakeJob(string name) => new()
