@@ -11,7 +11,7 @@ var backupManager = new BackupManager(
     new DifferentialBackupStrategy(),
     StateTracker.Instance,
     JobRepository.Instance);
-var langService = new LanguageService(AppConfig.Instance);
+var langService = new LanguageService(AppConfig.Instance.Settings);
 
 var cliArgs = Environment.GetCommandLineArgs().Skip(1).ToArray();
 if (cliArgs.Length > 0)

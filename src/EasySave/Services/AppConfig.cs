@@ -28,11 +28,12 @@ public sealed class AppConfig
     // Full path of the backup jobs definitions file.
     public string JobsFilePath { get; init; } = Path.Combine(DataRoot, "jobs.json");
 
-    // UI language code (ISO 639-1), e.g. "en" or "fr".
-    public string Language { get; init; } = "en";
+    // Full path of the user-managed settings file persisted by SettingsRepository.
+    public string SettingsFilePath { get; init; } = Path.Combine(DataRoot, "settings.json");
 
     // User-managed v2.0 settings parsed from the same appsettings.json.
-    // The keys live at the top level (encrypted_extensions, business_software_list, log_format, crypto_soft).
+    // The keys live at the top level (encrypted_extensions, business_software, language, log_format, crypto_soft).
+    // Language now lives inside Settings — there is no AppConfig.Language anymore.
     public AppSettings Settings { get; private set; } = new();
 
     [JsonConstructor]

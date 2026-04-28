@@ -16,8 +16,8 @@ public class AppSettingsLiveFileTests
         Assert.Contains(".pdf", AppConfig.Instance.Settings.EncryptedExtensions);
         Assert.Contains(".docx", AppConfig.Instance.Settings.EncryptedExtensions);
         Assert.Contains(".xlsx", AppConfig.Instance.Settings.EncryptedExtensions);
-        Assert.Contains("calc.exe", AppConfig.Instance.Settings.BusinessSoftwareList);
-        Assert.Contains("notepad.exe", AppConfig.Instance.Settings.BusinessSoftwareList);
+        Assert.Contains("calc.exe", AppConfig.Instance.Settings.BusinessSoftware);
+        Assert.Contains("notepad.exe", AppConfig.Instance.Settings.BusinessSoftware);
         Assert.Equal("json", AppConfig.Instance.Settings.LogFormat);
         Assert.NotNull(AppConfig.Instance.Settings.CryptoSoft);
     }

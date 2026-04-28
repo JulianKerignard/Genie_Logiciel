@@ -2,15 +2,19 @@ using System.Text.Json.Serialization;
 
 namespace EasySave.Models;
 
-// User-managed application settings persisted in appsettings.json.
-// Bound at startup and injected into the services that need them.
+// User-managed application settings. Bootstrapped from appsettings.json (read-only) and
+// persisted at runtime by SettingsRepository to settings.json (read/write via the GUI).
+// Single source of truth — no parallel DTO.
 public sealed class AppSettings
 {
     [JsonPropertyName("encrypted_extensions")]
     public IReadOnlyList<string> EncryptedExtensions { get; init; } = Array.Empty<string>();
 
-    [JsonPropertyName("business_software_list")]
-    public IReadOnlyList<string> BusinessSoftwareList { get; init; } = Array.Empty<string>();
+    [JsonPropertyName("business_software")]
+    public IReadOnlyList<string> BusinessSoftware { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("language")]
+    public string Language { get; init; } = "en";
 
     [JsonPropertyName("log_format")]
     public string LogFormat { get; init; } = "json";
