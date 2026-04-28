@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using EasyLog;
+using EasySave.Services;
 using EasySave.UI.Services;
 using EasySave.UI.ViewModels;
 using EasySave.UI.Views;
@@ -8,13 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EasySave.UI;
 
-/// <summary>
-/// Application entry point. Configures the DI container, wires the
-/// <see cref="TranslationSource"/> singleton, and opens the main window.
-/// </summary>
 public partial class App : Application
 {
-    /// <summary>The application-wide DI service provider, available after startup.</summary>
     public static IServiceProvider? Services { get; private set; }
 
     public override void Initialize()
@@ -24,20 +21,24 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Load appsettings.json before any service reads AppConfig.Instance.
+        AppConfig.Load();
+
         var services = new ServiceCollection();
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
 
-        // Wire the reactive translation bridge used by {markup:T} extensions.
         var langService = Services.GetRequiredService<ILanguageService>();
         TranslationSource.Instance.Initialize(langService);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow
+            var mainWindow = new MainWindow
             {
                 DataContext = Services.GetRequiredService<MainWindowViewModel>(),
             };
+            mainWindow.Closing += (_, _) => DisposeServices();
+            desktop.MainWindow = mainWindow;
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -45,7 +46,29 @@ public partial class App : Application
 
     private static void ConfigureServices(IServiceCollection services)
     {
-        services.AddSingleton<ILanguageService, LanguageService>();
-        services.AddTransient<MainWindowViewModel>();
+        services.AddSingleton<ILanguageService, EasySave.UI.Services.LanguageService>();
+
+        // Backend services
+        services.AddSingleton<IDailyLogger>(_ =>
+            new JsonDailyLogger(AppConfig.Instance.LogDirectory));
+
+        services.AddSingleton<BackupManager>(sp => new BackupManager(
+            sp.GetRequiredService<IDailyLogger>(),
+            new FullBackupStrategy(),
+            new DifferentialBackupStrategy(),
+            StateTracker.Instance,
+            JobRepository.Instance));
+
+        // UI adapter layer
+        services.AddSingleton<IBackupManagerAdapter, BackupManagerAdapter>();
+        services.AddSingleton<BusinessWatcherService>();
+
+        services.AddSingleton<MainWindowViewModel>();
+    }
+
+    private static void DisposeServices()
+    {
+        Services?.GetService<IBackupManagerAdapter>()?.Dispose();
+        Services?.GetService<BusinessWatcherService>()?.Dispose();
     }
 }

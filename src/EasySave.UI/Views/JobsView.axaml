@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:EasySave.UI.ViewModels"
              xmlns:markup="using:EasySave.UI.Markup"
-             xmlns:models="using:EasySave.Models"
              x:Class="EasySave.UI.Views.JobsView"
              x:DataType="vm:JobsViewModel"
              x:CompileBindings="False">
@@ -36,8 +35,32 @@
             </Button>
         </Grid>
 
+        <!-- Business software warning banner -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding IsBusinessSoftwareDetected}"
+                Background="#FF6B35"
+                CornerRadius="6"
+                Padding="14,10"
+                Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="⚠" Foreground="White" FontSize="14" VerticalAlignment="Center" />
+                <TextBlock Foreground="White" VerticalAlignment="Center">
+                    <Run Text="{markup:T Key=progress.business_pause}" />
+                    <Run Text="{Binding DetectedSoftwareName}" FontWeight="Bold" />
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
+        <!-- Status message -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="{Binding StatusMessage}"
+                   Foreground="#EF4444"
+                   FontSize="13"
+                   Margin="0,0,0,8"
+                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
         <!-- Jobs list -->
-        <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="8">
 
                 <!-- Empty state -->
@@ -48,68 +71,95 @@
                            Margin="0,40,0,0"
                            IsVisible="{Binding IsEmpty}" />
 
-                <!-- Job cards -->
+                <!-- Job cards — DataType is BackupJobVM -->
                 <ItemsControl ItemsSource="{Binding Jobs}">
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:BackupJob">
+                        <DataTemplate DataType="vm:BackupJobVM">
                             <Border Background="{StaticResource CardBackgroundBrush}"
                                     CornerRadius="8"
                                     Padding="16,14"
+                                    Margin="0,0,0,4"
                                     BoxShadow="0 1 4 0 #15000000">
+                                <StackPanel Spacing="6">
 
-                                <Grid ColumnDefinitions="*,Auto">
+                                    <Grid ColumnDefinitions="*,Auto">
 
-                                    <!-- Job info -->
-                                    <StackPanel Grid.Column="0" Spacing="4">
-                                        <TextBlock Text="{Binding Name}"
-                                                   FontSize="15"
-                                                   FontWeight="SemiBold" />
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="{Binding SourcePath}"
-                                                       FontSize="12"
-                                                       Foreground="{StaticResource MutedTextBrush}" />
-                                            <TextBlock Text="→"
-                                                       FontSize="12"
-                                                       Foreground="{StaticResource MutedTextBrush}" />
-                                            <TextBlock Text="{Binding TargetPath}"
-                                                       FontSize="12"
-                                                       Foreground="{StaticResource MutedTextBrush}" />
+                                        <!-- Job info -->
+                                        <StackPanel Grid.Column="0" Spacing="3">
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="15"
+                                                       FontWeight="SemiBold" />
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="{Binding SourcePath}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource MutedTextBrush}" />
+                                                <TextBlock Text="→"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource MutedTextBrush}" />
+                                                <TextBlock Text="{Binding TargetPath}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource MutedTextBrush}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding BackupTypeName}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource AccentBrush}" />
                                         </StackPanel>
-                                        <TextBlock Text="{Binding Type}"
-                                                   FontSize="11"
-                                                   Foreground="{StaticResource AccentBrush}" />
-                                    </StackPanel>
 
-                                    <!-- Action buttons -->
-                                    <StackPanel Grid.Column="1"
-                                                Orientation="Horizontal"
-                                                Spacing="6"
-                                                VerticalAlignment="Center">
+                                        <!-- Action buttons -->
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal"
+                                                    Spacing="6"
+                                                    VerticalAlignment="Center">
 
-                                        <Button Command="{Binding $parent[ItemsControl].DataContext.RunJobCommand}"
-                                                CommandParameter="{Binding}"
-                                                Padding="10,6"
-                                                FontSize="12">
-                                            <TextBlock Text="{markup:T Key=jobs.run}" />
-                                        </Button>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.RunJobCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Padding="10,6"
+                                                    FontSize="12"
+                                                    IsEnabled="{Binding !IsRunning}">
+                                                <TextBlock Text="{markup:T Key=jobs.run}" />
+                                            </Button>
 
-                                        <Button Command="{Binding $parent[ItemsControl].DataContext.EditJobCommand}"
-                                                CommandParameter="{Binding}"
-                                                Padding="10,6"
-                                                FontSize="12">
-                                            <TextBlock Text="{markup:T Key=jobs.edit}" />
-                                        </Button>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.PauseJobCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Padding="10,6"
+                                                    FontSize="12"
+                                                    IsVisible="{Binding IsRunning}">
+                                                <TextBlock Text="{markup:T Key=jobs.pause}" />
+                                            </Button>
 
-                                        <Button Command="{Binding $parent[ItemsControl].DataContext.DeleteJobCommand}"
-                                                CommandParameter="{Binding}"
-                                                Padding="10,6"
-                                                FontSize="12"
-                                                Foreground="#EF4444">
-                                            <TextBlock Text="{markup:T Key=jobs.delete}" />
-                                        </Button>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.EditJobCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Padding="10,6"
+                                                    FontSize="12">
+                                                <TextBlock Text="{markup:T Key=jobs.edit}" />
+                                            </Button>
 
-                                    </StackPanel>
-                                </Grid>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.DeleteJobCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Padding="10,6"
+                                                    FontSize="12"
+                                                    Foreground="#EF4444">
+                                                <TextBlock Text="{markup:T Key=jobs.delete}" />
+                                            </Button>
+
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Progress bar (visible only when running) -->
+                                    <ProgressBar Value="{Binding Progress}"
+                                                 Minimum="0"
+                                                 Maximum="100"
+                                                 Height="5"
+                                                 CornerRadius="3"
+                                                 IsVisible="{Binding IsRunning}" />
+
+                                    <TextBlock Text="{Binding Progress, StringFormat='{}{0} %'}"
+                                               FontSize="11"
+                                               HorizontalAlignment="Right"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               IsVisible="{Binding IsRunning}" />
+
+                                </StackPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

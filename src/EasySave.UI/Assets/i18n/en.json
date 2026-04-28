@@ -8,11 +8,16 @@
   "jobs.edit": "Edit",
   "jobs.delete": "Delete",
   "jobs.run": "Run",
+  "jobs.pause": "Pause",
+  "jobs.resume": "Resume",
   "jobs.name": "Name",
   "jobs.source": "Source",
   "jobs.destination": "Destination",
   "jobs.type": "Type",
   "jobs.empty": "No backups configured.",
+  "jobs.state.active": "Running",
+  "jobs.state.paused": "Paused",
+  "jobs.state.idle": "Idle",
   "settings.title": "Settings",
   "settings.save": "Save",
   "settings.log_format": "Log Format",
@@ -40,5 +45,9 @@
   "edit.type_diff": "Differential",
   "logs.title": "Logs",
   "logs.empty": "No logs available.",
-  "logs.coming_soon": "Log viewer — available in phase 3."
+  "logs.coming_soon": "Log viewer — available in phase 4.",
+  "progress.title": "Backup Progress",
+  "progress.files_remaining": "Files remaining:",
+  "progress.business_pause": "Jobs paused — business software detected:",
+  "progress.close": "Close progress"
 }
