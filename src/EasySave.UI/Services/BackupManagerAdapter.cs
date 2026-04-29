@@ -7,13 +7,21 @@ namespace EasySave.UI.Services;
 
 // Wraps the synchronous BackupManager to expose an async + pause/resume surface
 // to the UI layer. Progress is tracked by polling state.json at 300 ms intervals.
-// TODO: replace with real async BackupManager from dev2 when merged.
 public sealed class BackupManagerAdapter : IBackupManagerAdapter
 {
     private readonly BackupManager _manager;
     private readonly object _lock = new();
+
+    // Active runs: jobName → its CancellationTokenSource.
     private readonly Dictionary<string, CancellationTokenSource> _running = new();
+
+    // Jobs paused via PauseJob that have not yet been resumed.
+    // Preserved across the RunJobAsync finally so ResumeJob knows which jobs to restart.
     private readonly HashSet<string> _pausedByUs = new();
+
+    // Reason stored per paused job so StateTracker.Pause can record it.
+    private readonly Dictionary<string, string> _pauseReasons = new();
+
     private System.Threading.Timer? _pollTimer;
     private bool _disposed;
 
@@ -34,7 +42,7 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         lock (_lock) return _running.ContainsKey(jobName);
     }
 
-    public async Task RunJobAsync(string jobName, CancellationToken ct = default)
+    public async Task RunJobAsync(string jobName, int startFromIndex = 0, CancellationToken ct = default)
     {
         CancellationTokenSource cts;
         lock (_lock)
@@ -47,36 +55,51 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         EnsurePolling();
         try
         {
-            // BackupManager.ExecuteJob is synchronous; run it on the thread pool.
-            // Cancellation marks the job paused but cannot interrupt mid-file-copy.
-            await Task.Run(() => _manager.ExecuteJob(jobName), cts.Token).ConfigureAwait(false);
+            // ExecuteJob is synchronous; run on thread pool and pass the linked token
+            // so cancel requests stop the job at the next file boundary.
+            await Task.Run(() => _manager.ExecuteJob(jobName, startFromIndex, cts.Token), cts.Token)
+                      .ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
         finally
         {
-            // Fix: read IsCancellationRequested before releasing the CTS so the
-            // race window between ExecuteJob returning and this finally block is
-            // closed — PauseJob may have added the job to _pausedByUs during that
-            // window; if the task completed normally we must evict the stale entry
-            // to prevent an unwanted re-run on the next Resume call.
             bool cancelledByPause = cts.IsCancellationRequested;
+            string? pauseReason = null;
+
             lock (_lock)
             {
                 _running.Remove(jobName);
-                if (!cancelledByPause) _pausedByUs.Remove(jobName);
+                if (!cancelledByPause)
+                {
+                    _pausedByUs.Remove(jobName);
+                }
+                else
+                {
+                    _pauseReasons.TryGetValue(jobName, out pauseReason);
+                    _pauseReasons.Remove(jobName);
+                }
                 cts.Dispose();
             }
+
+            // Persist the pause reason to state.json so monitoring tools and the UI
+            // can display the correct status without polling.
+            if (cancelledByPause && pauseReason is not null)
+            {
+                StateTracker.Instance.Pause(jobName, pauseReason);
+            }
+
             if (!HasRunningJobs()) StopPolling();
         }
     }
 
-    public void PauseJob(string jobName)
+    public void PauseJob(string jobName, string reason = "UserRequested")
     {
         lock (_lock)
         {
             if (_running.TryGetValue(jobName, out var cts))
             {
                 _pausedByUs.Add(jobName);
+                _pauseReasons[jobName] = reason;
                 cts.Cancel();
             }
         }
@@ -86,7 +109,19 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
     {
         bool wasPaused;
         lock (_lock) wasPaused = _pausedByUs.Remove(jobName);
-        if (wasPaused) _ = RunJobAsync(jobName);
+        if (!wasPaused) return;
+
+        // Compute the resume index from the last persisted state so a Full backup
+        // continues from where it stopped rather than re-copying everything.
+        int startFromIndex = 0;
+        var state = StateTracker.Instance.GetState(jobName);
+        if (state is { TotalFilesEligible: > 0 })
+            startFromIndex = state.TotalFilesEligible - state.FilesRemaining;
+
+        // Clear the paused marker so state.json shows Active again when the job starts.
+        StateTracker.Instance.Resume(jobName);
+
+        _ = RunJobAsync(jobName, startFromIndex);
     }
 
     private bool HasRunningJobs() { lock (_lock) return _running.Count > 0; }

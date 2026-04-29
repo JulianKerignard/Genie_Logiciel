@@ -50,7 +50,12 @@ public partial class App : Application
 
         // Backend services
         services.AddSingleton<IDailyLogger>(_ =>
-            new JsonDailyLogger(AppConfig.Instance.LogDirectory));
+        {
+            var logFormat = SettingsRepository.Instance.Load().LogFormat;
+            return logFormat.Equals("xml", StringComparison.OrdinalIgnoreCase)
+                ? (IDailyLogger)new XmlDailyLogger(AppConfig.Instance.LogDirectory)
+                : new JsonDailyLogger(AppConfig.Instance.LogDirectory);
+        });
 
         services.AddSingleton<IEncryptionService>(_ =>
         {
@@ -72,6 +77,8 @@ public partial class App : Application
         // UI adapter layer
         services.AddSingleton<IBackupManagerAdapter, BackupManagerAdapter>();
         services.AddSingleton<BusinessWatcherService>();
+        services.AddSingleton<IRestoreService>(_ => new RestoreService(JobRepository.Instance));
+        services.AddSingleton<ISchedulerService, SchedulerService>();
 
         services.AddSingleton<MainWindowViewModel>();
     }
