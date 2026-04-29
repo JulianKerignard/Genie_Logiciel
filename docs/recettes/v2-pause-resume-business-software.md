@@ -28,7 +28,7 @@ si déjà créé par la GUI) :
 ```
 
 > Note : `business_software` accepte `"calc"` ou `"calc.exe"` indifféremment —
-> le détecteur normalise le suffixe `.exe` (cf. PR #80).
+> le détecteur normalise le suffixe `.exe` (cf. `BusinessSoftwareDetector.NormalizeProcessName`).
 
 Relancer la GUI pour que `BusinessWatcherService` recharge la liste.
 
@@ -71,5 +71,5 @@ Avalonia headless ; cette recette manuelle reste donc nécessaire à chaque rele
 | Symptôme | Cause probable | Vérification |
 |---|---|---|
 | Le job ne pause jamais | `business_software` mal orthographié, ou GUI lancée avant l'édition de la config | Vérifier la valeur lue par le watcher dans les logs Avalonia, et que le nom matche `Process.GetProcessesByName(...)` |
-| Le job reprend mais re-copie depuis le début | `startFromIndex` non transmis ou job de type Differential mal configuré | Pour Full : vérifier que `BackupManagerAdapter.ResumeJob` calcule `TotalFilesEligible - FilesRemaining` avant l'appel à `RunJobAsync`. Pour Differential : c'est le comportement attendu (re-scan), les fichiers déjà copiés sont skippés via le mtime aligné (cf. PR #89). |
+| Le job reprend mais re-copie depuis le début | `startFromIndex` non transmis ou job de type Differential mal configuré | Pour Full : vérifier que `BackupManagerAdapter.ResumeJob` calcule `TotalFilesEligible - FilesRemaining` avant l'appel à `RunJobAsync`. Pour Differential : c'est le comportement attendu (re-scan), les fichiers déjà copiés sont skippés via le mtime aligné (cf. `BackupManager.AlignTargetMtime` + `DifferentialBackupStrategy.ShouldCopy`). |
 | `state.json` reste bloqué à `Active` après pause | `BackupManager.RunJob` n'a pas reçu le token, ou `cts.Cancel()` non appelé | Tracer dans `BackupManagerAdapter.PauseJob` que le job est bien dans `_running` au moment de l'appel |

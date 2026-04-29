@@ -160,7 +160,13 @@ public class BackupManagerPauseResumeTests : IDisposable
         var resumeManager = CreateManager();
         resumeManager.ExecuteJob("pause-resume", startFromIndex: resumeFrom);
 
-        Assert.Equal(5, Directory.GetFiles(_targetDir).Length);
+        // Name-set check: verifies the *identity* of every copied file. A double
+        // copy + a missed file would still total five but a missing name would
+        // fail this assertion.
+        var expected = Enumerable.Range(1, 5).Select(i => $"file-{i}.txt").OrderBy(n => n).ToArray();
+        var actual = Directory.GetFiles(_targetDir).Select(Path.GetFileName).OrderBy(n => n).ToArray();
+        Assert.Equal(expected, actual);
+
         var afterResume = ReadStateEntry(Path.Combine(_dataDir, "state.json"), "pause-resume");
         Assert.Equal(JobState.Inactive, afterResume.State);
         Assert.Equal(0, afterResume.FilesRemaining);
