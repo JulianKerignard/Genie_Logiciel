@@ -14,7 +14,7 @@ namespace EasySave.UI.ViewModels;
 /// Receives a nullable <see cref="BackupJob"/>: <c>null</c> means creation,
 /// non-null means edit. Calls <paramref name="onDone"/> on Save or Cancel.
 /// </summary>
-public sealed partial class JobEditViewModel : ViewModelBase
+public sealed partial class JobEditViewModel : ViewModelBase, IDisposable
 {
     private readonly Action _onDone;
     private readonly BackupJob? _originalJob;
@@ -84,6 +84,13 @@ public sealed partial class JobEditViewModel : ViewModelBase
 
     private void OnLocaleChanged(object? sender, PropertyChangedEventArgs e)
         => OnPropertyChanged(nameof(Title));
+
+    public void Dispose()
+    {
+        TranslationSource.Instance.PropertyChanged -= OnLocaleChanged;
+        foreach (var option in BackupTypes)
+            option.Dispose();
+    }
 
     // ── Commands ─────────────────────────────────────────────────────────────
 

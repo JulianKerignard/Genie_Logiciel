@@ -48,7 +48,6 @@
   "edit.error_required": "Nom, source et destination sont obligatoires.",
   "logs.title": "Journaux",
   "logs.empty": "Aucun fichier de journal pour le moment.",
-  "logs.coming_soon": "Affichage des journaux — disponible en phase 4.",
   "logs.refresh": "Actualiser",
   "progress.title": "Progression des sauvegardes",
   "progress.files_remaining": "Fichiers restants :",

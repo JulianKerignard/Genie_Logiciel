@@ -5,7 +5,7 @@ using EasySave.UI.Services;
 
 namespace EasySave.UI.ViewModels;
 
-public sealed partial class BackupJobVM : ObservableObject
+public sealed partial class BackupJobVM : ObservableObject, IDisposable
 {
     public BackupJob Model { get; }
 
@@ -55,4 +55,7 @@ public sealed partial class BackupJobVM : ObservableObject
         OnPropertyChanged(nameof(BackupTypeName));
         OnPropertyChanged(nameof(StateDisplayName));
     }
+
+    public void Dispose()
+        => TranslationSource.Instance.PropertyChanged -= OnLocaleChanged;
 }

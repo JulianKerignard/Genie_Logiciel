@@ -12,7 +12,7 @@ namespace EasySave.UI.ViewModels;
 /// active locale. This wrapper exposes a <see cref="DisplayName"/> bound to the
 /// resource dictionary so the dropdown matches the rest of the UI.
 /// </summary>
-public sealed class BackupTypeOption : ObservableObject
+public sealed class BackupTypeOption : ObservableObject, IDisposable
 {
     public BackupType Type { get; }
 
@@ -28,4 +28,7 @@ public sealed class BackupTypeOption : ObservableObject
 
     private void OnLocaleChanged(object? sender, PropertyChangedEventArgs e)
         => OnPropertyChanged(nameof(DisplayName));
+
+    public void Dispose()
+        => TranslationSource.Instance.PropertyChanged -= OnLocaleChanged;
 }

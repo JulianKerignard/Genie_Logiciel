@@ -3,8 +3,7 @@
              xmlns:vm="using:EasySave.UI.ViewModels"
              xmlns:markup="using:EasySave.UI.Markup"
              x:Class="EasySave.UI.Views.LogsView"
-             x:DataType="vm:LogsViewModel"
-             x:CompileBindings="False">
+             x:DataType="vm:LogsViewModel">
 
     <DockPanel Margin="32,28,32,24">
 

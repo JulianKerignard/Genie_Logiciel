@@ -56,7 +56,11 @@ public sealed partial class JobsViewModel : ViewModelBase
         {
             var existing = Jobs.FirstOrDefault(j =>
                 j.Name.Equals(original.Name, StringComparison.OrdinalIgnoreCase));
-            if (existing is not null) Jobs.Remove(existing);
+            if (existing is not null)
+            {
+                Jobs.Remove(existing);
+                existing.Dispose();
+            }
         }
         Jobs.Add(new BackupJobVM(saved));
     }
@@ -135,6 +139,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         {
             _backup.RemoveJob(vm.Model.Name);
             Jobs.Remove(vm);
+            vm.Dispose();
         }
         catch (Exception ex)
         {
@@ -145,7 +150,8 @@ public sealed partial class JobsViewModel : ViewModelBase
     [RelayCommand]
     private async Task RunJobAsync(BackupJobVM vm)
     {
-        if (IsBusinessSoftwareDetected || vm.UiState == UiJobState.Running) return;
+        if (IsBusinessSoftwareDetected
+            || vm.UiState is UiJobState.Running or UiJobState.Paused) return;
         vm.UiState = UiJobState.Running;
         RequestShowProgress?.Invoke();
         try
@@ -163,7 +169,13 @@ public sealed partial class JobsViewModel : ViewModelBase
             // here so we don't overwrite Completed → Idle. Only clean up the
             // transient progress fields that have no meaning between runs.
             if (vm.UiState == UiJobState.Running)
+            {
                 vm.UiState = UiJobState.Idle;
+                // The job exited mid-flight (exception or external cancel) — wipe
+                // the leftover progress so the bar doesn't stay at e.g. 47% with
+                // an Idle badge until the next run starts.
+                vm.Progress = 0;
+            }
             vm.CurrentFile = string.Empty;
             vm.FilesRemaining = 0;
         }
@@ -174,8 +186,11 @@ public sealed partial class JobsViewModel : ViewModelBase
     {
         if (IsBusinessSoftwareDetected) return;
         RequestShowProgress?.Invoke();
+        // Include Completed jobs so a second click after a successful run
+        // re-launches every job; only Running and Paused are skipped to avoid
+        // double-starting an active or user-paused backup.
         var tasks = Jobs
-            .Where(j => j.UiState == UiJobState.Idle)
+            .Where(j => j.UiState is UiJobState.Idle or UiJobState.Completed)
             .Select(RunJobInternal)
             .ToList();
         await Task.WhenAll(tasks).ConfigureAwait(true);
@@ -215,7 +230,13 @@ public sealed partial class JobsViewModel : ViewModelBase
             // here so we don't overwrite Completed → Idle. Only clean up the
             // transient progress fields that have no meaning between runs.
             if (vm.UiState == UiJobState.Running)
+            {
                 vm.UiState = UiJobState.Idle;
+                // The job exited mid-flight (exception or external cancel) — wipe
+                // the leftover progress so the bar doesn't stay at e.g. 47% with
+                // an Idle badge until the next run starts.
+                vm.Progress = 0;
+            }
             vm.CurrentFile = string.Empty;
             vm.FilesRemaining = 0;
         }

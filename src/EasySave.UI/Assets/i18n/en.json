@@ -48,7 +48,6 @@
   "edit.error_required": "Name, source and destination are required.",
   "logs.title": "Logs",
   "logs.empty": "No log files yet.",
-  "logs.coming_soon": "Log viewer — available in phase 4.",
   "logs.refresh": "Refresh",
   "progress.title": "Backup Progress",
   "progress.files_remaining": "Files remaining:",
