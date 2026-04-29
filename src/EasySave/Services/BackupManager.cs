@@ -7,8 +7,9 @@ namespace EasySave.Services;
 /// <summary>
 /// Orchestrates the lifecycle of backup jobs: CRUD operations against the
 /// persistent store, execution using the strategy pattern, real-time state
-/// updates, and per-file logging. v2.0 lifts the v1.0 5-job cap; the number
-/// of jobs is now unlimited.
+/// updates, and per-file logging. v2.0 lifts the v1.0 5-job cap (see
+/// docs/EasySave_v2_0_Repartition_Taches.md — Phase 2 Chloé: "Supprimer la
+/// limite de 5 jobs"; Phase 4: "[Recette V2] 6+ jobs acceptés").
 /// </summary>
 public sealed class BackupManager
 {

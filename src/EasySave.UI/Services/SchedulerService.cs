@@ -14,7 +14,8 @@ public sealed class SchedulerService : ISchedulerService
 
     private string SchedulesFilePath =>
         Path.Combine(
-            Path.GetDirectoryName(AppConfig.Instance.JobsFilePath)!,
+            Path.GetDirectoryName(AppConfig.Instance.JobsFilePath)
+                ?? AppDomain.CurrentDomain.BaseDirectory,
             "schedules.json");
 
     /// <inheritdoc />

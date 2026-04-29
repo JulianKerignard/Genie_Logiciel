@@ -46,7 +46,9 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 /// <summary>Observable wrapper around <see cref="ScheduledJob"/> for the schedule grid.</summary>
 public sealed partial class ScheduledJobVM : ObservableObject
 {
-    [ObservableProperty] private bool _isEnabled;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NextRunDisplay))]
+    private bool _isEnabled;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(NextRunDisplay))]
     private int _intervalMinutes;
