@@ -84,9 +84,9 @@ public sealed class ConsoleUI
         }
         catch (InvalidOperationException ex)
         {
-            var colon = ex.Message.IndexOf(':');
-            var key = colon >= 0 ? ex.Message[..colon].Trim() : ex.Message;
-            Console.WriteLine(_lang.T(key));
+            // The service layer carries i18n keys ("error.max_jobs", "error.duplicate_job")
+            // as the exception message. The CLI translates them in the user's language.
+            Console.WriteLine(_lang.T(ex.Message));
         }
     }
 

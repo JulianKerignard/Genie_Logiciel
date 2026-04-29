@@ -69,7 +69,7 @@ public class BackupManagerAddJobTests : IDisposable
             manager.AddJob(MakeJob($"job-{i}"));
 
         var ex = Assert.Throws<InvalidOperationException>(() => manager.AddJob(MakeJob("job-6")));
-        Assert.Contains("5", ex.Message);
+        Assert.Equal("error.max_jobs", ex.Message);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public class BackupManagerAddJobTests : IDisposable
         manager.AddJob(MakeJob("backup-daily"));
 
         var ex = Assert.Throws<InvalidOperationException>(() => manager.AddJob(MakeJob("backup-daily")));
-        Assert.Contains("backup-daily", ex.Message);
+        Assert.Equal("error.duplicate_job", ex.Message);
     }
 
     [Fact]

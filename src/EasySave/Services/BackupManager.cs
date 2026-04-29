@@ -70,10 +70,10 @@ public sealed class BackupManager
         var jobs = _jobRepository.Load().ToList();
 
         if (jobs.Count >= MaxJobs)
-            throw new InvalidOperationException($"error.max_jobs: Maximum {MaxJobs} jobs allowed.");
+            throw new InvalidOperationException("error.max_jobs");
 
         if (jobs.Any(j => j.Name.Equals(job.Name, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException($"error.duplicate_job: Job '{job.Name}' already exists.");
+            throw new InvalidOperationException("error.duplicate_job");
 
         jobs.Add(job);
         _jobRepository.Save(jobs);
