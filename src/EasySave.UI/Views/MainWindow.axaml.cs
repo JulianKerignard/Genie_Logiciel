@@ -37,6 +37,9 @@ public partial class MainWindow : Window
     {
         // Best-effort: a transient I/O failure must not block the runtime
         // switch the user just performed. The switch already happened.
+        // UnauthorizedAccessException does not inherit from IOException
+        // (it inherits from SystemException), so it must be caught explicitly
+        // — File.WriteAllText / File.Move both throw it on a restrictive ACL.
         try
         {
             var current = SettingsRepository.Instance.Load();
@@ -49,7 +52,8 @@ public partial class MainWindow : Window
                 CryptoSoft = current.CryptoSoft,
             });
         }
-        catch (System.IO.IOException ex)
+        catch (Exception ex) when (ex is System.IO.IOException
+                                       or UnauthorizedAccessException)
         {
             System.Diagnostics.Trace.TraceWarning(
                 $"[MainWindow] Failed to persist language '{locale}': {ex.Message}");

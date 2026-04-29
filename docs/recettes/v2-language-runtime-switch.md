@@ -24,34 +24,38 @@ every UI string updates immediately, including modals already open.
 ## Pre-requisites
 
 - Build the UI once: `dotnet build src/EasySave.UI/EasySave.UI.csproj`.
-- For a clean reading, delete or rename `settings.json` so the test starts
-  with the FR default. The file lives next to the other user data:
+- For a clean reading, delete or rename `settings.json`. The file lives
+  next to the other user data:
   - Windows: `%APPDATA%\ProSoft\EasySave\settings.json`
   - Linux: `~/.config/ProSoft/EasySave/settings.json`
   - macOS: `~/Library/Application Support/ProSoft/EasySave/settings.json`
+- Note: with `settings.json` absent, the app starts in **English** —
+  `appsettings.json` ships `"language": "en"` and seeds `settings.json`
+  on first run. To start in French, edit the seeded `settings.json` and
+  set `"language": "fr"` before launching, or just toggle once via the
+  sidebar.
 
 ## Manual scenario
 
 ### Steps
 
 1. Launch the GUI: `dotnet run --project src/EasySave.UI`.
-2. Confirm the sidebar labels are in French (`Sauvegardes`, `Paramètres`,
-   `Journaux`, `À propos`).
-3. Click **EN** in the bottom-left language toggle.
-4. **Critical:** confirm every label flips to English without any visible
-   reload — `Backups`, `Settings`, `Logs`, `About`.
-5. Click `About` to open the modal. Confirm the text is in English.
-6. Without closing the modal, switch back to **FR** in the sidebar.
-7. **Critical:** confirm the open About modal flips to French at the same
-   time as the main window (single shared `TranslationSource.Instance`).
-8. Close the About modal. Open **Backups** → **Add Job** to reach the
+2. Click **FR** in the bottom-left language toggle.
+3. **Critical:** confirm every sidebar label flips to French immediately
+   (`Sauvegardes`, `Paramètres`, `Journaux`, `À propos`) — no flash, no
+   restart.
+4. Click `À propos` to open the modal. Confirm the text is in French.
+5. Without closing the modal, switch back to **EN** in the sidebar.
+6. **Critical:** confirm the open About modal flips to English at the
+   same time as the main window (single shared `TranslationSource.Instance`).
+7. Close the About modal. Open **Backups** → **Add Job** to reach the
    JobEdit view. Repeat the FR↔EN toggle and confirm `edit.name`,
    `edit.source`, `edit.destination`, `edit.cancel`, `edit.save` all
    refresh immediately.
-9. Close the app. Inspect `settings.json` — the `language` key must hold
+8. Close the app. Inspect `settings.json` — the `language` key must hold
    the last locale you selected (`fr` or `en`).
-10. Relaunch the app. The window must open in the persisted locale, not
-    the hard-coded FR default.
+9. Relaunch the app. The window must open in the persisted locale, not
+   the `appsettings.json` seed.
 
 ### Expected result
 
