@@ -124,15 +124,23 @@ public sealed class BackupManager
     }
 
     /// <summary>
-    /// Runs every configured job sequentially. A failure on one job is logged
-    /// to <see cref="Console.Error"/> but does not stop the following jobs.
+    /// Runs every configured job sequentially. Failures on individual jobs do not
+    /// stop the loop; only IO/permission/config errors known to be safe to skip
+    /// are caught. Programmer errors (NullReference, OutOfMemory, etc.) propagate.
     /// </summary>
+    /// <remarks>
+    /// Diagnostic output is written to <see cref="Console.Error"/> as a fallback
+    /// for v1.x. v2 will replace this with an explicit failure-callback parameter
+    /// so the service layer no longer writes to the console.
+    /// </remarks>
     public void ExecuteAll()
     {
         foreach (var job in _jobRepository.Load())
         {
             try { RunJob(job); }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException
+                                       or UnauthorizedAccessException
+                                       or DirectoryNotFoundException)
             {
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
             }
