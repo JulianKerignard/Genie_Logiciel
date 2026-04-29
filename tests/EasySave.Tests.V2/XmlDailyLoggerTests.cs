@@ -23,6 +23,56 @@ public class XmlDailyLoggerTests : IDisposable
     private string DailyFilePath() => Path.Combine(_tempDir, $"{DateTime.Now:yyyy-MM-dd}.xml");
 
     [Fact]
+    public void Constructor_NullOrEmptyDirectory_Throws()
+    {
+        // Mirrors JsonDailyLogger's contract: a missing log directory must
+        // be rejected loudly at construction, not at the first Append.
+        Assert.Throws<ArgumentException>(() => new XmlDailyLogger(""));
+        Assert.Throws<ArgumentException>(() => new XmlDailyLogger("   "));
+    }
+
+    [Fact]
+    public void Append_NullEntry_Throws()
+    {
+        IDailyLogger logger = new XmlDailyLogger(_tempDir);
+
+        Assert.Throws<ArgumentNullException>(() => logger.Append(null!));
+    }
+
+    [Fact]
+    public void Append_FromMultipleThreads_NoEntryLost()
+    {
+        // XmlDailyLogger uses a write lock for the same reason JsonDailyLogger
+        // does: backup jobs run concurrently and must not corrupt the daily
+        // file or drop entries. Two threads x 25 entries each is enough to
+        // surface a regression on the lock without making the test slow.
+        IDailyLogger logger = new XmlDailyLogger(_tempDir);
+        const int perThread = 25;
+
+        var threads = new[]
+        {
+            new Thread(() => { for (int i = 0; i < perThread; i++) logger.Append(NewEntry($"A-{i}")); }),
+            new Thread(() => { for (int i = 0; i < perThread; i++) logger.Append(NewEntry($"B-{i}")); }),
+        };
+
+        foreach (var t in threads) t.Start();
+        foreach (var t in threads) t.Join();
+
+        var doc = XDocument.Load(DailyFilePath());
+        Assert.Equal(perThread * 2, doc.Root!.Elements("Entry").Count());
+    }
+
+    private static LogEntry NewEntry(string jobName) => new()
+    {
+        Timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
+        JobName = jobName,
+        SourceFile = "/tmp/src",
+        TargetFile = "/tmp/dst",
+        FileSize = 1,
+        FileTransferTimeMs = 1,
+    };
+
+    [Fact]
     public void Append_CreatesDailyFileWithXmlExtension()
     {
         var logger = new XmlDailyLogger(_tempDir);
