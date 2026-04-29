@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EasySave.Models;
 using EasySave.Services;
 using EasySave.UI.Services;
 using Application = Avalonia.Application;
@@ -47,9 +48,26 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>Available log format options for the ComboBox.</summary>
     public IReadOnlyList<string> LogFormatOptions { get; } = new[] { "json", "xml" };
 
-    public SettingsViewModel()
+    private readonly SettingsRepository _repository;
+
+    public SettingsViewModel() : this(SettingsRepository.Instance) { }
+
+    // Test seam: lets unit tests inject a repository pointed at a temp file.
+    internal SettingsViewModel(SettingsRepository repository)
     {
+        _repository = repository;
         LoadFromRepository();
+    }
+
+    private void LoadFromRepository()
+    {
+        // settings.json is seeded from appsettings.json by App.OnFrameworkInitializationCompleted
+        // on first run, so reading from the repository is enough — no boot-time fallback needed.
+        var settings = _repository.Load();
+        EncryptedExtensions = new ObservableCollection<string>(settings.EncryptedExtensions);
+        BusinessSoftwareList = new ObservableCollection<string>(settings.BusinessSoftware);
+        LogFormat = string.IsNullOrWhiteSpace(settings.LogFormat) ? "json" : settings.LogFormat;
+        CryptosoftPath = settings.CryptoSoft.Path;
     }
 
     // ── Extension commands ────────────────────────────────────────────────────
@@ -90,21 +108,34 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private void Save()
     {
-        var current = SettingsRepository.Instance.Load();
-        var settings = new EasySave.Models.AppSettings
+        // Preserve fields not surfaced by the GUI (Language, CryptoSoft.TimeoutMs)
+        // by reading them back from the on-disk source of truth before overwriting.
+        // Load and Save can both throw IOException (PR #102 made the propagation
+        // explicit to avoid silent data loss); surface the failure to the user
+        // through the same banner instead of letting [RelayCommand] propagate.
+        try
         {
-            LogFormat = LogFormat,
-            CryptoSoft = new EasySave.Models.CryptoSoftSettings
+            var current = _repository.Load();
+            var settings = new AppSettings
             {
-                Path = CryptosoftPath,
-                TimeoutMs = current.CryptoSoft.TimeoutMs,
-            },
-            EncryptedExtensions = EncryptedExtensions.ToList(),
-            BusinessSoftware = BusinessSoftwareList.ToList(),
-            Language = current.Language,
-        };
-        SettingsRepository.Instance.Save(settings);
-        SaveConfirmation = TranslationSource.Instance["settings.saved"];
+                EncryptedExtensions = EncryptedExtensions.ToList(),
+                BusinessSoftware = BusinessSoftwareList.ToList(),
+                Language = current.Language,
+                LogFormat = LogFormat,
+                CryptoSoft = new CryptoSoftSettings
+                {
+                    Path = CryptosoftPath,
+                    TimeoutMs = current.CryptoSoft.TimeoutMs,
+                },
+            };
+
+            _repository.Save(settings);
+            SaveConfirmation = TranslationSource.Instance["settings.saved"];
+        }
+        catch (IOException)
+        {
+            SaveConfirmation = TranslationSource.Instance["settings.save_failed"];
+        }
     }
 
     /// <summary>Opens a file picker to set <see cref="CryptosoftPath"/>.</summary>
@@ -123,21 +154,5 @@ public sealed partial class SettingsViewModel : ViewModelBase
             if (results.Count > 0)
                 CryptosoftPath = results[0].Path.LocalPath;
         }
-    }
-
-    private void LoadFromRepository()
-    {
-        var stored = SettingsRepository.Instance.Load();
-        var boot = EasySave.Services.AppConfig.Instance.Settings;
-
-        LogFormat = stored.LogFormat;
-        CryptosoftPath = stored.CryptoSoft.Path.Length > 0 ? stored.CryptoSoft.Path : boot.CryptoSoft.Path;
-
-        // Prefer user-saved lists; fall back to appsettings.json defaults on first run.
-        var exts = stored.EncryptedExtensions.Count > 0 ? stored.EncryptedExtensions : boot.EncryptedExtensions;
-        foreach (var ext in exts) EncryptedExtensions.Add(ext);
-
-        var sw = stored.BusinessSoftware.Count > 0 ? stored.BusinessSoftware : boot.BusinessSoftware;
-        foreach (var s in sw) BusinessSoftwareList.Add(s);
     }
 }

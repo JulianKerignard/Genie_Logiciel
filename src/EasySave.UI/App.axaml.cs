@@ -24,6 +24,15 @@ public partial class App : Application
         // Load appsettings.json before any service reads AppConfig.Instance.
         AppConfig.Load();
 
+        // Seed settings.json from appsettings.json defaults on first run so the
+        // GUI Settings screen reflects the bootstrap configuration. After the
+        // seed, settings.json is the source of truth for all user-managed
+        // values (encrypted extensions, business software, CryptoSoft path).
+        if (!File.Exists(AppConfig.Instance.SettingsFilePath))
+        {
+            SettingsRepository.Instance.Save(AppConfig.Instance.Settings);
+        }
+
         var services = new ServiceCollection();
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
@@ -50,6 +59,11 @@ public partial class App : Application
     {
         services.AddSingleton<ILanguageService, EasySave.UI.Services.LanguageService>();
 
+        // Read user-managed settings once at startup. GUI edits saved while the
+        // app is running take effect after the next launch — BackupManager is a
+        // singleton with a frozen list of encrypted extensions.
+        var userSettings = SettingsRepository.Instance.Load();
+
         // Backend services
         services.AddSingleton<IDailyLogger>(_ =>
         {
@@ -61,7 +75,7 @@ public partial class App : Application
 
         services.AddSingleton<IEncryptionService>(_ =>
         {
-            var cryptoSettings = AppConfig.Instance.Settings.CryptoSoft;
+            var cryptoSettings = userSettings.CryptoSoft;
             return string.IsNullOrWhiteSpace(cryptoSettings.Path)
                 ? new NoOpEncryptionService()
                 : (IEncryptionService)new CryptoSoftAdapter(cryptoSettings);
@@ -74,7 +88,7 @@ public partial class App : Application
             StateTracker.Instance,
             JobRepository.Instance,
             sp.GetRequiredService<IEncryptionService>(),
-            AppConfig.Instance.Settings.EncryptedExtensions));
+            userSettings.EncryptedExtensions));
 
         // UI adapter layer
         services.AddSingleton<IBackupManagerAdapter, BackupManagerAdapter>();
