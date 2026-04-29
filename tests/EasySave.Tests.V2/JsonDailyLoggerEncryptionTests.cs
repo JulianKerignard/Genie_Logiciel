@@ -47,6 +47,29 @@ public class JsonDailyLoggerEncryptionTests : IDisposable
     }
 
     [Fact]
+    public void Append_AccumulatesEntriesAcrossMultipleCalls()
+    {
+        // Append-only contract: every Append must extend the daily file,
+        // never replace it. A regression here would silently drop earlier
+        // entries on the same business day.
+        var logger = new JsonDailyLogger(_tempDir);
+
+        logger.Append(new LogEntry { JobName = "first", FileTransferTimeMs = 1 });
+        logger.Append(new LogEntry { JobName = "second", FileTransferTimeMs = 2 });
+        logger.Append(new LogEntry { JobName = "third", FileTransferTimeMs = 3, EncryptionTimeMs = 10 });
+
+        var dailyFile = Path.Combine(_tempDir, $"{DateTime.Now:yyyy-MM-dd}.json");
+        var entries = JsonSerializer.Deserialize<List<LogEntry>>(File.ReadAllText(dailyFile));
+
+        Assert.NotNull(entries);
+        Assert.Equal(3, entries!.Count);
+        Assert.Equal(new[] { "first", "second", "third" }, entries.Select(e => e.JobName));
+        Assert.Null(entries[0].EncryptionTimeMs);
+        Assert.Null(entries[1].EncryptionTimeMs);
+        Assert.Equal(10, entries[2].EncryptionTimeMs);
+    }
+
+    [Fact]
     public void Append_NoEncryption_KeepsV1FileShape()
     {
         // A v2 caller that does not set EncryptionTimeMs must produce a daily file
