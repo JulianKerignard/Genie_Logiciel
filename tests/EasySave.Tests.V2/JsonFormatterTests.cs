@@ -118,4 +118,42 @@ public class JsonFormatterTests
 
         Assert.Contains("\n", json);
     }
+
+    [Fact]
+    public void Format_OutputDeserializes_IntoV1ShapeWithoutError()
+    {
+        // Simulates a v1 reader (e.g. another ProSoft app linked against EasyLog
+        // before EncryptionTimeMs existed). The v2 JSON must deserialize cleanly
+        // into a DTO that has only v1 fields — System.Text.Json ignores unknown
+        // properties by default, and we lock that contract here.
+        var formatter = new JsonFormatter();
+        var v2Json = formatter.Format(new LogEntry
+        {
+            Timestamp = "2026-04-29T08:00:00+02:00",
+            JobName = "v2-with-encryption",
+            FileSize = 1024,
+            FileTransferTimeMs = 5,
+            EncryptionTimeMs = 42,
+        });
+
+        V1LogEntryShape? v1View = JsonSerializer.Deserialize<V1LogEntryShape>(v2Json);
+
+        Assert.NotNull(v1View);
+        Assert.Equal("v2-with-encryption", v1View!.JobName);
+        Assert.Equal(1024, v1View.FileSize);
+        Assert.Equal(5, v1View.FileTransferTimeMs);
+    }
+
+    // Mirrors the public surface of EasyLog v1 LogEntry. Used to assert that a
+    // v2-produced JSON file stays loadable by a consumer that does not know
+    // about EncryptionTimeMs.
+    private sealed class V1LogEntryShape
+    {
+        public string Timestamp { get; set; } = string.Empty;
+        public string JobName { get; set; } = string.Empty;
+        public string SourceFile { get; set; } = string.Empty;
+        public string TargetFile { get; set; } = string.Empty;
+        public long FileSize { get; set; }
+        public long FileTransferTimeMs { get; set; }
+    }
 }
