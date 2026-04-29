@@ -63,11 +63,16 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         catch (OperationCanceledException) { }
         finally
         {
-            bool cancelledByPause = cts.IsCancellationRequested;
+            // Use _pausedByUs membership, not cts.IsCancellationRequested, to decide
+            // whether this was an intentional pause. An external CancellationToken
+            // (e.g. app shutdown) also sets IsCancellationRequested but must NOT
+            // leave the job in state.json as Paused with no resume path.
+            bool cancelledByPause;
             string? pauseReason = null;
 
             lock (_lock)
             {
+                cancelledByPause = _pausedByUs.Contains(jobName);
                 _running.Remove(jobName);
                 if (!cancelledByPause)
                 {

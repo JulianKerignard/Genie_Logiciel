@@ -26,27 +26,15 @@ public sealed class RestoreService : IRestoreService
         var targetDir = new DirectoryInfo(job.TargetPath);
         if (!targetDir.Exists) return Array.Empty<RestorePoint>();
 
-        // Each top-level subdirectory timestamped as yyyyMMdd_HHmmss is treated as a
-        // snapshot. If there is no such structure (flat target), expose the root itself.
-        var snapshots = targetDir.GetDirectories("*", SearchOption.TopDirectoryOnly)
-            .Where(d => DateTimeOffset.TryParseExact(d.Name, "yyyyMMdd_HHmmss",
-                null, System.Globalization.DateTimeStyles.None, out _))
-            .OrderByDescending(d => d.Name)
-            .ToList();
-
-        if (snapshots.Count > 0)
-        {
-            return snapshots.Select(d => BuildPoint(job, d, BackupType.Full)).ToList();
-        }
-
-        // Flat layout: single restore point from the target root.
+        // BackupManager writes files flat into TargetPath (no versioned subdirectories),
+        // so the target root is the only restore point available.
         long size = targetDir.GetFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
         return new[]
         {
             new RestorePoint
             {
                 JobName = job.Name,
-                Timestamp = targetDir.LastWriteTimeOffset(),
+                Timestamp = new DateTimeOffset(targetDir.LastWriteTimeUtc, TimeSpan.Zero),
                 BackupType = job.Type,
                 SizeBytes = size,
                 SnapshotPath = targetDir.FullName,
@@ -97,26 +85,4 @@ public sealed class RestoreService : IRestoreService
             .FirstOrDefault(j => j.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
         return job?.SourcePath ?? Directory.GetCurrentDirectory();
     }
-
-    private static RestorePoint BuildPoint(BackupJob job, DirectoryInfo dir, BackupType type)
-    {
-        long size = dir.GetFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
-        DateTimeOffset.TryParseExact(dir.Name, "yyyyMMdd_HHmmss",
-            null, System.Globalization.DateTimeStyles.None, out var ts);
-        return new RestorePoint
-        {
-            JobName = job.Name,
-            Timestamp = ts,
-            BackupType = type,
-            SizeBytes = size,
-            SnapshotPath = dir.FullName,
-        };
-    }
-}
-
-// Extension so the restore service can turn a DirectoryInfo.LastWriteTime into DateTimeOffset.
-file static class DirectoryInfoExtensions
-{
-    public static DateTimeOffset LastWriteTimeOffset(this DirectoryInfo dir) =>
-        new DateTimeOffset(dir.LastWriteTimeUtc, TimeSpan.Zero);
 }

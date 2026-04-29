@@ -16,14 +16,4 @@ public sealed class ScheduledJob
 
     /// <summary>Timestamp of the last automatic run. Null if never run.</summary>
     public DateTimeOffset? LastRunTime { get; set; }
-
-    /// <summary>Computed next run time based on LastRunTime + IntervalMinutes.</summary>
-    public DateTimeOffset? NextRunTime =>
-        IsEnabled && LastRunTime.HasValue
-            ? LastRunTime.Value.AddMinutes(IntervalMinutes)
-            : (DateTimeOffset?)null;
-
-    public string NextRunDisplay => NextRunTime.HasValue
-        ? NextRunTime.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
-        : "—";
 }

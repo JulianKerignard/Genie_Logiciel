@@ -31,6 +31,8 @@ public partial class App : Application
         var langService = Services.GetRequiredService<ILanguageService>();
         TranslationSource.Instance.Initialize(langService);
 
+        Services.GetRequiredService<SchedulerDispatchService>().Start();
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var mainWindow = new MainWindow
@@ -79,12 +81,14 @@ public partial class App : Application
         services.AddSingleton<BusinessWatcherService>();
         services.AddSingleton<IRestoreService>(_ => new RestoreService(JobRepository.Instance));
         services.AddSingleton<ISchedulerService, SchedulerService>();
+        services.AddSingleton<SchedulerDispatchService>();
 
         services.AddSingleton<MainWindowViewModel>();
     }
 
     private static void DisposeServices()
     {
+        Services?.GetService<SchedulerDispatchService>()?.Dispose();
         Services?.GetService<IBackupManagerAdapter>()?.Dispose();
         Services?.GetService<BusinessWatcherService>()?.Dispose();
     }

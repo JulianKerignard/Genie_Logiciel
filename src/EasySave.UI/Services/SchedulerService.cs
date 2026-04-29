@@ -39,23 +39,7 @@ public sealed class SchedulerService : ISchedulerService
     {
         ArgumentNullException.ThrowIfNull(schedules);
         var path = SchedulesFilePath;
-        var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        WriteAtomic(path, JsonSerializer.Serialize(schedules.ToList(), JsonOptions));
-    }
-
-    private static void WriteAtomic(string path, string contents)
-    {
-        var tmp = $"{path}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            File.WriteAllText(tmp, contents);
-            File.Move(tmp, path, overwrite: true);
-        }
-        catch
-        {
-            try { File.Delete(tmp); } catch { }
-            throw;
-        }
+        FileHelpers.EnsureDirectoryExists(path);
+        FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(schedules.ToList(), JsonOptions));
     }
 }
