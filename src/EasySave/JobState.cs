@@ -5,5 +5,9 @@ namespace EasySave;
 public enum JobState
 {
     Inactive = 0,
-    Active = 1
+    Active = 1,
+    // Active job temporarily held because a business software listed in appsettings.json
+    // is running. Resume happens when the business software disappears; the human-readable
+    // reason is carried separately on StateEntry.PauseReason.
+    Paused = 2
 }

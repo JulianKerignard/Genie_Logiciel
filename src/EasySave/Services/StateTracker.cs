@@ -61,6 +61,57 @@ public sealed class StateTracker
         JobProgressChanged?.Invoke(this, entry);
     }
 
+    // Marks the matching job as Paused and persists the human-readable reason (e.g.
+    // "BusinessSoftwareDetected: calc.exe"). No-op if no entry matches the given name.
+    // Resume restores the previous JobState (typically Active) and clears the reason.
+    public void Pause(string name, string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        // Only an Active job can be paused — pausing an Inactive (finished) job would
+        // mark it Paused in state.json and confuse any monitoring tool reading the file.
+        TransitionState(name, prev => prev == JobState.Active ? JobState.Paused : prev, reason);
+    }
+
+    public void Resume(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        TransitionState(name, prev => prev == JobState.Paused ? JobState.Active : prev, string.Empty);
+    }
+
+    private void TransitionState(string name, Func<JobState, JobState> nextState, string reason)
+    {
+        StateEntry? snapshot = null;
+
+        lock (_lock)
+        {
+            var path = AppConfig.Instance.StateFilePath;
+            if (!File.Exists(path)) return;
+
+            var states = ReadCurrentEntries(path);
+            var entry = states.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (entry is null) return;
+
+            var next = nextState(entry.State);
+            // No state transition means the call is rejected (e.g. Pause on Inactive,
+            // Resume on Active): leave the file and the reason untouched, no event.
+            if (entry.State == next) return;
+
+            entry.State = next;
+            entry.PauseReason = reason;
+            entry.LastActionTime = DateTimeOffset.Now;
+
+            FileHelpers.EnsureDirectoryExists(path);
+            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+            snapshot = entry;
+        }
+
+        if (snapshot is not null)
+        {
+            JobProgressChanged?.Invoke(this, snapshot);
+        }
+    }
+
     // Drops the state entry for the given job name (case-insensitive) and rewrites state.json.
     // No-op if no entry matches. Also evicts the matching JobProgress observable so the GUI
     // stops binding to a deleted job.
