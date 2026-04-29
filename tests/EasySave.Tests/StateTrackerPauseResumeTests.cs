@@ -86,15 +86,65 @@ public class StateTrackerPauseResumeTests : IDisposable
     [Fact]
     public void Resume_IsNoOp_WhenJobNotPaused()
     {
-        // Resuming an Active job leaves it Active and PauseReason empty.
+        // Resuming an Active job is a true no-op: state.json is not rewritten.
         var name = "noop-" + Guid.NewGuid().ToString("N");
         StateTracker.Instance.Update(new StateEntry { Name = name, State = JobState.Active });
+        var beforeContent = File.ReadAllText(_stateFilePath);
 
         StateTracker.Instance.Resume(name);
 
+        Assert.Equal(beforeContent, File.ReadAllText(_stateFilePath));
         var entry = ReadStates().Single(s => s.Name == name);
         Assert.Equal(JobState.Active, entry.State);
         Assert.Equal(string.Empty, entry.PauseReason);
+    }
+
+    [Fact]
+    public void Pause_IsNoOp_WhenJobInactive()
+    {
+        // An Inactive (finished) job must not be flipped to Paused.
+        var name = "inactive-" + Guid.NewGuid().ToString("N");
+        StateTracker.Instance.Update(new StateEntry { Name = name, State = JobState.Inactive });
+        var beforeContent = File.ReadAllText(_stateFilePath);
+
+        StateTracker.Instance.Pause(name, "BusinessSoftwareDetected: calc.exe");
+
+        Assert.Equal(beforeContent, File.ReadAllText(_stateFilePath));
+        Assert.Equal(JobState.Inactive, ReadStates().Single(s => s.Name == name).State);
+    }
+
+    [Fact]
+    public void Pause_RejectsBlankReason()
+    {
+        var name = "blank-" + Guid.NewGuid().ToString("N");
+        StateTracker.Instance.Update(new StateEntry { Name = name, State = JobState.Active });
+
+        Assert.Throws<ArgumentException>(() => StateTracker.Instance.Pause(name, ""));
+        Assert.Throws<ArgumentException>(() => StateTracker.Instance.Pause(name, "   "));
+    }
+
+    [Fact]
+    public void Resume_RaisesJobProgressChanged()
+    {
+        var name = "evt-resume-" + Guid.NewGuid().ToString("N");
+        StateTracker.Instance.Update(new StateEntry { Name = name, State = JobState.Active });
+        StateTracker.Instance.Pause(name, "BusinessSoftwareDetected: calc.exe");
+
+        StateEntry? received = null;
+        EventHandler<StateEntry> handler = (_, e) => received = e;
+        StateTracker.Instance.JobProgressChanged += handler;
+        try
+        {
+            StateTracker.Instance.Resume(name);
+        }
+        finally
+        {
+            StateTracker.Instance.JobProgressChanged -= handler;
+        }
+
+        Assert.NotNull(received);
+        Assert.Equal(JobState.Active, received!.State);
+        Assert.Equal(string.Empty, received.PauseReason);
     }
 
     [Fact]

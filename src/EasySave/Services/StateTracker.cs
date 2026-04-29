@@ -67,8 +67,10 @@ public sealed class StateTracker
     public void Pause(string name, string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(reason);
-        TransitionState(name, _ => JobState.Paused, reason);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        // Only an Active job can be paused — pausing an Inactive (finished) job would
+        // mark it Paused in state.json and confuse any monitoring tool reading the file.
+        TransitionState(name, prev => prev == JobState.Active ? JobState.Paused : prev, reason);
     }
 
     public void Resume(string name)
@@ -90,7 +92,12 @@ public sealed class StateTracker
             var entry = states.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
             if (entry is null) return;
 
-            entry.State = nextState(entry.State);
+            var next = nextState(entry.State);
+            // No state transition means the call is rejected (e.g. Pause on Inactive,
+            // Resume on Active): leave the file and the reason untouched, no event.
+            if (entry.State == next) return;
+
+            entry.State = next;
             entry.PauseReason = reason;
             entry.LastActionTime = DateTimeOffset.Now;
 
