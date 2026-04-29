@@ -40,6 +40,14 @@ public partial class App : Application
         var langService = Services.GetRequiredService<ILanguageService>();
         TranslationSource.Instance.Initialize(langService);
 
+        // Apply the language the user picked on a previous run so the app
+        // opens in their chosen locale, not the LanguageService default ("fr").
+        var savedLocale = SettingsRepository.Instance.Load().Language;
+        if (!string.IsNullOrWhiteSpace(savedLocale))
+        {
+            langService.SetLanguage(savedLocale);
+        }
+
         Services.GetRequiredService<SchedulerDispatchService>().Start();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

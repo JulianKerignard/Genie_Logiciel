@@ -1,5 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using EasySave.Models;
+using EasySave.Services;
 using EasySave.UI.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,10 +21,38 @@ public partial class MainWindow : Window
 
     private void OnLanguageButtonClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string locale })
+        if (sender is not Button { Tag: string locale })
+            return;
+
+        // Apply at runtime so every {markup:T} binding refreshes immediately —
+        // including any modal currently open (About, JobEdit) that subscribes
+        // to the same TranslationSource.Instance.
+        var langService = App.Services?.GetService<ILanguageService>();
+        langService?.SetLanguage(locale);
+
+        PersistLanguage(locale);
+    }
+
+    private static void PersistLanguage(string locale)
+    {
+        // Best-effort: a transient I/O failure must not block the runtime
+        // switch the user just performed. The switch already happened.
+        try
         {
-            var langService = App.Services?.GetService<ILanguageService>();
-            langService?.SetLanguage(locale);
+            var current = SettingsRepository.Instance.Load();
+            SettingsRepository.Instance.Save(new AppSettings
+            {
+                EncryptedExtensions = current.EncryptedExtensions,
+                BusinessSoftware = current.BusinessSoftware,
+                Language = locale,
+                LogFormat = current.LogFormat,
+                CryptoSoft = current.CryptoSoft,
+            });
+        }
+        catch (System.IO.IOException ex)
+        {
+            System.Diagnostics.Trace.TraceWarning(
+                $"[MainWindow] Failed to persist language '{locale}': {ex.Message}");
         }
     }
 
