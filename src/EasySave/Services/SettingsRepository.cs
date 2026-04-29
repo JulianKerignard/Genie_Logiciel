@@ -20,6 +20,9 @@ public sealed class SettingsRepository
     // Loads the persisted settings from disk, or defaults if the file is missing.
     // A corrupted file is moved aside to a timestamped ".corrupted" copy so the user's
     // values are not lost silently.
+    // Transient IOException is propagated to the caller — swallowing it and returning
+    // defaults would let the next Save() write the defaults over the existing file
+    // and silently wipe the user's settings (issue #97, same trap as #69).
     public AppSettings Load()
     {
         lock (_lock)
@@ -38,10 +41,6 @@ public sealed class SettingsRepository
             catch (JsonException ex)
             {
                 FileHelpers.QuarantineCorruptedFile(path, ex, "SettingsRepository");
-                return new AppSettings();
-            }
-            catch (IOException)
-            {
                 return new AppSettings();
             }
         }

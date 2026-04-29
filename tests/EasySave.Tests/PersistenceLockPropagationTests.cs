@@ -18,6 +18,7 @@ public class PersistenceLockPropagationTests : IDisposable
     private readonly string _tempDir;
     private readonly string _jobsFilePath;
     private readonly string _stateFilePath;
+    private readonly string _settingsFilePath;
 
     public PersistenceLockPropagationTests()
     {
@@ -25,9 +26,15 @@ public class PersistenceLockPropagationTests : IDisposable
         Directory.CreateDirectory(_tempDir);
         _jobsFilePath = Path.Combine(_tempDir, "jobs.json");
         _stateFilePath = Path.Combine(_tempDir, "state.json");
+        _settingsFilePath = Path.Combine(_tempDir, "settings.json");
 
         var configPath = Path.Combine(_tempDir, "appsettings.json");
-        var payload = new { JobsFilePath = _jobsFilePath, StateFilePath = _stateFilePath };
+        var payload = new
+        {
+            JobsFilePath = _jobsFilePath,
+            StateFilePath = _stateFilePath,
+            SettingsFilePath = _settingsFilePath,
+        };
         File.WriteAllText(configPath, JsonSerializer.Serialize(payload));
         AppConfig.Load(configPath);
     }
@@ -112,5 +119,48 @@ public class PersistenceLockPropagationTests : IDisposable
         }
 
         Assert.Equal(originalJson, File.ReadAllText(_stateFilePath));
+    }
+
+    // Issue #97: SettingsRepository.Load used to swallow IOException and return defaults,
+    // which would let the next Save write the defaults over a still-valid settings.json
+    // and silently wipe the user's settings as soon as the GUI is wired.
+    [SkippableFact]
+    public void SettingsRepository_Load_PropagatesIOException_WhenFileLocked()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(),
+            "Unix file locks are advisory; File.ReadAllText is not blocked by FileShare.None.");
+
+        var existing = new AppSettings
+        {
+            Language = "fr",
+            EncryptedExtensions = new[] { ".pdf", ".docx" },
+        };
+        File.WriteAllText(_settingsFilePath, JsonSerializer.Serialize(existing));
+
+        using var lockHolder = new FileStream(_settingsFilePath, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        Assert.Throws<IOException>(() => SettingsRepository.Instance.Load());
+    }
+
+    [SkippableFact]
+    public void SettingsRepository_Load_PreservesFile_WhenIOExceptionPropagates()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(),
+            "Unix file locks are advisory; File.ReadAllText is not blocked by FileShare.None.");
+
+        var existing = new AppSettings
+        {
+            Language = "fr",
+            EncryptedExtensions = new[] { ".pdf", ".docx" },
+        };
+        var originalJson = JsonSerializer.Serialize(existing);
+        File.WriteAllText(_settingsFilePath, originalJson);
+
+        using (var lockHolder = new FileStream(_settingsFilePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Throws<IOException>(() => SettingsRepository.Instance.Load());
+        }
+
+        Assert.Equal(originalJson, File.ReadAllText(_settingsFilePath));
     }
 }
