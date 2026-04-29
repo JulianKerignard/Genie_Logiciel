@@ -3,6 +3,8 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EasySave.Models;
+using EasySave.Services;
 using EasySave.UI.Services;
 using Application = Avalonia.Application;
 
@@ -46,10 +48,24 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>Available log format options for the ComboBox.</summary>
     public IReadOnlyList<string> LogFormatOptions { get; } = new[] { "json", "xml" };
 
-    public SettingsViewModel()
+    private readonly SettingsRepository _repository;
+
+    public SettingsViewModel() : this(SettingsRepository.Instance) { }
+
+    // Test seam: lets unit tests inject a repository pointed at a temp file.
+    internal SettingsViewModel(SettingsRepository repository)
     {
-        // TODO: load from SettingsRepository once wired
-        LoadMockSettings();
+        _repository = repository;
+        LoadFromRepository();
+    }
+
+    private void LoadFromRepository()
+    {
+        var settings = _repository.Load();
+        EncryptedExtensions = new ObservableCollection<string>(settings.EncryptedExtensions);
+        BusinessSoftwareList = new ObservableCollection<string>(settings.BusinessSoftware);
+        LogFormat = string.IsNullOrWhiteSpace(settings.LogFormat) ? "json" : settings.LogFormat;
+        CryptosoftPath = settings.CryptoSoft.Path;
     }
 
     // ── Extension commands ────────────────────────────────────────────────────
@@ -90,7 +106,23 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private void Save()
     {
-        // TODO: call SettingsRepository.Save(settings) once wired (dev3)
+        // Preserve fields not surfaced by the GUI (Language, CryptoSoft.TimeoutMs)
+        // by reading them back from the on-disk source of truth before overwriting.
+        var current = _repository.Load();
+        var settings = new AppSettings
+        {
+            EncryptedExtensions = EncryptedExtensions.ToList(),
+            BusinessSoftware = BusinessSoftwareList.ToList(),
+            Language = current.Language,
+            LogFormat = LogFormat,
+            CryptoSoft = new CryptoSoftSettings
+            {
+                Path = CryptosoftPath ?? string.Empty,
+                TimeoutMs = current.CryptoSoft.TimeoutMs,
+            },
+        };
+
+        _repository.Save(settings);
         SaveConfirmation = TranslationSource.Instance["settings.saved"];
     }
 
@@ -112,11 +144,4 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    private void LoadMockSettings()
-    {
-        EncryptedExtensions.Add(".docx");
-        EncryptedExtensions.Add(".pdf");
-        BusinessSoftwareList.Add("calc.exe");
-        LogFormat = "json";
-    }
 }
