@@ -271,7 +271,7 @@ public sealed class BackupManager
     // failure) and encryption (null when no encryption was attempted).
     private (long transferMs, long? encryptionMs) ProcessFile(FileInfo file, string targetPath)
     {
-        if (ShouldEncrypt(file.Name))
+        if (ShouldEncrypt(file.Name) && _encryption.IsAvailable)
         {
             var sw = Stopwatch.StartNew();
             var result = _encryption.Encrypt(file.FullName, targetPath);
@@ -289,17 +289,24 @@ public sealed class BackupManager
             return (transferMs, result.EncryptionTimeMs);
         }
 
+        // Plain-copy path. Used either because the file's extension is not in
+        // encrypted_extensions, or because CryptoSoft is not configured on
+        // this workstation. The cryptosoft-integration.md contract requires
+        // EncryptionTimeMs = 0 (not -1) for "encryption not performed" so
+        // operators can distinguish a missing tool from a failed run.
+        long? encryptionMs = ShouldEncrypt(file.Name) ? 0L : null;
+
         var copyTimer = Stopwatch.StartNew();
         try
         {
             File.Copy(file.FullName, targetPath, overwrite: true);
             copyTimer.Stop();
             AlignTargetMtime(file, targetPath);
-            return (copyTimer.ElapsedMilliseconds, null);
+            return (copyTimer.ElapsedMilliseconds, encryptionMs);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (-1, null);
+            return (-1, encryptionMs);
         }
     }
 

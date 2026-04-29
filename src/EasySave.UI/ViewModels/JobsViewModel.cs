@@ -76,21 +76,31 @@ public sealed partial class JobsViewModel : ViewModelBase
             vm.Progress = (int)entry.Progress;
             vm.CurrentFile = entry.CurrentSource;
             vm.FilesRemaining = entry.FilesRemaining;
-            if (entry.State == JobState.Active)
+            switch (entry.State)
             {
-                // Promote Idle/Completed → Running on a new run; don't touch a user-paused job.
-                if (vm.UiState is UiJobState.Idle or UiJobState.Completed)
-                    vm.UiState = UiJobState.Running;
-            }
-            else
-            {
-                // Backend finished (Inactive): mark Completed when the job ran to
-                // its end (no remaining files), otherwise fall back to Idle so a
-                // job that exited via pause/cancel doesn't claim success.
-                vm.UiState = entry.FilesRemaining == 0 && entry.TotalFilesEligible > 0
-                    ? UiJobState.Completed
-                    : UiJobState.Idle;
-                _watcherPausedJobs.Remove(vm.Name);
+                case JobState.Active:
+                    // Promote Idle/Completed → Running on a new run; don't touch a user-paused job.
+                    if (vm.UiState is UiJobState.Idle or UiJobState.Completed)
+                        vm.UiState = UiJobState.Running;
+                    break;
+
+                case JobState.Paused:
+                    // Backend reports the job is paused (user click or business-software watcher).
+                    // Keep the UI marker in sync — without this branch the next snapshot would
+                    // fall through the Inactive arm and overwrite the Paused state with Idle.
+                    vm.UiState = UiJobState.Paused;
+                    break;
+
+                case JobState.Inactive:
+                default:
+                    // Backend finished: mark Completed when the job ran to its end
+                    // (no remaining files), otherwise fall back to Idle so a job that
+                    // exited via cancel doesn't claim success.
+                    vm.UiState = entry.FilesRemaining == 0 && entry.TotalFilesEligible > 0
+                        ? UiJobState.Completed
+                        : UiJobState.Idle;
+                    _watcherPausedJobs.Remove(vm.Name);
+                    break;
             }
         });
     }
@@ -164,20 +174,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         }
         finally
         {
-            // Final state (Completed vs Idle) is set by OnStateUpdated when the
-            // backend writes its last Inactive snapshot. Leave the UiState alone
-            // here so we don't overwrite Completed → Idle. Only clean up the
-            // transient progress fields that have no meaning between runs.
-            if (vm.UiState == UiJobState.Running)
-            {
-                vm.UiState = UiJobState.Idle;
-                // The job exited mid-flight (exception or external cancel) — wipe
-                // the leftover progress so the bar doesn't stay at e.g. 47% with
-                // an Idle badge until the next run starts.
-                vm.Progress = 0;
-            }
-            vm.CurrentFile = string.Empty;
-            vm.FilesRemaining = 0;
+            CleanupAfterRun(vm);
         }
     }
 
@@ -225,20 +222,24 @@ public sealed partial class JobsViewModel : ViewModelBase
         }
         finally
         {
-            // Final state (Completed vs Idle) is set by OnStateUpdated when the
-            // backend writes its last Inactive snapshot. Leave the UiState alone
-            // here so we don't overwrite Completed → Idle. Only clean up the
-            // transient progress fields that have no meaning between runs.
-            if (vm.UiState == UiJobState.Running)
-            {
-                vm.UiState = UiJobState.Idle;
-                // The job exited mid-flight (exception or external cancel) — wipe
-                // the leftover progress so the bar doesn't stay at e.g. 47% with
-                // an Idle badge until the next run starts.
-                vm.Progress = 0;
-            }
-            vm.CurrentFile = string.Empty;
-            vm.FilesRemaining = 0;
+            CleanupAfterRun(vm);
         }
+    }
+
+    // Shared cleanup for RunJobAsync and RunJobInternal. Final UiState
+    // (Completed vs Idle) is set by OnStateUpdated when the backend writes
+    // its last Inactive snapshot. We only clear transient progress fields
+    // and force Idle when a Running job exited mid-flight (exception or
+    // external cancel) so the progress bar doesn't stay at e.g. 47% with
+    // an Idle badge until the next run starts.
+    private static void CleanupAfterRun(BackupJobVM vm)
+    {
+        if (vm.UiState == UiJobState.Running)
+        {
+            vm.UiState = UiJobState.Idle;
+            vm.Progress = 0;
+        }
+        vm.CurrentFile = string.Empty;
+        vm.FilesRemaining = 0;
     }
 }

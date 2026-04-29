@@ -16,6 +16,13 @@ public sealed class BusinessWatcherService : IDisposable
 
     public void Start()
     {
+        // Guard against a second Start() — without this, the previous detector
+        // (and its System.Threading.Timer) would leak: the field is overwritten
+        // and the original instance becomes unreachable while still pumping
+        // ticks until the GC catches it.
+        if (_detector is not null)
+            return;
+
         var softwareList = AppConfig.Instance.Settings.BusinessSoftware;
 
         // BusinessSoftwareDetector matches process names without extension.

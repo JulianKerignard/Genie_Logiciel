@@ -21,6 +21,9 @@ public sealed class CryptoSoftAdapter : IEncryptionService
     }
 
     /// <inheritdoc />
+    public bool IsAvailable => !string.IsNullOrWhiteSpace(_settings.Path);
+
+    /// <inheritdoc />
     public EncryptResult Encrypt(string source, string dest)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(source);

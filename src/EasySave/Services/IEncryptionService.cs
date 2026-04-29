@@ -9,6 +9,15 @@ namespace EasySave.Services;
 public interface IEncryptionService
 {
     /// <summary>
+    /// True when the underlying encryption tool is reachable and configured.
+    /// When false, callers must fall back to a plain copy and log
+    /// <c>EncryptionTimeMs = 0</c> per the v2.0 logging convention
+    /// (<c>docs/cryptosoft-integration.md</c>): the path-empty case is
+    /// "encryption not performed", not "encryption failed".
+    /// </summary>
+    bool IsAvailable { get; }
+
+    /// <summary>
     /// Reads <paramref name="source"/>, encrypts its content, and writes the
     /// encrypted bytes to <paramref name="dest"/>. Implementations are
     /// expected to be synchronous and to surface failures via the returned

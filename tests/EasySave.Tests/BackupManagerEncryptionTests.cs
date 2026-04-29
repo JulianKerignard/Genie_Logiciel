@@ -70,6 +70,8 @@ public class BackupManagerEncryptionTests : IDisposable
 
         public StubEncryption(EncryptResult result) => _result = result;
 
+        public bool IsAvailable => true;
+
         public EncryptResult Encrypt(string source, string dest)
         {
             Calls.Add((source, dest));
