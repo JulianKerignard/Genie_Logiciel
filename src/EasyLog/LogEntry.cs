@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace EasyLog;
 
 /// <summary>
@@ -37,4 +39,16 @@ public sealed class LogEntry
     /// A negative value indicates a transfer error.
     /// </summary>
     public long FileTransferTimeMs { get; set; }
+
+    /// <summary>
+    /// Encryption duration in milliseconds (EasyLog v2+).
+    /// A negative value indicates an encryption failure.
+    /// Null when no encryption was performed (default for v1 consumers).
+    /// </summary>
+    /// <remarks>
+    /// The property is omitted from the JSON output when null so that v1
+    /// consumers reading the log file see the exact same shape as before.
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? EncryptionTimeMs { get; set; }
 }

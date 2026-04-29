@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:EasySave.UI.Markup"
+        x:Class="EasySave.UI.Views.AboutWindow"
+        Title="{markup:T Key=about.title}"
+        Width="420" Height="280"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <StackPanel HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="12"
+                Margin="40">
+
+        <TextBlock Text="EasySave"
+                   FontSize="28"
+                   FontWeight="Bold"
+                   HorizontalAlignment="Center"
+                   Foreground="{StaticResource AccentBrush}" />
+
+        <TextBlock Text="{markup:T Key=about.version}"
+                   FontSize="14"
+                   HorizontalAlignment="Center"
+                   Foreground="{StaticResource MutedTextBrush}" />
+
+        <Border Height="1"
+                Background="#E5E7EB"
+                Margin="0,8" />
+
+        <TextBlock Text="{markup:T Key=about.authors}"
+                   FontSize="13"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center" />
+
+        <TextBlock Text="{markup:T Key=about.description}"
+                   FontSize="12"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   Foreground="{StaticResource MutedTextBrush}" />
+
+        <Button HorizontalAlignment="Center"
+                Padding="20,8"
+                Margin="0,12,0,0"
+                Click="OnCloseClick">
+            <TextBlock Text="{markup:T Key=common.ok}" />
+        </Button>
+
+    </StackPanel>
+</Window>

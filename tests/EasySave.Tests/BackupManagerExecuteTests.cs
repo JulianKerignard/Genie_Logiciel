@@ -46,7 +46,14 @@ public class BackupManagerExecuteTests : IDisposable
     private BackupManager CreateManager(IBackupStrategy fullStrategy, IBackupStrategy diffStrategy)
     {
         var logger = new JsonDailyLogger(_logDir);
-        return new BackupManager(logger, fullStrategy, diffStrategy, StateTracker.Instance, JobRepository.Instance);
+        return new BackupManager(
+            logger,
+            fullStrategy,
+            diffStrategy,
+            StateTracker.Instance,
+            JobRepository.Instance,
+            new NoOpEncryptionService(),
+            Array.Empty<string>());
     }
 
     private void SeedJob(string name, BackupType type)
@@ -149,5 +156,37 @@ public class BackupManagerExecuteTests : IDisposable
         var entry = Assert.Single(entries);
         Assert.Equal(JobState.Inactive, entry.State);
         Assert.Equal(0, entry.FilesRemaining);
+    }
+
+    [Fact]
+    public void ExecuteJob_LoggerThrows_StateStillFlipsToInactive()
+    {
+        File.WriteAllText(Path.Combine(_sourceDir, "file.txt"), "data");
+
+        SeedJob("logger-fail", BackupType.Full);
+        var failingLogger = new ThrowingLogger();
+        var manager = new BackupManager(
+            failingLogger,
+            new FullBackupStrategy(),
+            new DifferentialBackupStrategy(),
+            StateTracker.Instance,
+            JobRepository.Instance,
+            new NoOpEncryptionService(),
+            Array.Empty<string>());
+
+        Assert.Throws<IOException>(() => manager.ExecuteJob("logger-fail"));
+
+        var stateFile = Path.Combine(_dataDir, "state.json");
+        Assert.True(File.Exists(stateFile));
+        var stateJson = File.ReadAllText(stateFile);
+        var entries = System.Text.Json.JsonSerializer.Deserialize<List<StateEntry>>(stateJson);
+        Assert.NotNull(entries);
+        var entry = Assert.Single(entries);
+        Assert.Equal(JobState.Inactive, entry.State);
+    }
+
+    private sealed class ThrowingLogger : IDailyLogger
+    {
+        public void Append(LogEntry entry) => throw new IOException("simulated logger failure");
     }
 }

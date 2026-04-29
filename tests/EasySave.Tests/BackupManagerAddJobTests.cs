@@ -38,7 +38,9 @@ public class BackupManagerAddJobTests : IDisposable
             new FullBackupStrategy(),
             new DifferentialBackupStrategy(),
             StateTracker.Instance,
-            JobRepository.Instance);
+            JobRepository.Instance,
+            new NoOpEncryptionService(),
+            Array.Empty<string>());
     }
 
     private static BackupJob MakeJob(string name) => new()
@@ -50,26 +52,17 @@ public class BackupManagerAddJobTests : IDisposable
     };
 
     [Fact]
-    public void AddJob_WhenLessThan5_Succeeds()
+    public void AddJob_NoLimit_AcceptsManyJobs()
     {
+        // v2.0 lifts the v1.0 5-job cap. Ten jobs is enough to prove the gate is gone
+        // without making the test slow.
+        JobRepository.Instance.Save(new List<BackupJob>());
         var manager = CreateManager();
 
-        for (int i = 1; i <= 5; i++)
+        for (int i = 1; i <= 10; i++)
             manager.AddJob(MakeJob($"job-{i}"));
 
-        Assert.Equal(5, manager.ListJobs().Count);
-    }
-
-    [Fact]
-    public void AddJob_When5Already_Throws()
-    {
-        var manager = CreateManager();
-
-        for (int i = 1; i <= 5; i++)
-            manager.AddJob(MakeJob($"job-{i}"));
-
-        var ex = Assert.Throws<InvalidOperationException>(() => manager.AddJob(MakeJob("job-6")));
-        Assert.Contains("5", ex.Message);
+        Assert.Equal(10, manager.ListJobs().Count);
     }
 
     [Fact]
