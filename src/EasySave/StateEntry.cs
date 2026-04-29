@@ -38,6 +38,10 @@ public sealed class StateEntry
     // Full target path of the file currently being processed (UNC format).
     public string CurrentTarget { get; set; } = string.Empty;
 
+    // Human-readable reason kept while State is Paused (e.g. "BusinessSoftwareDetected: calc.exe").
+    // Cleared on resume. Empty when State is Active or Inactive.
+    public string PauseReason { get; set; } = string.Empty;
+
     public override string ToString()
     {
         return $"{Name} [{State}] {Progress:0.0}% - {FilesRemaining} files / {SizeRemaining} bytes remaining";

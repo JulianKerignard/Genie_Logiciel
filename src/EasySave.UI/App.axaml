@@ -1,0 +1,64 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="EasySave.UI.App"
+             xmlns:local="using:EasySave.UI"
+             xmlns:converters="using:EasySave.UI.Converters"
+             RequestedThemeVariant="Light">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Converters -->
+            <converters:StateToColorConverter x:Key="StateToColorConverter" />
+
+            <!-- Sidebar palette -->
+            <SolidColorBrush x:Key="SidebarBrush" Color="#1A1D2E" />
+            <SolidColorBrush x:Key="SidebarHoverBrush" Color="#252840" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#5E6AD2" />
+            <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="ContentBackgroundBrush" Color="#F4F5F7" />
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#6B7280" />
+
+            <!-- Sidebar nav button style -->
+            <ControlTheme x:Key="SidebarButtonTheme" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="#C8CAE0" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="Padding" Value="16,12" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="Margin" Value="8,2" />
+                <Setter Property="Template">
+                    <ControlTemplate>
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="{TemplateBinding CornerRadius}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              TextElement.FontSize="{TemplateBinding FontSize}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter>
+                <Style Selector="^:pointerover">
+                    <Setter Property="Background" Value="{StaticResource SidebarHoverBrush}" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Style>
+                <Style Selector="^:pressed">
+                    <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Style>
+            </ControlTheme>
+        </ResourceDictionary>
+    </Application.Resources>
+
+</Application>

@@ -7,18 +7,19 @@ namespace EasySave.Services;
 /// <summary>
 /// Orchestrates the lifecycle of backup jobs: CRUD operations against the
 /// persistent store, execution using the strategy pattern, real-time state
-/// updates, and per-file logging. Enforces the v1.0 cahier limit of 5 jobs.
+/// updates, and per-file logging. v2.0 lifts the v1.0 5-job cap (see
+/// docs/EasySave_v2_0_Repartition_Taches.md — Phase 2 Chloé: "Supprimer la
+/// limite de 5 jobs"; Phase 4: "[Recette V2] 6+ jobs acceptés").
 /// </summary>
 public sealed class BackupManager
 {
-    /// <summary>Maximum number of jobs allowed at any time (cahier v1.0).</summary>
-    private const int MaxJobs = 5;
-
     private readonly IDailyLogger _logger;
     private readonly IBackupStrategy _fullStrategy;
     private readonly IBackupStrategy _diffStrategy;
     private readonly StateTracker _stateTracker;
     private readonly JobRepository _jobRepository;
+    private readonly IEncryptionService _encryption;
+    private readonly HashSet<string> _encryptedExtensions;
 
     /// <summary>
     /// Wires the manager with its dependencies. All parameters are required;
@@ -29,24 +30,32 @@ public sealed class BackupManager
     /// <param name="diffStrategy">Strategy used for <see cref="BackupType.Differential"/> jobs.</param>
     /// <param name="stateTracker">Singleton state writer persisting to <c>state.json</c>.</param>
     /// <param name="jobRepository">Singleton repository persisting to <c>jobs.json</c>.</param>
+    /// <param name="encryption">Encryption side-channel; pass a <see cref="NoOpEncryptionService"/> to disable encryption.</param>
+    /// <param name="encryptedExtensions">File extensions (lowercase, leading dot) that must go through <paramref name="encryption"/> instead of a plain copy. Pass an empty list to disable.</param>
     public BackupManager(
         IDailyLogger logger,
         IBackupStrategy fullStrategy,
         IBackupStrategy diffStrategy,
         StateTracker stateTracker,
-        JobRepository jobRepository)
+        JobRepository jobRepository,
+        IEncryptionService encryption,
+        IEnumerable<string> encryptedExtensions)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(fullStrategy);
         ArgumentNullException.ThrowIfNull(diffStrategy);
         ArgumentNullException.ThrowIfNull(stateTracker);
         ArgumentNullException.ThrowIfNull(jobRepository);
+        ArgumentNullException.ThrowIfNull(encryption);
+        ArgumentNullException.ThrowIfNull(encryptedExtensions);
 
         _logger = logger;
         _fullStrategy = fullStrategy;
         _diffStrategy = diffStrategy;
         _stateTracker = stateTracker;
         _jobRepository = jobRepository;
+        _encryption = encryption;
+        _encryptedExtensions = new HashSet<string>(encryptedExtensions, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -57,8 +66,7 @@ public sealed class BackupManager
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="job"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when any of Name/SourcePath/TargetPath is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the repository already holds 5 jobs (key <c>error.max_jobs</c>)
-    /// or when a job with the same name exists (key <c>error.duplicate_job</c>).
+    /// Thrown when a job with the same name already exists (key <c>error.duplicate_job</c>).
     /// </exception>
     public void AddJob(BackupJob job)
     {
@@ -68,9 +76,6 @@ public sealed class BackupManager
         ArgumentException.ThrowIfNullOrWhiteSpace(job.TargetPath);
 
         var jobs = _jobRepository.Load().ToList();
-
-        if (jobs.Count >= MaxJobs)
-            throw new InvalidOperationException($"error.max_jobs: Maximum {MaxJobs} jobs allowed.");
 
         if (jobs.Any(j => j.Name.Equals(job.Name, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException($"error.duplicate_job: Job '{job.Name}' already exists.");
@@ -98,6 +103,7 @@ public sealed class BackupManager
 
         jobs.RemoveAt(index);
         _jobRepository.Save(jobs);
+        _stateTracker.Remove(name);
     }
 
     /// <summary>Returns the current list of configured jobs, read from disk.</summary>
@@ -109,10 +115,21 @@ public sealed class BackupManager
     /// tracker at start, per file, and on completion.
     /// </summary>
     /// <param name="name">Name of the job to execute (case-insensitive).</param>
+    /// <param name="startFromIndex">
+    /// Number of eligible files to skip at the start. Used when resuming a
+    /// previously paused Full-backup job so already-copied files are not
+    /// re-processed. Differential jobs always restart at 0 (re-scan yields
+    /// only remaining files because copied files now have matching mtime).
+    /// </param>
+    /// <param name="ct">
+    /// Token that stops the job at the next file boundary (atomically —
+    /// the file in progress is not interrupted). When cancelled the state
+    /// is left as <see cref="JobState.Paused"/> so the caller can resume later.
+    /// </param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
     /// <exception cref="KeyNotFoundException">Thrown when no job with that name exists.</exception>
     /// <exception cref="DirectoryNotFoundException">Thrown when the source directory does not exist.</exception>
-    public void ExecuteJob(string name)
+    public void ExecuteJob(string name, int startFromIndex = 0, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -120,7 +137,7 @@ public sealed class BackupManager
         var job = jobs.FirstOrDefault(j => j.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                   ?? throw new KeyNotFoundException(name);
 
-        RunJob(job);
+        RunJob(job, startFromIndex, ct);
     }
 
     /// <summary>
@@ -131,7 +148,7 @@ public sealed class BackupManager
     {
         foreach (var job in _jobRepository.Load())
         {
-            try { RunJob(job); }
+            try { RunJob(job, 0, CancellationToken.None); }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
@@ -139,7 +156,7 @@ public sealed class BackupManager
         }
     }
 
-    private void RunJob(BackupJob job)
+    private void RunJob(BackupJob job, int startFromIndex, CancellationToken ct)
     {
         var sourceDir = new DirectoryInfo(job.SourcePath);
         if (!sourceDir.Exists)
@@ -147,11 +164,24 @@ public sealed class BackupManager
 
         var strategy = job.Type == BackupType.Full ? _fullStrategy : _diffStrategy;
 
+        // Sort by full path with an ordinal comparer so the eligible list order
+        // is deterministic across runs. DirectoryInfo.GetFiles makes no
+        // ordering guarantee; without this, a paused Full job resumed with
+        // startFromIndex would skip arbitrary files on filesystems that
+        // re-order between calls.
         var eligible = sourceDir
             .GetFiles("*", SearchOption.AllDirectories)
             .Select(f => (file: f, target: GetTargetPath(job, sourceDir, f)))
             .Where(x => strategy.ShouldCopy(x.file, x.target))
+            .OrderBy(x => x.file.FullName, StringComparer.Ordinal)
             .ToList();
+
+        // Differential jobs re-scan from 0: files already backed up no longer appear
+        // in eligible (mtime matches source). Full jobs skip the first startFromIndex
+        // files so an interrupted run does not re-copy completed files.
+        int effectiveStart = job.Type == BackupType.Full
+            ? Math.Clamp(startFromIndex, 0, eligible.Count)
+            : 0;
 
         var state = new StateEntry
         {
@@ -160,59 +190,148 @@ public sealed class BackupManager
             LastActionTime = DateTimeOffset.Now,
             TotalFilesEligible = eligible.Count,
             TotalSize = eligible.Sum(x => x.file.Length),
-            FilesRemaining = eligible.Count,
-            SizeRemaining = eligible.Sum(x => x.file.Length)
+            FilesRemaining = eligible.Count - effectiveStart,
+            SizeRemaining = eligible.Skip(effectiveStart).Sum(x => x.file.Length),
         };
         _stateTracker.Update(state);
 
-        foreach (var (file, targetPath) in eligible)
+        bool succeeded = false;
+        bool paused = false;
+        try
         {
-            FileHelpers.EnsureDirectoryExists(targetPath);
+            foreach (var (file, targetPath) in eligible.Skip(effectiveStart))
+            {
+                // Check at file boundary — never mid-copy — so the target file is
+                // never left in a partial state.
+                ct.ThrowIfCancellationRequested();
 
-            var sw = Stopwatch.StartNew();
-            long transferMs;
+                FileHelpers.EnsureDirectoryExists(targetPath);
+
+                var (transferMs, encryptionMs) = ProcessFile(file, targetPath);
+
+                _logger.Append(new LogEntry
+                {
+                    Timestamp = DateTimeOffset.Now.ToString("o"),
+                    JobName = job.Name,
+                    SourceFile = file.FullName,
+                    TargetFile = targetPath,
+                    FileSize = file.Length,
+                    FileTransferTimeMs = transferMs,
+                    EncryptionTimeMs = encryptionMs,
+                });
+
+                state.FilesRemaining--;
+                state.SizeRemaining -= file.Length;
+                state.CurrentSource = file.FullName;
+                state.CurrentTarget = targetPath;
+                state.LastActionTime = DateTimeOffset.Now;
+                _stateTracker.Update(state);
+            }
+            succeeded = true;
+        }
+        catch (OperationCanceledException)
+        {
+            paused = true;
+            throw;
+        }
+        finally
+        {
+            // Always transition the state. On pause, preserve progress counters
+            // so the adapter can compute the resume index from FilesRemaining.
             try
             {
-                File.Copy(file.FullName, targetPath, overwrite: true);
-                sw.Stop();
-                transferMs = sw.ElapsedMilliseconds;
+                state.State = paused ? JobState.Paused : JobState.Inactive;
+                if (!paused)
+                {
+                    state.FilesRemaining = 0;
+                    state.SizeRemaining = 0;
+                    state.CurrentSource = string.Empty;
+                    state.CurrentTarget = string.Empty;
+                }
+                state.LastActionTime = DateTimeOffset.Now;
+                _stateTracker.Update(state);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch when (!succeeded && !paused)
             {
-                sw.Stop();
-                transferMs = -1;
+                // On the non-pause failure path, do not replace the in-flight
+                // exception with a state-writer failure.
             }
-
-            _logger.Append(new LogEntry
-            {
-                Timestamp = DateTimeOffset.Now.ToString("o"),
-                JobName = job.Name,
-                SourceFile = file.FullName,
-                TargetFile = targetPath,
-                FileSize = file.Length,
-                FileTransferTimeMs = transferMs
-            });
-
-            state.FilesRemaining--;
-            state.SizeRemaining -= file.Length;
-            state.CurrentSource = file.FullName;
-            state.CurrentTarget = targetPath;
-            state.LastActionTime = DateTimeOffset.Now;
-            _stateTracker.Update(state);
         }
-
-        state.State = JobState.Inactive;
-        state.FilesRemaining = 0;
-        state.SizeRemaining = 0;
-        state.CurrentSource = string.Empty;
-        state.CurrentTarget = string.Empty;
-        state.LastActionTime = DateTimeOffset.Now;
-        _stateTracker.Update(state);
     }
 
     private static string GetTargetPath(BackupJob job, DirectoryInfo sourceDir, FileInfo file)
     {
         var relativePath = Path.GetRelativePath(sourceDir.FullName, file.FullName);
         return Path.Combine(job.TargetPath, relativePath);
+    }
+
+    // Routes a single file either through the encryption side-channel (if its
+    // extension is in the configured list) or through a plain File.Copy.
+    // Returns the two times to log: file transfer (always set, negative on
+    // failure) and encryption (null when no encryption was attempted).
+    private (long transferMs, long? encryptionMs) ProcessFile(FileInfo file, string targetPath)
+    {
+        if (ShouldEncrypt(file.Name) && _encryption.IsAvailable)
+        {
+            var sw = Stopwatch.StartNew();
+            var result = _encryption.Encrypt(file.FullName, targetPath);
+            sw.Stop();
+
+            if (result.Success)
+            {
+                AlignTargetMtime(file, targetPath);
+            }
+
+            // CryptoSoft writes the encrypted bytes to targetPath itself, so the
+            // wall-clock duration of the Encrypt call doubles as the file
+            // transfer time for v1.0 log consumers.
+            long transferMs = result.Success ? sw.ElapsedMilliseconds : -1;
+            return (transferMs, result.EncryptionTimeMs);
+        }
+
+        // Plain-copy path. Used either because the file's extension is not in
+        // encrypted_extensions, or because CryptoSoft is not configured on
+        // this workstation. The cryptosoft-integration.md contract requires
+        // EncryptionTimeMs = 0 (not -1) for "encryption not performed" so
+        // operators can distinguish a missing tool from a failed run.
+        long? encryptionMs = ShouldEncrypt(file.Name) ? 0L : null;
+
+        var copyTimer = Stopwatch.StartNew();
+        try
+        {
+            File.Copy(file.FullName, targetPath, overwrite: true);
+            copyTimer.Stop();
+            AlignTargetMtime(file, targetPath);
+            return (copyTimer.ElapsedMilliseconds, encryptionMs);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (-1, encryptionMs);
+        }
+    }
+
+    // Carries the source file's LastWriteTimeUtc onto the target so the next
+    // run of DifferentialBackupStrategy can decide based on dates alone.
+    // This is what lets diff backups work for encrypted files (whose size
+    // never matches the source) without storing a parallel history file.
+    private static void AlignTargetMtime(FileInfo source, string targetPath)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(targetPath, source.LastWriteTimeUtc);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The copy already succeeded; failing to stamp the mtime only
+            // means the next diff run will re-copy this file. Better to keep
+            // going than to fail the whole job over a metadata write.
+        }
+    }
+
+    private bool ShouldEncrypt(string fileName)
+    {
+        if (_encryptedExtensions.Count == 0) return false;
+        var ext = Path.GetExtension(fileName);
+        return !string.IsNullOrEmpty(ext) && _encryptedExtensions.Contains(ext);
     }
 }

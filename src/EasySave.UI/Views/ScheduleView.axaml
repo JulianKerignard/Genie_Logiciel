@@ -1,0 +1,116 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EasySave.UI.ViewModels"
+             xmlns:markup="using:EasySave.UI.Markup"
+             x:Class="EasySave.UI.Views.ScheduleView"
+             x:DataType="vm:ScheduleViewModel"
+             x:CompileBindings="False">
+
+    <DockPanel Margin="32,28,32,24">
+
+        <!-- Title -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="{markup:T Key=schedule.title}"
+                   FontSize="22"
+                   FontWeight="SemiBold"
+                   Foreground="#111827"
+                   Margin="0,0,0,24" />
+
+        <!-- Save button + confirmation at bottom -->
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="12"
+                    Margin="0,16,0,0">
+            <TextBlock Text="{Binding SaveConfirmation}"
+                       Foreground="#22C55E"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding SaveConfirmation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Button Command="{Binding SaveCommand}"
+                    Background="{StaticResource AccentBrush}"
+                    Foreground="White"
+                    Padding="20,10">
+                <TextBlock Text="{markup:T Key=schedule.save}" Foreground="White" />
+            </Button>
+        </StackPanel>
+
+        <!-- Column headers -->
+        <Grid DockPanel.Dock="Top"
+              ColumnDefinitions="*,Auto,170,180"
+              Margin="16,0,16,6">
+            <TextBlock Grid.Column="0" Text="{markup:T Key=schedule.col_job}"
+                       FontSize="12" FontWeight="SemiBold"
+                       Foreground="{StaticResource MutedTextBrush}" />
+            <TextBlock Grid.Column="1" Text="{markup:T Key=schedule.col_enabled}"
+                       FontSize="12" FontWeight="SemiBold"
+                       Foreground="{StaticResource MutedTextBrush}"
+                       Margin="0,0,16,0" />
+            <TextBlock Grid.Column="2" Text="{markup:T Key=schedule.col_interval}"
+                       FontSize="12" FontWeight="SemiBold"
+                       Foreground="{StaticResource MutedTextBrush}" />
+            <TextBlock Grid.Column="3" Text="{markup:T Key=schedule.col_next}"
+                       FontSize="12" FontWeight="SemiBold"
+                       Foreground="{StaticResource MutedTextBrush}" />
+        </Grid>
+
+        <!-- Job rows -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding ScheduledJobs}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ScheduledJobVM">
+                        <Border Background="{StaticResource CardBackgroundBrush}"
+                                CornerRadius="8"
+                                Padding="16,12"
+                                Margin="0,0,0,6"
+                                BoxShadow="0 1 4 0 #10000000">
+                            <Grid ColumnDefinitions="*,Auto,170,180">
+
+                                <!-- Job name -->
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding JobName}"
+                                           FontSize="14"
+                                           FontWeight="Medium"
+                                           Foreground="#111827"
+                                           VerticalAlignment="Center" />
+
+                                <!-- Enable toggle -->
+                                <CheckBox Grid.Column="1"
+                                          IsChecked="{Binding IsEnabled}"
+                                          Margin="0,0,16,0"
+                                          VerticalAlignment="Center" />
+
+                                <!-- Interval (minutes) -->
+                                <StackPanel Grid.Column="2"
+                                            Orientation="Horizontal"
+                                            Spacing="6"
+                                            VerticalAlignment="Center">
+                                    <NumericUpDown Value="{Binding IntervalMinutes}"
+                                                   Minimum="1"
+                                                   Maximum="10080"
+                                                   Width="120"
+                                                   FormatString="0"
+                                                   ShowButtonSpinner="True"
+                                                   Foreground="#111827"
+                                                   Background="White" />
+                                    <TextBlock Text="{markup:T Key=schedule.minutes}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+
+                                <!-- Next run -->
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding NextRunDisplay}"
+                                           FontSize="13"
+                                           Foreground="{StaticResource MutedTextBrush}"
+                                           VerticalAlignment="Center" />
+
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+    </DockPanel>
+</UserControl>

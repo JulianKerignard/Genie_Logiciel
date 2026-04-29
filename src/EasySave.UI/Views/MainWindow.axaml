@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:EasySave.UI.ViewModels"
+        xmlns:markup="using:EasySave.UI.Markup"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="EasySave.UI.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        x:CompileBindings="False"
+        Title="EasySave"
+        Width="1000" Height="650"
+        MinWidth="760" MinHeight="480"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid ColumnDefinitions="220,*">
+
+        <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+        <Border Grid.Column="0"
+                Background="{StaticResource SidebarBrush}">
+            <DockPanel>
+
+                <!-- App header -->
+                <Border DockPanel.Dock="Top"
+                        Padding="20,24,20,16"
+                        BorderBrush="#2D3050"
+                        BorderThickness="0,0,0,1">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="EasySave"
+                                   Foreground="White"
+                                   FontSize="20"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="v2.0"
+                                   Foreground="#6B7280"
+                                   FontSize="12" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Language toggle -->
+                <Border DockPanel.Dock="Bottom"
+                        Padding="12,10"
+                        BorderBrush="#2D3050"
+                        BorderThickness="0,1,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                        <Button Content="FR"
+                                Theme="{StaticResource SidebarButtonTheme}"
+                                Padding="10,6"
+                                Tag="fr"
+                                Click="OnLanguageButtonClick" />
+                        <Button Content="EN"
+                                Theme="{StaticResource SidebarButtonTheme}"
+                                Padding="10,6"
+                                Tag="en"
+                                Click="OnLanguageButtonClick" />
+                    </StackPanel>
+                </Border>
+
+                <!-- About button -->
+                <Border DockPanel.Dock="Bottom" Padding="0,4">
+                    <Button Theme="{StaticResource SidebarButtonTheme}"
+                            Click="OnAboutClick">
+                        <TextBlock Text="{markup:T Key=about.title}" />
+                    </Button>
+                </Border>
+
+                <!-- Navigation buttons -->
+                <StackPanel DockPanel.Dock="Top"
+                            Spacing="2"
+                            Margin="0,16,0,0">
+                    <Button Theme="{StaticResource SidebarButtonTheme}"
+                            Command="{Binding NavigateToJobsCommand}">
+                        <TextBlock Text="{markup:T Key=menu.jobs}" />
+                    </Button>
+
+                    <Button Theme="{StaticResource SidebarButtonTheme}"
+                            Command="{Binding NavigateToRestoreCommand}">
+                        <TextBlock Text="{markup:T Key=menu.restore}" />
+                    </Button>
+
+                    <Button Theme="{StaticResource SidebarButtonTheme}"
+                            Command="{Binding NavigateToScheduleCommand}">
+                        <TextBlock Text="{markup:T Key=menu.schedule}" />
+                    </Button>
+
+                    <Button Theme="{StaticResource SidebarButtonTheme}"
+                            Command="{Binding NavigateToSettingsCommand}">
+                        <TextBlock Text="{markup:T Key=menu.settings}" />
+                    </Button>
+
+                    <Button Theme="{StaticResource SidebarButtonTheme}"
+                            Command="{Binding NavigateToLogsCommand}">
+                        <TextBlock Text="{markup:T Key=menu.logs}" />
+                    </Button>
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- ── Content area ───────────────────────────────────────────────── -->
+        <Border Grid.Column="1"
+                Background="{StaticResource ContentBackgroundBrush}">
+            <ContentControl Content="{Binding CurrentView}"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch" />
+        </Border>
+
+    </Grid>
+</Window>

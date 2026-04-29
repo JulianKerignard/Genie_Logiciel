@@ -87,10 +87,10 @@ console; swapping the view is a localised change in `Program.Main`.
 - No call to `File.Copy`, `File.WriteAllText`, `Directory.CreateDirectory`, or any filesystem API.
 - No JSON serialization or deserialization.
 - No backup-type decision — it only passes `BackupType` to `BackupManager`.
-- No enforcement of the 5-job limit, duplicate-name check, or path validation — these live in `BackupManager`.
+- No enforcement of the duplicate-name check or path validation — these live in `BackupManager`.
 - No direct access to `StateTracker`, `JobRepository`, or `AppConfig` — it only talks to `BackupManager` and `LanguageService`.
 
-Service-layer exceptions carry **translation keys** (`"error.max_jobs"`, `"error.duplicate_job"`, ...), not prose. The View translates; it never invents the policy.
+Service-layer exceptions carry **translation keys** (`"error.duplicate_job"`, `"error.empty_field"`, ...), not prose. The View translates; it never invents the policy.
 
 ### v1.0 → v2.0 migration path
 

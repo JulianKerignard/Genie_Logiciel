@@ -46,7 +46,7 @@ Logs, state, and job definitions are written under the OS-standard per-user appl
 ```
 <data-dir>/
 ├── Logs/                   # Daily log files (yyyy-MM-dd.json)
-├── state.json              # Real-time state of the 5 jobs
+├── state.json              # Real-time state of every configured job
 └── jobs.json               # Persisted job definitions
 ```
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using EasySave.Models;
 
 namespace EasySave.Services;
 
@@ -7,9 +8,9 @@ public sealed class LanguageService
 {
     private Dictionary<string, string> _translations;
 
-    public LanguageService(AppConfig config)
+    public LanguageService(AppSettings settings)
     {
-        _translations = LoadTranslations(config.Language);
+        _translations = LoadTranslations(settings.Language);
     }
 
     /// <summary>Returns the translated string for the given key, or the key itself if not found.</summary>
