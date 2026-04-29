@@ -112,6 +112,20 @@ public sealed class StateTracker
         }
     }
 
+    // Returns the current persisted StateEntry for the given job name, or null if not found.
+    // Used by the UI adapter to determine the resume index after a pause.
+    public StateEntry? GetState(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        lock (_lock)
+        {
+            var path = AppConfig.Instance.StateFilePath;
+            if (!File.Exists(path)) return null;
+            var states = ReadCurrentEntries(path);
+            return states.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     // Drops the state entry for the given job name (case-insensitive) and rewrites state.json.
     // No-op if no entry matches. Also evicts the matching JobProgress observable so the GUI
     // stops binding to a deleted job.

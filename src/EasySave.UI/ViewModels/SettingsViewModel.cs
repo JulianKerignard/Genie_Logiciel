@@ -61,6 +61,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private void LoadFromRepository()
     {
+        // settings.json is seeded from appsettings.json by App.OnFrameworkInitializationCompleted
+        // on first run, so reading from the repository is enough — no boot-time fallback needed.
         var settings = _repository.Load();
         EncryptedExtensions = new ObservableCollection<string>(settings.EncryptedExtensions);
         BusinessSoftwareList = new ObservableCollection<string>(settings.BusinessSoftware);
@@ -153,5 +155,4 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 CryptosoftPath = results[0].Path.LocalPath;
         }
     }
-
 }
