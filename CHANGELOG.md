@@ -6,6 +6,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-04-28
+
+Maintenance release on the v1.x line. v1.x ships **side-by-side** with the
+upcoming v2.0; the team continues to patch v1 from the `release/v1.x`
+branch while v2 lands on `staging` / `main`.
+
+No public API change — `EasyLog.dll` v1.x contract is preserved; existing
+`appsettings.json` overrides keep working unchanged.
+
+### Fixed
+
+- **Data loss on locked `jobs.json`** (`JobRepository.Load`): a transient
+  `IOException` (antivirus or backup agent reading the file) used to be
+  caught alongside `JsonException`, which renamed the file to
+  `*.corrupted-<ts>-<guid>` and made the next run see zero jobs. The
+  catches are now split: only `JsonException` quarantines, `IOException`
+  returns empty without renaming so the next attempt reads the file
+  cleanly once the lock releases.
+- **Interactive menu errors on stderr** (`ConsoleUI.ExecuteJobs`): both
+  callbacks were `Console.WriteLine`. The interactive menu now matches
+  the CLI direct mode and routes errors to `Console.Error.WriteLine`.
+- **`CommandParser` range DoS**: an input like `"1-9999999"` previously
+  allocated millions of `HashSet` entries before the caller could reject
+  the indices. Indices above the cahier v1.0 cap of 5 now make
+  `ParseJobSelection` return an empty list, same convention as the
+  existing `< 1` branch.
+- **`BackupManager.ExecuteAll` typed catch**: the bare
+  `catch (Exception)` was silently swallowing programmer errors
+  (NullReferenceException, OutOfMemoryException) alongside the expected
+  IO failures. Catch is now restricted to `IOException`,
+  `UnauthorizedAccessException`, and `DirectoryNotFoundException`.
+
+### Changed
+
+- **Bare i18n keys as exception messages**
+  (`BackupManager.AddJob`): `InvalidOperationException` now carries
+  `"error.max_jobs"` / `"error.duplicate_job"` instead of the compound
+  `"error.max_jobs: Maximum 5 jobs allowed."` format. The CLI's
+  split-on-colon hack is gone; `ConsoleUI.AddJob` passes the message
+  straight to `LanguageService.T`. Tests assert exact equality on the
+  key.
+
+### Documentation
+
+- Sequence diagram replaced by a corrected version (renamed to
+  `EasySave v1.1 — Sequence Diagram.png` to follow the existing
+  naming pattern).
+- New `CommandParserTests` covering valid input, invalid input, and
+  above-cap input (23 cases).
+
 ## [1.0.1] — 2026-04-21
 
 Production hardening and documentation pass. No public API change —
@@ -95,6 +145,7 @@ full and differential strategies, daily JSON logging, and English/French UI.
 
 - Log and state paths default to paths under the executable — no hardcoded `C:\temp` or similar.
 
-[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/releases/tag/v1.0.0

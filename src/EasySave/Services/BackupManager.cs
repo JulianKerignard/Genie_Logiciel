@@ -12,7 +12,7 @@ namespace EasySave.Services;
 public sealed class BackupManager
 {
     /// <summary>Maximum number of jobs allowed at any time (cahier v1.0).</summary>
-    private const int MaxJobs = 5;
+    private const int MaxJobs = BackupLimits.MaxJobs;
 
     private readonly IDailyLogger _logger;
     private readonly IBackupStrategy _fullStrategy;
@@ -70,10 +70,10 @@ public sealed class BackupManager
         var jobs = _jobRepository.Load().ToList();
 
         if (jobs.Count >= MaxJobs)
-            throw new InvalidOperationException($"error.max_jobs: Maximum {MaxJobs} jobs allowed.");
+            throw new InvalidOperationException("error.max_jobs");
 
         if (jobs.Any(j => j.Name.Equals(job.Name, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException($"error.duplicate_job: Job '{job.Name}' already exists.");
+            throw new InvalidOperationException("error.duplicate_job");
 
         jobs.Add(job);
         _jobRepository.Save(jobs);
@@ -124,16 +124,23 @@ public sealed class BackupManager
     }
 
     /// <summary>
-    /// Runs every configured job sequentially. A failure on one job is logged
-    /// to <see cref="Console.Error"/> but does not stop the following jobs.
+    /// Runs every configured job sequentially. Failures on individual jobs do not
+    /// stop the loop; only IO/permission/config errors known to be safe to skip
+    /// are caught. Programmer errors (NullReference, OutOfMemory, etc.) propagate.
     /// </summary>
+    /// <remarks>
+    /// Diagnostic output is written to <see cref="Console.Error"/> as a fallback
+    /// for v1.x. v2 will replace this with an explicit failure-callback parameter
+    /// so the service layer no longer writes to the console.
+    /// </remarks>
     public void ExecuteAll()
     {
         foreach (var job in _jobRepository.Load())
         {
             try { RunJob(job); }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                // DirectoryNotFoundException is a subclass of IOException, already covered.
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
             }
         }
