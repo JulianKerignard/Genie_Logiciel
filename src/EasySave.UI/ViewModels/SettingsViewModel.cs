@@ -108,22 +108,32 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         // Preserve fields not surfaced by the GUI (Language, CryptoSoft.TimeoutMs)
         // by reading them back from the on-disk source of truth before overwriting.
-        var current = _repository.Load();
-        var settings = new AppSettings
+        // Load and Save can both throw IOException (PR #102 made the propagation
+        // explicit to avoid silent data loss); surface the failure to the user
+        // through the same banner instead of letting [RelayCommand] propagate.
+        try
         {
-            EncryptedExtensions = EncryptedExtensions.ToList(),
-            BusinessSoftware = BusinessSoftwareList.ToList(),
-            Language = current.Language,
-            LogFormat = LogFormat,
-            CryptoSoft = new CryptoSoftSettings
+            var current = _repository.Load();
+            var settings = new AppSettings
             {
-                Path = CryptosoftPath ?? string.Empty,
-                TimeoutMs = current.CryptoSoft.TimeoutMs,
-            },
-        };
+                EncryptedExtensions = EncryptedExtensions.ToList(),
+                BusinessSoftware = BusinessSoftwareList.ToList(),
+                Language = current.Language,
+                LogFormat = LogFormat,
+                CryptoSoft = new CryptoSoftSettings
+                {
+                    Path = CryptosoftPath,
+                    TimeoutMs = current.CryptoSoft.TimeoutMs,
+                },
+            };
 
-        _repository.Save(settings);
-        SaveConfirmation = TranslationSource.Instance["settings.saved"];
+            _repository.Save(settings);
+            SaveConfirmation = TranslationSource.Instance["settings.saved"];
+        }
+        catch (IOException)
+        {
+            SaveConfirmation = TranslationSource.Instance["settings.save_failed"];
+        }
     }
 
     /// <summary>Opens a file picker to set <see cref="CryptosoftPath"/>.</summary>

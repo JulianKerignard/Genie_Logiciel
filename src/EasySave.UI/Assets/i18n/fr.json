@@ -28,6 +28,7 @@
   "settings.remove": "Supprimer",
   "settings.browse": "Parcourir...",
   "settings.saved": "Paramètres enregistrés.",
+  "settings.save_failed": "Impossible d'enregistrer les paramètres. Vérifiez l'accès au disque et réessayez.",
   "about.title": "À propos",
   "about.version": "Version 2.0.0",
   "about.authors": "Auteurs : Équipe EasySave — CESI PGE A3 FISE INFO",
