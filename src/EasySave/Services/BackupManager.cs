@@ -164,10 +164,16 @@ public sealed class BackupManager
 
         var strategy = job.Type == BackupType.Full ? _fullStrategy : _diffStrategy;
 
+        // Sort by full path with an ordinal comparer so the eligible list order
+        // is deterministic across runs. DirectoryInfo.GetFiles makes no
+        // ordering guarantee; without this, a paused Full job resumed with
+        // startFromIndex would skip arbitrary files on filesystems that
+        // re-order between calls.
         var eligible = sourceDir
             .GetFiles("*", SearchOption.AllDirectories)
             .Select(f => (file: f, target: GetTargetPath(job, sourceDir, f)))
             .Where(x => strategy.ShouldCopy(x.file, x.target))
+            .OrderBy(x => x.file.FullName, StringComparer.Ordinal)
             .ToList();
 
         // Differential jobs re-scan from 0: files already backed up no longer appear
