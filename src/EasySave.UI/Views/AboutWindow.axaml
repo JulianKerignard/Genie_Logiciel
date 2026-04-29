@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:markup="using:EasySave.UI.Markup"
         x:Class="EasySave.UI.Views.AboutWindow"
-        Title="About EasySave"
+        Title="{markup:T Key=about.title}"
         Width="420" Height="280"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
@@ -45,7 +45,7 @@
                 Padding="20,8"
                 Margin="0,12,0,0"
                 Click="OnCloseClick">
-            <TextBlock Text="OK" />
+            <TextBlock Text="{markup:T Key=common.ok}" />
         </Button>
 
     </StackPanel>

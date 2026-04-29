@@ -14,12 +14,14 @@
             <TextBlock Text="{markup:T Key=restore.title}"
                        FontSize="22"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,0,0,24" />
 
             <!-- ── Select Job ─────────────────────────────────────────────── -->
             <TextBlock Text="{markup:T Key=restore.select_job}"
                        FontSize="15"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,0,0,8" />
 
             <ComboBox ItemsSource="{Binding Jobs}"
@@ -38,6 +40,7 @@
             <TextBlock Text="{markup:T Key=restore.select_point}"
                        FontSize="15"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,0,0,8" />
 
             <Border Background="{StaticResource CardBackgroundBrush}"
@@ -95,6 +98,7 @@
             <TextBlock Text="{markup:T Key=restore.destination}"
                        FontSize="15"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,0,0,8" />
 
             <Border Background="{StaticResource CardBackgroundBrush}"
@@ -144,7 +148,7 @@
                     Padding="20,10"
                     HorizontalAlignment="Right"
                     IsEnabled="{Binding !IsRestoring}">
-                <TextBlock Text="{markup:T Key=restore.restore}" />
+                <TextBlock Text="{markup:T Key=restore.restore}" Foreground="White" />
             </Button>
 
         </StackPanel>

@@ -17,13 +17,14 @@
                        Text="{markup:T Key=jobs.title}"
                        FontSize="22"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        VerticalAlignment="Center" />
 
             <Button Grid.Column="1"
                     Command="{Binding RunAllCommand}"
                     Margin="0,0,8,0"
                     Padding="14,8">
-                <TextBlock Text="{markup:T Key=jobs.run_all}" />
+                <TextBlock Text="{markup:T Key=jobs.run_all}" Foreground="#111827" />
             </Button>
 
             <Button Grid.Column="2"
@@ -31,7 +32,7 @@
                     Background="{StaticResource AccentBrush}"
                     Foreground="White"
                     Padding="14,8">
-                <TextBlock Text="{markup:T Key=jobs.add}" />
+                <TextBlock Text="{markup:T Key=jobs.add}" Foreground="White" />
             </Button>
         </Grid>
 
@@ -42,13 +43,10 @@
                 CornerRadius="6"
                 Padding="14,10"
                 Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="⚠" Foreground="White" FontSize="14" VerticalAlignment="Center" />
-                <TextBlock Foreground="White" VerticalAlignment="Center">
-                    <Run Text="{markup:T Key=progress.business_pause}" />
-                    <Run Text="{Binding DetectedSoftwareName}" FontWeight="Bold" />
-                </TextBlock>
-            </StackPanel>
+            <TextBlock Foreground="White" VerticalAlignment="Center">
+                <Run Text="{markup:T Key=progress.business_pause}" />
+                <Run Text="{Binding DetectedSoftwareName}" FontWeight="Bold" />
+            </TextBlock>
         </Border>
 
         <!-- Status message -->
@@ -84,22 +82,31 @@
 
                                     <Grid ColumnDefinitions="*,Auto">
 
-                                        <!-- Job info -->
+                                        <!-- Job info — Grid columns clamp paths so Delete cannot overlap -->
                                         <StackPanel Grid.Column="0" Spacing="3">
                                             <TextBlock Text="{Binding Name}"
                                                        FontSize="15"
-                                                       FontWeight="SemiBold" />
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <TextBlock Text="{Binding SourcePath}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="#111827" />
+                                            <Grid ColumnDefinitions="*,Auto,*">
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding SourcePath}"
                                                            FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip.Tip="{Binding SourcePath}"
                                                            Foreground="{StaticResource MutedTextBrush}" />
-                                                <TextBlock Text="→"
+                                                <TextBlock Grid.Column="1"
+                                                           Text="-&gt;"
                                                            FontSize="12"
+                                                           Margin="6,0"
                                                            Foreground="{StaticResource MutedTextBrush}" />
-                                                <TextBlock Text="{Binding TargetPath}"
+                                                <TextBlock Grid.Column="2"
+                                                           Text="{Binding TargetPath}"
                                                            FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip.Tip="{Binding TargetPath}"
                                                            Foreground="{StaticResource MutedTextBrush}" />
-                                            </StackPanel>
+                                            </Grid>
                                             <TextBlock Text="{Binding BackupTypeName}"
                                                        FontSize="11"
                                                        Foreground="{StaticResource AccentBrush}" />

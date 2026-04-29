@@ -31,7 +31,17 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
     {
         ArgumentNullException.ThrowIfNull(manager);
         _manager = manager;
+
+        // Direct subscription to the in-process state tracker. The 300 ms file
+        // poll below misses fast jobs (a 4-file copy finishes before the first
+        // tick), so the bar stayed at 0 % then jumped to Idle without any
+        // animation. This event fires synchronously on every Update() and gives
+        // the UI a real-time stream regardless of job size.
+        StateTracker.Instance.JobProgressChanged += OnStateTrackerProgress;
     }
+
+    private void OnStateTrackerProgress(object? sender, StateEntry entry)
+        => StateUpdated?.Invoke(this, entry);
 
     public IReadOnlyList<BackupJob> GetJobs() => _manager.ListJobs();
     public void AddJob(BackupJob job) => _manager.AddJob(job);
@@ -162,6 +172,7 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
     {
         if (_disposed) return;
         _disposed = true;
+        StateTracker.Instance.JobProgressChanged -= OnStateTrackerProgress;
         StopPolling();
         lock (_lock)
         {

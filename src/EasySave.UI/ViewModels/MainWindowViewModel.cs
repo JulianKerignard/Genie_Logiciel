@@ -18,6 +18,25 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private ViewModelBase _currentView = null!;
 
+    /// <summary>
+    /// Replaces <see cref="CurrentView"/> and disposes the previous one when it
+    /// owns native resources (i18n event subscriptions on <c>JobEditViewModel</c>,
+    /// timers on <c>RunProgressViewModel</c>, etc.). The two cached singletons
+    /// (<see cref="_jobsVm"/>, <see cref="_progressVm"/>) are skipped because
+    /// navigation cycles through them repeatedly — disposing them would
+    /// cripple the next navigation.
+    /// </summary>
+    private void SetCurrentView(ViewModelBase next)
+    {
+        if (CurrentView is IDisposable disposable
+            && !ReferenceEquals(CurrentView, _jobsVm)
+            && !ReferenceEquals(CurrentView, _progressVm))
+        {
+            disposable.Dispose();
+        }
+        CurrentView = next;
+    }
+
     public MainWindowViewModel(
         IBackupManagerAdapter backup,
         BusinessWatcherService watcher,
@@ -36,38 +55,43 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void NavigateToJobs()
     {
-        CurrentView = GetOrCreateJobsVm();
+        SetCurrentView(GetOrCreateJobsVm());
     }
 
     [RelayCommand]
     private void NavigateToSettings()
     {
-        CurrentView = new SettingsViewModel();
+        SetCurrentView(new SettingsViewModel());
     }
 
     [RelayCommand]
     private void NavigateToLogs()
     {
-        CurrentView = new LogsViewModel();
+        SetCurrentView(new LogsViewModel());
     }
 
     [RelayCommand]
     private void NavigateToRestore()
     {
-        CurrentView = new RestoreViewModel(_backup, _restoreService);
+        SetCurrentView(new RestoreViewModel(_backup, _restoreService));
     }
 
     [RelayCommand]
     private void NavigateToSchedule()
     {
-        CurrentView = new ScheduleViewModel(_backup, _scheduler);
+        SetCurrentView(new ScheduleViewModel(_backup, _scheduler));
     }
 
     // ── Sub-navigation ────────────────────────────────────────────────────────
 
     private void ShowJobEdit(BackupJob? job)
     {
-        CurrentView = new JobEditViewModel(job, onDone: NavigateToJobs);
+        var jobsVm = GetOrCreateJobsVm();
+        SetCurrentView(new JobEditViewModel(
+            job,
+            onDone: NavigateToJobs,
+            backup: _backup,
+            onSaved: jobsVm.OnJobSaved));
     }
 
     private void ShowRunProgress()
@@ -76,9 +100,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (_progressVm is null)
         {
             _progressVm = new RunProgressViewModel(jobsVm);
-            _progressVm.CloseRequested = () => CurrentView = jobsVm;
+            _progressVm.CloseRequested = () => SetCurrentView(jobsVm);
         }
-        CurrentView = _progressVm;
+        SetCurrentView(_progressVm);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

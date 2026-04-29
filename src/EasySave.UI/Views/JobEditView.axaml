@@ -13,6 +13,7 @@
             <TextBlock Text="{Binding Title}"
                        FontSize="22"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,0,0,28" />
 
             <!-- Job Name -->
@@ -64,9 +65,23 @@
                        FontWeight="Medium"
                        Margin="0,0,0,6" />
             <ComboBox ItemsSource="{Binding BackupTypes}"
-                      SelectedItem="{Binding BackupType}"
+                      SelectedValue="{Binding BackupType}"
+                      SelectedValueBinding="{Binding Type}"
                       HorizontalAlignment="Stretch"
-                      Margin="0,0,0,32" />
+                      Margin="0,0,0,32">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DisplayName}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <!-- Error message -->
+            <TextBlock Text="{Binding ErrorMessage}"
+                       Foreground="#EF4444"
+                       FontSize="13"
+                       Margin="0,0,0,12"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             <!-- Action buttons -->
             <StackPanel Orientation="Horizontal"
@@ -80,7 +95,7 @@
                         Background="{StaticResource AccentBrush}"
                         Foreground="White"
                         Padding="16,10">
-                    <TextBlock Text="{markup:T Key=edit.save}" />
+                    <TextBlock Text="{markup:T Key=edit.save}" Foreground="White" />
                 </Button>
             </StackPanel>
 

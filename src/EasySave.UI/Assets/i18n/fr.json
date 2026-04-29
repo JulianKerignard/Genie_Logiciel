@@ -18,6 +18,7 @@
   "jobs.state.active": "En cours",
   "jobs.state.paused": "En pause",
   "jobs.state.idle": "Prêt",
+  "jobs.state.done": "Fait",
   "settings.title": "Paramètres",
   "settings.save": "Enregistrer",
   "settings.log_format": "Format des logs",
@@ -44,9 +45,10 @@
   "edit.browse": "Parcourir...",
   "edit.type_full": "Complète",
   "edit.type_diff": "Différentielle",
+  "edit.error_required": "Nom, source et destination sont obligatoires.",
   "logs.title": "Journaux",
-  "logs.empty": "Aucun journal disponible.",
-  "logs.coming_soon": "Affichage des journaux — disponible en phase 4.",
+  "logs.empty": "Aucun fichier de journal pour le moment.",
+  "logs.refresh": "Actualiser",
   "progress.title": "Progression des sauvegardes",
   "progress.files_remaining": "Fichiers restants :",
   "progress.business_pause": "Jobs en pause — logiciel métier détecté :",
@@ -70,5 +72,6 @@
   "schedule.col_enabled": "Activé",
   "schedule.col_interval": "Intervalle",
   "schedule.col_next": "Prochaine exécution",
-  "schedule.minutes": "min"
+  "schedule.minutes": "min",
+  "common.ok": "OK"
 }

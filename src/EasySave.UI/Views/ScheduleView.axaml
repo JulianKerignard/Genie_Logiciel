@@ -13,6 +13,7 @@
                    Text="{markup:T Key=schedule.title}"
                    FontSize="22"
                    FontWeight="SemiBold"
+                   Foreground="#111827"
                    Margin="0,0,0,24" />
 
         <!-- Save button + confirmation at bottom -->
@@ -29,13 +30,13 @@
                     Background="{StaticResource AccentBrush}"
                     Foreground="White"
                     Padding="20,10">
-                <TextBlock Text="{markup:T Key=schedule.save}" />
+                <TextBlock Text="{markup:T Key=schedule.save}" Foreground="White" />
             </Button>
         </StackPanel>
 
         <!-- Column headers -->
         <Grid DockPanel.Dock="Top"
-              ColumnDefinitions="*,Auto,150,180"
+              ColumnDefinitions="*,Auto,170,180"
               Margin="16,0,16,6">
             <TextBlock Grid.Column="0" Text="{markup:T Key=schedule.col_job}"
                        FontSize="12" FontWeight="SemiBold"
@@ -62,13 +63,14 @@
                                 Padding="16,12"
                                 Margin="0,0,0,6"
                                 BoxShadow="0 1 4 0 #10000000">
-                            <Grid ColumnDefinitions="*,Auto,150,180">
+                            <Grid ColumnDefinitions="*,Auto,170,180">
 
                                 <!-- Job name -->
                                 <TextBlock Grid.Column="0"
                                            Text="{Binding JobName}"
                                            FontSize="14"
                                            FontWeight="Medium"
+                                           Foreground="#111827"
                                            VerticalAlignment="Center" />
 
                                 <!-- Enable toggle -->
@@ -85,8 +87,11 @@
                                     <NumericUpDown Value="{Binding IntervalMinutes}"
                                                    Minimum="1"
                                                    Maximum="10080"
-                                                   Width="90"
-                                                   IsEnabled="{Binding IsEnabled}" />
+                                                   Width="120"
+                                                   FormatString="0"
+                                                   ShowButtonSpinner="True"
+                                                   Foreground="#111827"
+                                                   Background="White" />
                                     <TextBlock Text="{markup:T Key=schedule.minutes}"
                                                FontSize="12"
                                                Foreground="{StaticResource MutedTextBrush}"

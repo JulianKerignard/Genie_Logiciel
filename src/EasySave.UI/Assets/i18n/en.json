@@ -18,6 +18,7 @@
   "jobs.state.active": "Running",
   "jobs.state.paused": "Paused",
   "jobs.state.idle": "Idle",
+  "jobs.state.done": "Done",
   "settings.title": "Settings",
   "settings.save": "Save",
   "settings.log_format": "Log Format",
@@ -44,9 +45,10 @@
   "edit.browse": "Browse...",
   "edit.type_full": "Full",
   "edit.type_diff": "Differential",
+  "edit.error_required": "Name, source and destination are required.",
   "logs.title": "Logs",
-  "logs.empty": "No logs available.",
-  "logs.coming_soon": "Log viewer — available in phase 4.",
+  "logs.empty": "No log files yet.",
+  "logs.refresh": "Refresh",
   "progress.title": "Backup Progress",
   "progress.files_remaining": "Files remaining:",
   "progress.business_pause": "Jobs paused — business software detected:",
@@ -70,5 +72,6 @@
   "schedule.col_enabled": "Enabled",
   "schedule.col_interval": "Interval",
   "schedule.col_next": "Next run",
-  "schedule.minutes": "min"
+  "schedule.minutes": "min",
+  "common.ok": "OK"
 }
