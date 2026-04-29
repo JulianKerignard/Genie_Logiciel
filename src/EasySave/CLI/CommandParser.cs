@@ -1,11 +1,14 @@
+using EasySave.Models;
+
 namespace EasySave.CLI;
 
 /// <summary>Parses raw console input into structured command arguments.</summary>
 public sealed class CommandParser
 {
-    // Cahier v1.0 caps the job count at 5; any range or list wider than this is invalid input.
+    // Cahier v1.0 caps the job count; any range or list wider than this is invalid input.
     // The cap also prevents an out-of-memory if a user types something like "1-99999999".
-    private const int MaxIndex = 5;
+    // Single source of truth lives in BackupLimits.MaxJobs.
+    private const int MaxIndex = BackupLimits.MaxJobs;
 
     /// <summary>
     /// Parses a job selection string into a sorted, deduplicated list of 1-based job indices.

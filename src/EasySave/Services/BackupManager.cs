@@ -12,7 +12,7 @@ namespace EasySave.Services;
 public sealed class BackupManager
 {
     /// <summary>Maximum number of jobs allowed at any time (cahier v1.0).</summary>
-    private const int MaxJobs = 5;
+    private const int MaxJobs = BackupLimits.MaxJobs;
 
     private readonly IDailyLogger _logger;
     private readonly IBackupStrategy _fullStrategy;
@@ -138,10 +138,9 @@ public sealed class BackupManager
         foreach (var job in _jobRepository.Load())
         {
             try { RunJob(job); }
-            catch (Exception ex) when (ex is IOException
-                                       or UnauthorizedAccessException
-                                       or DirectoryNotFoundException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                // DirectoryNotFoundException is a subclass of IOException, already covered.
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
             }
         }
