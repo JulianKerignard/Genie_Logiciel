@@ -140,6 +140,31 @@ public class XmlFormatterTests
         Assert.NotNull(schema);
     }
 
+    [Theory]
+    [InlineData(@"C:\path\with & ampersand\file.txt")]
+    [InlineData("C:\\path\\with <angle> brackets\\file.txt")]
+    [InlineData("C:\\path\\with \"quotes\" and 'apos'\\file.txt")]
+    [InlineData(@"\\server\share\file with spaces.txt")]
+    [InlineData("Café Résumé/Ωmega/файл.txt")]
+    public void Format_EscapesSpecialCharactersInFilePaths(string path)
+    {
+        // Real-world paths can contain XML-meta characters (& < > " ') and
+        // non-ASCII glyphs. The formatter must escape them so the output is
+        // both valid XML and valid against the schema, and the original
+        // string must come back intact after parsing.
+        var formatter = new XmlFormatter();
+        var entry = new LogEntry { JobName = "special-chars", SourceFile = path, TargetFile = path };
+
+        var xml = formatter.Format(entry);
+        var element = XElement.Parse(xml);
+
+        Assert.Equal(path, element.Element("SourceFile")?.Value);
+        Assert.Equal(path, element.Element("TargetFile")?.Value);
+
+        var doc = WrapInLogs(new[] { element });
+        ValidateAgainstSchema(doc);
+    }
+
     private static XDocument WrapInLogs(IEnumerable<XElement> entries)
     {
         return new XDocument(new XElement("Logs", entries));
