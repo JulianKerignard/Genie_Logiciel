@@ -3,18 +3,93 @@
              xmlns:vm="using:EasySave.UI.ViewModels"
              xmlns:markup="using:EasySave.UI.Markup"
              x:Class="EasySave.UI.Views.LogsView"
-             x:DataType="vm:LogsViewModel">
+             x:DataType="vm:LogsViewModel"
+             x:CompileBindings="False">
 
-    <StackPanel HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="12">
-        <TextBlock Text="{markup:T Key=logs.title}"
-                   FontSize="22"
-                   FontWeight="SemiBold"
-                   HorizontalAlignment="Center" />
-        <TextBlock Text="{markup:T Key=logs.coming_soon}"
+    <DockPanel Margin="32,28,32,24">
+
+        <!-- Header -->
+        <Grid DockPanel.Dock="Top"
+              ColumnDefinitions="*,Auto"
+              Margin="0,0,0,20">
+            <TextBlock Grid.Column="0"
+                       Text="{markup:T Key=logs.title}"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       Foreground="#111827"
+                       VerticalAlignment="Center" />
+            <Button Grid.Column="1"
+                    Command="{Binding RefreshCommand}"
+                    Padding="14,8">
+                <TextBlock Text="{markup:T Key=logs.refresh}" Foreground="#111827" />
+            </Button>
+        </Grid>
+
+        <!-- Empty state -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="{markup:T Key=logs.empty}"
                    Foreground="{StaticResource MutedTextBrush}"
-                   HorizontalAlignment="Center" />
-    </StackPanel>
+                   HorizontalAlignment="Center"
+                   Margin="0,40,0,0"
+                   IsVisible="{Binding IsEmpty}" />
 
+        <!-- Status / error line -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="{Binding StatusMessage}"
+                   FontSize="12"
+                   Foreground="{StaticResource MutedTextBrush}"
+                   Margin="0,0,0,8"
+                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <!-- File list + content side-by-side -->
+        <Grid ColumnDefinitions="260,16,*"
+              IsVisible="{Binding !IsEmpty}">
+
+            <!-- File list -->
+            <Border Grid.Column="0"
+                    Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    BoxShadow="0 1 4 0 #10000000">
+                <ListBox ItemsSource="{Binding Files}"
+                         SelectedItem="{Binding SelectedFile}"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="vm:LogFileItem">
+                            <StackPanel Spacing="2" Margin="4,2">
+                                <TextBlock Text="{Binding DisplayName}"
+                                           FontSize="13"
+                                           FontWeight="Medium"
+                                           Foreground="#111827" />
+                                <TextBlock Text="{Binding SizeDisplay}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- Content viewer -->
+            <Border Grid.Column="2"
+                    Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="14"
+                    BoxShadow="0 1 4 0 #10000000">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <TextBox Text="{Binding SelectedContent, Mode=OneWay}"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="NoWrap"
+                             FontFamily="Cascadia Code, Consolas, monospace"
+                             FontSize="12"
+                             Foreground="#111827"
+                             Background="Transparent"
+                             BorderThickness="0" />
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+    </DockPanel>
 </UserControl>

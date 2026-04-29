@@ -69,42 +69,27 @@
                             Margin="0,16,0,0">
                     <Button Theme="{StaticResource SidebarButtonTheme}"
                             Command="{Binding NavigateToJobsCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="📁" FontSize="16" />
-                            <TextBlock Text="{markup:T Key=menu.jobs}" />
-                        </StackPanel>
+                        <TextBlock Text="{markup:T Key=menu.jobs}" />
                     </Button>
 
                     <Button Theme="{StaticResource SidebarButtonTheme}"
                             Command="{Binding NavigateToRestoreCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="🔄" FontSize="16" />
-                            <TextBlock Text="{markup:T Key=menu.restore}" />
-                        </StackPanel>
+                        <TextBlock Text="{markup:T Key=menu.restore}" />
                     </Button>
 
                     <Button Theme="{StaticResource SidebarButtonTheme}"
                             Command="{Binding NavigateToScheduleCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="🕐" FontSize="16" />
-                            <TextBlock Text="{markup:T Key=menu.schedule}" />
-                        </StackPanel>
+                        <TextBlock Text="{markup:T Key=menu.schedule}" />
                     </Button>
 
                     <Button Theme="{StaticResource SidebarButtonTheme}"
                             Command="{Binding NavigateToSettingsCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="⚙" FontSize="16" />
-                            <TextBlock Text="{markup:T Key=menu.settings}" />
-                        </StackPanel>
+                        <TextBlock Text="{markup:T Key=menu.settings}" />
                     </Button>
 
                     <Button Theme="{StaticResource SidebarButtonTheme}"
                             Command="{Binding NavigateToLogsCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="📋" FontSize="16" />
-                            <TextBlock Text="{markup:T Key=menu.logs}" />
-                        </StackPanel>
+                        <TextBlock Text="{markup:T Key=menu.logs}" />
                     </Button>
                 </StackPanel>
 

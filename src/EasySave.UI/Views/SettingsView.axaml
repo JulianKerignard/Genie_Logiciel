@@ -13,12 +13,14 @@
             <TextBlock Text="{markup:T Key=settings.title}"
                        FontSize="22"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,0,0,28" />
 
             <!-- ── Section: Encrypted Extensions ───────────────────────────── -->
             <TextBlock Text="{markup:T Key=settings.encrypted_extensions}"
                        FontSize="15"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,0,0,10" />
 
             <Border Background="{StaticResource CardBackgroundBrush}"
@@ -68,6 +70,7 @@
             <TextBlock Text="{markup:T Key=settings.business_software}"
                        FontSize="15"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,16,0,10" />
 
             <Border Background="{StaticResource CardBackgroundBrush}"
@@ -117,6 +120,7 @@
             <TextBlock Text="{markup:T Key=settings.log_format}"
                        FontSize="15"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,16,0,10" />
 
             <Border Background="{StaticResource CardBackgroundBrush}"
@@ -134,6 +138,7 @@
             <TextBlock Text="{markup:T Key=settings.cryptosoft_path}"
                        FontSize="15"
                        FontWeight="SemiBold"
+                       Foreground="#111827"
                        Margin="0,16,0,10" />
 
             <Border Background="{StaticResource CardBackgroundBrush}"
@@ -164,7 +169,7 @@
                         Background="{StaticResource AccentBrush}"
                         Foreground="White"
                         Padding="20,10">
-                    <TextBlock Text="{markup:T Key=settings.save}" />
+                    <TextBlock Text="{markup:T Key=settings.save}" Foreground="White" />
                 </Button>
             </StackPanel>
 

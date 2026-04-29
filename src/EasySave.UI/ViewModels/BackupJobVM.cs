@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using EasySave.Models;
 using EasySave.UI.Services;
@@ -33,8 +34,25 @@ public sealed partial class BackupJobVM : ObservableObject
     {
         UiJobState.Running => TranslationSource.Instance["jobs.state.active"],
         UiJobState.Paused => TranslationSource.Instance["jobs.state.paused"],
+        UiJobState.Completed => TranslationSource.Instance["jobs.state.done"],
         _ => TranslationSource.Instance["jobs.state.idle"],
     };
 
-    public BackupJobVM(BackupJob model) => Model = model;
+    public BackupJobVM(BackupJob model)
+    {
+        Model = model;
+
+        // Localized computed properties cache the active locale at first read.
+        // When TranslationSource flips, re-raise PropertyChanged so the bindings
+        // pick up the new translation. Without this, the job-card "Full" /
+        // "Differential" label and the Idle/Running/Paused chip stay in the
+        // language they were first rendered in.
+        TranslationSource.Instance.PropertyChanged += OnLocaleChanged;
+    }
+
+    private void OnLocaleChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(BackupTypeName));
+        OnPropertyChanged(nameof(StateDisplayName));
+    }
 }

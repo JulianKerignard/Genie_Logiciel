@@ -3,7 +3,7 @@
              x:Class="EasySave.UI.App"
              xmlns:local="using:EasySave.UI"
              xmlns:converters="using:EasySave.UI.Converters"
-             RequestedThemeVariant="Default">
+             RequestedThemeVariant="Light">
 
     <Application.DataTemplates>
         <local:ViewLocator />
@@ -43,7 +43,9 @@
                                 CornerRadius="{TemplateBinding CornerRadius}"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter Content="{TemplateBinding Content}"
-                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              TextElement.FontSize="{TemplateBinding FontSize}" />
                         </Border>
                     </ControlTemplate>
                 </Setter>

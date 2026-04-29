@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Avalonia;
 using Avalonia.Platform;
 
 namespace EasySave.UI.Services;
@@ -43,6 +44,18 @@ public sealed class LanguageService : ILanguageService
             System.Diagnostics.Trace.TraceWarning(
                 $"[LanguageService] Failed to load locale '{locale}': {ex.Message}");
             _translations = new Dictionary<string, string>();
+        }
+
+        // Push the active dictionary into Application resources so every
+        // {DynamicResource key} (built by the markup:T extension) re-resolves
+        // automatically — that's the supported Avalonia path for runtime
+        // resource swap, and unlike PropertyChanged("Item[]") it works for
+        // every binding site including buttons templated through a custom
+        // ControlTheme.
+        if (Application.Current is { } app)
+        {
+            foreach (var (key, value) in _translations)
+                app.Resources[key] = value;
         }
     }
 }

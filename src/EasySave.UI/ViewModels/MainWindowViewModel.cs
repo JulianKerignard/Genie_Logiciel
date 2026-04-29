@@ -67,7 +67,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private void ShowJobEdit(BackupJob? job)
     {
-        CurrentView = new JobEditViewModel(job, onDone: NavigateToJobs);
+        var jobsVm = GetOrCreateJobsVm();
+        CurrentView = new JobEditViewModel(
+            job,
+            onDone: NavigateToJobs,
+            backup: _backup,
+            onSaved: jobsVm.OnJobSaved);
     }
 
     private void ShowRunProgress()

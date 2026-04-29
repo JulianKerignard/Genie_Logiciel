@@ -27,7 +27,20 @@ public sealed class TranslationSource : INotifyPropertyChanged
 
         _service = service;
         _service.LanguageChanged += (_, _) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+        {
+            // Notify Avalonia's binding engine through every channel its
+            // IndexerNode.Listener.OnPropertyChanged accepts: a null name,
+            // the empty string (string.IsNullOrEmpty short-circuit), and
+            // the WPF-style "Item[]" sentinel. Some indexer bindings
+            // (notably the ones built by sidebar Button > TextBlock with
+            // a custom ControlTheme) only refresh on one of those, so we
+            // emit all three to be safe across Avalonia versions.
+            var handler = PropertyChanged;
+            if (handler is null) return;
+            handler(this, new PropertyChangedEventArgs(null));
+            handler(this, new PropertyChangedEventArgs(string.Empty));
+            handler(this, new PropertyChangedEventArgs("Item[]"));
+        };
     }
 
     /// <summary>Returns the translation for <paramref name="key"/> in the active locale.</summary>

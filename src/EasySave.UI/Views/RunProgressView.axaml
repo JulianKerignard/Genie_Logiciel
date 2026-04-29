@@ -14,6 +14,7 @@
                    Text="{markup:T Key=progress.title}"
                    FontSize="22"
                    FontWeight="SemiBold"
+                   Foreground="#111827"
                    Margin="0,0,0,20" />
 
         <!-- Business software banner -->
@@ -23,13 +24,10 @@
                 CornerRadius="6"
                 Padding="14,10"
                 Margin="0,0,0,16">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="⚠" Foreground="White" FontSize="16" VerticalAlignment="Center" />
-                <TextBlock Foreground="White" VerticalAlignment="Center">
-                    <Run Text="{markup:T Key=progress.business_pause}" />
-                    <Run Text="{Binding DetectedSoftwareName}" FontWeight="Bold" />
-                </TextBlock>
-            </StackPanel>
+            <TextBlock Foreground="White" VerticalAlignment="Center">
+                <Run Text="{markup:T Key=progress.business_pause}" />
+                <Run Text="{Binding DetectedSoftwareName}" FontWeight="Bold" />
+            </TextBlock>
         </Border>
 
         <!-- Close button -->
@@ -58,6 +56,7 @@
                                                Text="{Binding Name}"
                                                FontSize="15"
                                                FontWeight="SemiBold"
+                                               Foreground="#111827"
                                                VerticalAlignment="Center" />
                                     <Border Grid.Column="1"
                                             CornerRadius="12"

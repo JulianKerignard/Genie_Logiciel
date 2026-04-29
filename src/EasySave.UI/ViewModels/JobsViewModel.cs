@@ -45,6 +45,22 @@ public sealed partial class JobsViewModel : ViewModelBase
             Jobs.Add(new BackupJobVM(job));
     }
 
+    /// <summary>
+    /// Updates the observable Jobs collection after JobEditViewModel persists
+    /// a new or edited job. Called via callback so the list stays in sync
+    /// without a full reload.
+    /// </summary>
+    public void OnJobSaved(BackupJob saved, BackupJob? original)
+    {
+        if (original is not null)
+        {
+            var existing = Jobs.FirstOrDefault(j =>
+                j.Name.Equals(original.Name, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null) Jobs.Remove(existing);
+        }
+        Jobs.Add(new BackupJobVM(saved));
+    }
+
     // ── State polling callbacks ───────────────────────────────────────────────
 
     private void OnStateUpdated(object? sender, StateEntry entry)
@@ -58,14 +74,18 @@ public sealed partial class JobsViewModel : ViewModelBase
             vm.FilesRemaining = entry.FilesRemaining;
             if (entry.State == JobState.Active)
             {
-                // Only promote Idle → Running; don't touch a user-paused job.
-                if (vm.UiState == UiJobState.Idle) vm.UiState = UiJobState.Running;
+                // Promote Idle/Completed → Running on a new run; don't touch a user-paused job.
+                if (vm.UiState is UiJobState.Idle or UiJobState.Completed)
+                    vm.UiState = UiJobState.Running;
             }
             else
             {
-                // Backend finished (Inactive): always reset to Idle so a job that
-                // ran to completion while "paused" doesn't stay stuck on Paused.
-                vm.UiState = UiJobState.Idle;
+                // Backend finished (Inactive): mark Completed when the job ran to
+                // its end (no remaining files), otherwise fall back to Idle so a
+                // job that exited via pause/cancel doesn't claim success.
+                vm.UiState = entry.FilesRemaining == 0 && entry.TotalFilesEligible > 0
+                    ? UiJobState.Completed
+                    : UiJobState.Idle;
                 _watcherPausedJobs.Remove(vm.Name);
             }
         });
@@ -138,13 +158,14 @@ public sealed partial class JobsViewModel : ViewModelBase
         }
         finally
         {
-            if (vm.UiState != UiJobState.Paused)
-            {
+            // Final state (Completed vs Idle) is set by OnStateUpdated when the
+            // backend writes its last Inactive snapshot. Leave the UiState alone
+            // here so we don't overwrite Completed → Idle. Only clean up the
+            // transient progress fields that have no meaning between runs.
+            if (vm.UiState == UiJobState.Running)
                 vm.UiState = UiJobState.Idle;
-                vm.Progress = 0;
-                vm.CurrentFile = string.Empty;
-                vm.FilesRemaining = 0;
-            }
+            vm.CurrentFile = string.Empty;
+            vm.FilesRemaining = 0;
         }
     }
 
@@ -189,13 +210,14 @@ public sealed partial class JobsViewModel : ViewModelBase
         }
         finally
         {
-            if (vm.UiState != UiJobState.Paused)
-            {
+            // Final state (Completed vs Idle) is set by OnStateUpdated when the
+            // backend writes its last Inactive snapshot. Leave the UiState alone
+            // here so we don't overwrite Completed → Idle. Only clean up the
+            // transient progress fields that have no meaning between runs.
+            if (vm.UiState == UiJobState.Running)
                 vm.UiState = UiJobState.Idle;
-                vm.Progress = 0;
-                vm.CurrentFile = string.Empty;
-                vm.FilesRemaining = 0;
-            }
+            vm.CurrentFile = string.Empty;
+            vm.FilesRemaining = 0;
         }
     }
 }
