@@ -3,14 +3,21 @@ using EasySave.Models;
 
 namespace EasySave.UI.Services;
 
-// TODO: replace with injected real service contract when dev2 merges RunJobAsync/PauseJob/ResumeJob
 public interface IBackupManagerAdapter : IDisposable
 {
     IReadOnlyList<BackupJob> GetJobs();
     void AddJob(BackupJob job);
     void RemoveJob(string name);
-    Task RunJobAsync(string jobName, CancellationToken ct = default);
-    void PauseJob(string jobName);
+
+    /// <param name="startFromIndex">
+    /// Files to skip at the start. 0 for a fresh run; non-zero when resuming a
+    /// paused Full-backup job.
+    /// </param>
+    Task RunJobAsync(string jobName, int startFromIndex = 0, CancellationToken ct = default);
+
+    /// <param name="reason">Human-readable pause reason written to state.json.</param>
+    void PauseJob(string jobName, string reason = "UserRequested");
+
     void ResumeJob(string jobName);
     bool IsJobRunning(string jobName);
     event EventHandler<StateEntry>? StateUpdated;

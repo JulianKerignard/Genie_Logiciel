@@ -76,25 +76,8 @@ public sealed class JsonDailyLogger : IDailyLogger
         }
     }
 
-    private static string ToNormalizedPath(string path)
-    {
-        if (string.IsNullOrEmpty(path)) return path;
-
-        // Already a \\-prefixed path (real UNC network share or extended-length),
-        // leave it alone.
-        if (path.StartsWith(@"\\", StringComparison.Ordinal)) return path;
-
-        string full = Path.GetFullPath(path);
-
-        // On Windows, wrap a local drive path with the extended-length prefix.
-        // On Unix there's no equivalent, just return the absolute path.
-        if (OperatingSystem.IsWindows() && full.Length > 1 && full[1] == ':')
-        {
-            return @"\\?\" + full;
-        }
-
-        return full;
-    }
+    private static string ToNormalizedPath(string path) =>
+        LogPathHelper.ToNormalizedPath(path);
 
     private static void WriteAtomic(string filePath, List<LogEntry> entries)
     {

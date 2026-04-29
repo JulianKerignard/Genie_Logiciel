@@ -1,0 +1,152 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EasySave.UI.ViewModels"
+             xmlns:models="using:EasySave.UI.Models"
+             xmlns:markup="using:EasySave.UI.Markup"
+             x:Class="EasySave.UI.Views.RestoreView"
+             x:DataType="vm:RestoreViewModel"
+             x:CompileBindings="False">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="32,28" Spacing="0" MaxWidth="720">
+
+            <!-- Title -->
+            <TextBlock Text="{markup:T Key=restore.title}"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,24" />
+
+            <!-- ── Select Job ─────────────────────────────────────────────── -->
+            <TextBlock Text="{markup:T Key=restore.select_job}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8" />
+
+            <ComboBox ItemsSource="{Binding Jobs}"
+                      SelectedItem="{Binding SelectedJob}"
+                      HorizontalAlignment="Stretch"
+                      MinWidth="300"
+                      Margin="0,0,0,20">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Name}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <!-- ── Restore Points ─────────────────────────────────────────── -->
+            <TextBlock Text="{markup:T Key=restore.select_point}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8" />
+
+            <Border Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="4"
+                    Margin="0,0,0,20"
+                    BoxShadow="0 1 4 0 #10000000"
+                    MinHeight="120">
+                <Panel>
+                <TextBlock Text="{markup:T Key=restore.no_points}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="13"
+                           Margin="0,20"
+                           IsVisible="{Binding !HasRestorePoints}" />
+
+                <ListBox ItemsSource="{Binding RestorePoints}"
+                         SelectedItem="{Binding SelectedRestorePoint}"
+                         IsVisible="{Binding HasRestorePoints}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="models:RestorePoint">
+                            <Grid ColumnDefinitions="*,Auto,Auto" Margin="4,6">
+                                <StackPanel Grid.Column="0" Spacing="2">
+                                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}"
+                                               FontSize="13"
+                                               FontWeight="Medium" />
+                                    <TextBlock Text="{Binding SnapshotPath}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <Border Grid.Column="1"
+                                        Background="{StaticResource AccentBrush}"
+                                        CornerRadius="4"
+                                        Padding="8,3"
+                                        Margin="8,0">
+                                    <TextBlock Text="{Binding BackupTypeName}"
+                                               Foreground="White"
+                                               FontSize="11" />
+                                </Border>
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding SizeMb}"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                </Panel>
+            </Border>
+
+            <!-- ── Alternative Destination ────────────────────────────────── -->
+            <TextBlock Text="{markup:T Key=restore.destination}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,8" />
+
+            <Border Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="16"
+                    Margin="0,0,0,24"
+                    BoxShadow="0 1 4 0 #10000000">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding AlternativeDestination}"
+                             PlaceholderText="{markup:T Key=restore.destination_hint}"
+                             Margin="0,0,8,0" />
+                    <Button Grid.Column="1"
+                            Command="{Binding BrowseDestinationCommand}"
+                            Padding="10,8">
+                        <TextBlock Text="{markup:T Key=restore.browse}" />
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Progress bar (visible only while restoring) -->
+            <ProgressBar Value="{Binding RestoreProgress}"
+                         Minimum="0"
+                         Maximum="100"
+                         Height="8"
+                         CornerRadius="4"
+                         Margin="0,0,0,8"
+                         IsVisible="{Binding IsRestoring}" />
+
+            <!-- Status messages -->
+            <TextBlock Text="{Binding ErrorMessage}"
+                       Foreground="#EF4444"
+                       FontSize="13"
+                       Margin="0,0,0,8"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <TextBlock Text="{Binding SuccessMessage}"
+                       Foreground="#22C55E"
+                       FontSize="13"
+                       Margin="0,0,0,8"
+                       IsVisible="{Binding SuccessMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- Restore button -->
+            <Button Command="{Binding RestoreCommand}"
+                    Background="{StaticResource AccentBrush}"
+                    Foreground="White"
+                    Padding="20,10"
+                    HorizontalAlignment="Right"
+                    IsEnabled="{Binding !IsRestoring}">
+                <TextBlock Text="{markup:T Key=restore.restore}" />
+            </Button>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -9,6 +9,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 {
     private readonly IBackupManagerAdapter _backup;
     private readonly BusinessWatcherService _watcher;
+    private readonly IRestoreService _restoreService;
+    private readonly ISchedulerService _scheduler;
 
     private JobsViewModel? _jobsVm;
     private RunProgressViewModel? _progressVm;
@@ -16,10 +18,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private ViewModelBase _currentView = null!;
 
-    public MainWindowViewModel(IBackupManagerAdapter backup, BusinessWatcherService watcher)
+    public MainWindowViewModel(
+        IBackupManagerAdapter backup,
+        BusinessWatcherService watcher,
+        IRestoreService restoreService,
+        ISchedulerService scheduler)
     {
         _backup = backup;
         _watcher = watcher;
+        _restoreService = restoreService;
+        _scheduler = scheduler;
         NavigateToJobs();
     }
 
@@ -41,6 +49,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void NavigateToLogs()
     {
         CurrentView = new LogsViewModel();
+    }
+
+    [RelayCommand]
+    private void NavigateToRestore()
+    {
+        CurrentView = new RestoreViewModel(_backup, _restoreService);
+    }
+
+    [RelayCommand]
+    private void NavigateToSchedule()
+    {
+        CurrentView = new ScheduleViewModel(_backup, _scheduler);
     }
 
     // ── Sub-navigation ────────────────────────────────────────────────────────

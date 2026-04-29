@@ -81,7 +81,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         {
             _watcherPausedJobs.Add(job.Name);
             job.UiState = UiJobState.Paused;
-            _backup.PauseJob(job.Name);
+            _backup.PauseJob(job.Name, $"BusinessSoftwareDetected: {name}");
         }
     }
 

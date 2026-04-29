@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EasySave.Services;
 using EasySave.UI.Services;
 using Application = Avalonia.Application;
 
@@ -48,8 +49,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public SettingsViewModel()
     {
-        // TODO: load from SettingsRepository once wired
-        LoadMockSettings();
+        LoadFromRepository();
     }
 
     // ── Extension commands ────────────────────────────────────────────────────
@@ -90,7 +90,20 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private void Save()
     {
-        // TODO: call SettingsRepository.Save(settings) once wired (dev3)
+        var current = SettingsRepository.Instance.Load();
+        var settings = new EasySave.Models.AppSettings
+        {
+            LogFormat = LogFormat,
+            CryptoSoft = new EasySave.Models.CryptoSoftSettings
+            {
+                Path = CryptosoftPath,
+                TimeoutMs = current.CryptoSoft.TimeoutMs,
+            },
+            EncryptedExtensions = EncryptedExtensions.ToList(),
+            BusinessSoftware = BusinessSoftwareList.ToList(),
+            Language = current.Language,
+        };
+        SettingsRepository.Instance.Save(settings);
         SaveConfirmation = TranslationSource.Instance["settings.saved"];
     }
 
@@ -112,11 +125,19 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    private void LoadMockSettings()
+    private void LoadFromRepository()
     {
-        EncryptedExtensions.Add(".docx");
-        EncryptedExtensions.Add(".pdf");
-        BusinessSoftwareList.Add("calc.exe");
-        LogFormat = "json";
+        var stored = SettingsRepository.Instance.Load();
+        var boot = EasySave.Services.AppConfig.Instance.Settings;
+
+        LogFormat = stored.LogFormat;
+        CryptosoftPath = stored.CryptoSoft.Path.Length > 0 ? stored.CryptoSoft.Path : boot.CryptoSoft.Path;
+
+        // Prefer user-saved lists; fall back to appsettings.json defaults on first run.
+        var exts = stored.EncryptedExtensions.Count > 0 ? stored.EncryptedExtensions : boot.EncryptedExtensions;
+        foreach (var ext in exts) EncryptedExtensions.Add(ext);
+
+        var sw = stored.BusinessSoftware.Count > 0 ? stored.BusinessSoftware : boot.BusinessSoftware;
+        foreach (var s in sw) BusinessSoftwareList.Add(s);
     }
 }

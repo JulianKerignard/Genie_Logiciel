@@ -7,8 +7,9 @@ namespace EasySave.Services;
 /// <summary>
 /// Orchestrates the lifecycle of backup jobs: CRUD operations against the
 /// persistent store, execution using the strategy pattern, real-time state
-/// updates, and per-file logging. v2.0 lifts the v1.0 5-job cap; the number
-/// of jobs is now unlimited.
+/// updates, and per-file logging. v2.0 lifts the v1.0 5-job cap (see
+/// docs/EasySave_v2_0_Repartition_Taches.md — Phase 2 Chloé: "Supprimer la
+/// limite de 5 jobs"; Phase 4: "[Recette V2] 6+ jobs acceptés").
 /// </summary>
 public sealed class BackupManager
 {
@@ -114,10 +115,21 @@ public sealed class BackupManager
     /// tracker at start, per file, and on completion.
     /// </summary>
     /// <param name="name">Name of the job to execute (case-insensitive).</param>
+    /// <param name="startFromIndex">
+    /// Number of eligible files to skip at the start. Used when resuming a
+    /// previously paused Full-backup job so already-copied files are not
+    /// re-processed. Differential jobs always restart at 0 (re-scan yields
+    /// only remaining files because copied files now have matching mtime).
+    /// </param>
+    /// <param name="ct">
+    /// Token that stops the job at the next file boundary (atomically —
+    /// the file in progress is not interrupted). When cancelled the state
+    /// is left as <see cref="JobState.Paused"/> so the caller can resume later.
+    /// </param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
     /// <exception cref="KeyNotFoundException">Thrown when no job with that name exists.</exception>
     /// <exception cref="DirectoryNotFoundException">Thrown when the source directory does not exist.</exception>
-    public void ExecuteJob(string name)
+    public void ExecuteJob(string name, int startFromIndex = 0, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -125,7 +137,7 @@ public sealed class BackupManager
         var job = jobs.FirstOrDefault(j => j.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                   ?? throw new KeyNotFoundException(name);
 
-        RunJob(job);
+        RunJob(job, startFromIndex, ct);
     }
 
     /// <summary>
@@ -136,7 +148,7 @@ public sealed class BackupManager
     {
         foreach (var job in _jobRepository.Load())
         {
-            try { RunJob(job); }
+            try { RunJob(job, 0, CancellationToken.None); }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
@@ -144,7 +156,7 @@ public sealed class BackupManager
         }
     }
 
-    private void RunJob(BackupJob job)
+    private void RunJob(BackupJob job, int startFromIndex, CancellationToken ct)
     {
         var sourceDir = new DirectoryInfo(job.SourcePath);
         if (!sourceDir.Exists)
@@ -158,6 +170,13 @@ public sealed class BackupManager
             .Where(x => strategy.ShouldCopy(x.file, x.target))
             .ToList();
 
+        // Differential jobs re-scan from 0: files already backed up no longer appear
+        // in eligible (mtime matches source). Full jobs skip the first startFromIndex
+        // files so an interrupted run does not re-copy completed files.
+        int effectiveStart = job.Type == BackupType.Full
+            ? Math.Clamp(startFromIndex, 0, eligible.Count)
+            : 0;
+
         var state = new StateEntry
         {
             Name = job.Name,
@@ -165,16 +184,21 @@ public sealed class BackupManager
             LastActionTime = DateTimeOffset.Now,
             TotalFilesEligible = eligible.Count,
             TotalSize = eligible.Sum(x => x.file.Length),
-            FilesRemaining = eligible.Count,
-            SizeRemaining = eligible.Sum(x => x.file.Length)
+            FilesRemaining = eligible.Count - effectiveStart,
+            SizeRemaining = eligible.Skip(effectiveStart).Sum(x => x.file.Length),
         };
         _stateTracker.Update(state);
 
         bool succeeded = false;
+        bool paused = false;
         try
         {
-            foreach (var (file, targetPath) in eligible)
+            foreach (var (file, targetPath) in eligible.Skip(effectiveStart))
             {
+                // Check at file boundary — never mid-copy — so the target file is
+                // never left in a partial state.
+                ct.ThrowIfCancellationRequested();
+
                 FileHelpers.EnsureDirectoryExists(targetPath);
 
                 var (transferMs, encryptionMs) = ProcessFile(file, targetPath);
@@ -199,26 +223,32 @@ public sealed class BackupManager
             }
             succeeded = true;
         }
+        catch (OperationCanceledException)
+        {
+            paused = true;
+            throw;
+        }
         finally
         {
-            // Always flip the state back to Inactive, even if the loop above
-            // throws (logger I/O error, state writer failure, permission glitch).
-            // The conditional catch below only swallows on the failure path so
-            // the in-flight exception is not masked by a follow-up state-writer
-            // failure; on the success path any state-writer error propagates.
+            // Always transition the state. On pause, preserve progress counters
+            // so the adapter can compute the resume index from FilesRemaining.
             try
             {
-                state.State = JobState.Inactive;
-                state.FilesRemaining = 0;
-                state.SizeRemaining = 0;
-                state.CurrentSource = string.Empty;
-                state.CurrentTarget = string.Empty;
+                state.State = paused ? JobState.Paused : JobState.Inactive;
+                if (!paused)
+                {
+                    state.FilesRemaining = 0;
+                    state.SizeRemaining = 0;
+                    state.CurrentSource = string.Empty;
+                    state.CurrentTarget = string.Empty;
+                }
                 state.LastActionTime = DateTimeOffset.Now;
                 _stateTracker.Update(state);
             }
-            catch when (!succeeded)
+            catch when (!succeeded && !paused)
             {
-                // Failure path only: do not replace the in-flight exception.
+                // On the non-pause failure path, do not replace the in-flight
+                // exception with a state-writer failure.
             }
         }
     }
