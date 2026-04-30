@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace EasyLog;
@@ -75,13 +76,21 @@ public sealed class XmlDailyLogger : IDailyLogger
         {
             return XDocument.Load(filePath);
         }
-        catch (Exception ex)
+        catch (XmlException ex)
         {
+            // Genuinely malformed XML — preserve the file as evidence and start fresh.
             string backupPath = $"{filePath}.corrupted-{DateTime.Now:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
             File.Move(filePath, backupPath);
             Trace.TraceWarning($"[EasyLog] Corrupted XML log moved to {backupPath} - {ex.Message}");
             return new XDocument(new XElement("Logs"));
         }
+        // IOException / UnauthorizedAccessException intentionally propagated.
+        // A transient lock (antivirus, OneDrive sync, log viewer holding the file
+        // briefly) used to flow through the same arm and quarantine the live
+        // daily file, splitting the day's entries across multiple files. The
+        // convention now matches JsonDailyLogger and StateTracker / JobRepository
+        // / SettingsRepository: only the format-specific parse exception triggers
+        // quarantine; IO failures bubble up and the caller decides.
     }
 
     private static void WriteAtomic(string filePath, XDocument doc)
