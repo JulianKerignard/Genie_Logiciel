@@ -193,10 +193,18 @@ public class XmlDailyLoggerTests : IDisposable
     // and started a fresh empty document — fragmenting the day across multiple files.
     // The fix narrows the catch to System.Xml.XmlException so IO failures propagate
     // and the day-file stays whole.
+    //
+    // Platform note: FileShare.None is enforced exclusively on Windows. On POSIX
+    // (Linux / macOS) it is advisory — XDocument.Load opens its own FileStream and
+    // is not blocked. The lock-dependent tests below early-return on non-Windows
+    // platforms so they don't false-pass on Linux CI runners and don't false-fail
+    // when the assertion expects an IOException that never fires.
 
     [Fact]
     public void Append_PropagatesIOException_WhenFileLocked()
     {
+        if (!OperatingSystem.IsWindows()) return;
+
         var logger = new XmlDailyLogger(_tempDir);
 
         // Seed a valid daily file we can lock.
@@ -205,8 +213,7 @@ public class XmlDailyLoggerTests : IDisposable
 
         // Simulate an antivirus / OneDrive scan: open with FileShare.None so the
         // next ReadExisting fails with IOException. The handle is released by
-        // 'using' once the test method exits; the lock is irrelevant after the
-        // assertion so an exclusive grab during the call is enough.
+        // 'using' once the test method exits.
         using var lockHandle = new FileStream(
             dailyFile, FileMode.Open, FileAccess.Read, FileShare.None);
 
@@ -217,24 +224,21 @@ public class XmlDailyLoggerTests : IDisposable
     [Fact]
     public void Append_DoesNotQuarantineFile_OnTransientLock()
     {
+        if (!OperatingSystem.IsWindows()) return;
+
         var logger = new XmlDailyLogger(_tempDir);
         logger.Append(new LogEntry { JobName = "seed", FileTransferTimeMs = 1 });
         var dailyFile = DailyFilePath();
 
-        try
+        using (var lockHandle = new FileStream(
+            dailyFile, FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            using var lockHandle = new FileStream(
-                dailyFile, FileMode.Open, FileAccess.Read, FileShare.None);
-
             try { logger.Append(new LogEntry { JobName = "blocked", FileTransferTimeMs = 2 }); }
             catch (IOException) { /* expected — see test above */ }
         }
-        finally
-        {
-            // After the lock is released, the daily file must still exist
-            // intact and no quarantine snapshot must have been produced.
-        }
 
+        // After the lock is released, the live daily file must still exist intact
+        // and no quarantine snapshot must have been produced.
         Assert.True(File.Exists(dailyFile), "Live daily file must survive a transient lock.");
         Assert.Empty(Directory.GetFiles(_tempDir, "*.corrupted-*"));
     }
@@ -242,6 +246,8 @@ public class XmlDailyLoggerTests : IDisposable
     [Fact]
     public void Append_QuarantinesOnXmlException_ButNotOnIOException()
     {
+        if (!OperatingSystem.IsWindows()) return;
+
         var logger = new XmlDailyLogger(_tempDir);
         var dailyFile = DailyFilePath();
 
