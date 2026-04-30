@@ -11,10 +11,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.4.13" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EasySave\EasySave.csproj" />
+    <ProjectReference Include="..\..\src\EasySave.UI\EasySave.UI.csproj" />
   </ItemGroup>
 
   <ItemGroup>

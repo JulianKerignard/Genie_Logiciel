@@ -24,7 +24,18 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     private void LoadSchedules()
     {
-        var saved = _scheduler.GetAll().ToDictionary(s => s.JobName, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, ScheduledJob> saved;
+        try
+        {
+            saved = _scheduler.GetAll().ToDictionary(s => s.JobName, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (IOException)
+        {
+            // Transient lock on schedules.json: leave the grid empty so a Save click
+            // cannot wipe the file with default rows. Surface the error to the user.
+            SaveConfirmation = TranslationSource.Instance["error.persistence_unavailable"];
+            return;
+        }
 
         foreach (var job in _backup.GetJobs())
         {
