@@ -13,6 +13,7 @@ namespace EasySave.Tests.V2;
 //
 // Windows-only because Unix file locks are advisory; File.ReadAllText is not blocked
 // by FileShare.None on macOS / Linux.
+[Collection("AppConfigMutation")]
 public class SchedulerServiceLockPropagationTests : IDisposable
 {
     private readonly string _tempDir;
