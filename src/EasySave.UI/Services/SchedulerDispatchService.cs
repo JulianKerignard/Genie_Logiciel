@@ -1,3 +1,5 @@
+using EasySave.UI.Models;
+
 namespace EasySave.UI.Services;
 
 /// <summary>
@@ -36,7 +38,18 @@ public sealed class SchedulerDispatchService : IDisposable
     private void Tick(object? _)
     {
         var now = DateTimeOffset.Now;
-        var schedules = _scheduler.GetAll().ToList();
+
+        List<ScheduledJob> schedules;
+        try
+        {
+            schedules = _scheduler.GetAll().ToList();
+        }
+        catch (IOException)
+        {
+            // Transient lock on schedules.json — skip this minute, the next tick will retry.
+            return;
+        }
+
         bool anyDispatched = false;
 
         foreach (var schedule in schedules.Where(s => s.IsEnabled))
