@@ -32,6 +32,14 @@ public sealed class BusinessWatcherService : IDisposable
 
     public void Stop() => _detector?.Stop();
 
+    /// <summary>
+    /// True when at least one watched business software is currently running.
+    /// Polled by SchedulerDispatchService.Tick to skip dispatch — the
+    /// edge-triggered Detected/Gone events alone are not sufficient because
+    /// they don't fire when a process is already running at watcher startup.
+    /// </summary>
+    public bool IsBusinessSoftwareRunning => _detector?.IsAnyBusinessSoftwareRunning == true;
+
     private void OnDetected(object? sender, string softwareName) =>
         Dispatcher.UIThread.Post(() => BusinessSoftwareDetected?.Invoke(this, softwareName));
 
