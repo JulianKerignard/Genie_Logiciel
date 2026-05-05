@@ -4,9 +4,10 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace EasySave.UI.ViewModels;
 
-public sealed partial class RunProgressViewModel : ViewModelBase
+public sealed partial class RunProgressViewModel : ViewModelBase, IDisposable
 {
     private readonly JobsViewModel _jobsVm;
+    private bool _disposed;
 
     public ObservableCollection<BackupJobVM> Jobs => _jobsVm.Jobs;
 
@@ -32,4 +33,17 @@ public sealed partial class RunProgressViewModel : ViewModelBase
 
     [RelayCommand]
     private void CloseProgress() => CloseRequested?.Invoke();
+
+    // Defensive cleanup. MainWindowViewModel currently caches this VM as a
+    // navigation singleton and never disposes it (the app lives until process
+    // exit, where the OS reclaims everything), so this is not a runtime leak
+    // today. Implementing IDisposable keeps the contract symmetric with
+    // BackupJobVM / JobEditViewModel and lets a future reset/teardown path
+    // release the JobsViewModel subscription cleanly.
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _jobsVm.PropertyChanged -= OnJobsVmPropertyChanged;
+    }
 }
