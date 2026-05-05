@@ -1,0 +1,12 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:EasySave.RemoteConsole.Views"
+        x:Class="EasySave.RemoteConsole.Views.MainWindow"
+        Title="EasySave — Remote Console"
+        Width="860" Height="580"
+        MinWidth="640" MinHeight="420"
+        WindowStartupLocation="CenterScreen">
+
+  <views:ConsoleView />
+
+</Window>

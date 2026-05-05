@@ -2,7 +2,9 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using EasyLog;
+using EasySave.Infrastructure.Remote;
 using EasySave.Services;
+using EasySave.Shared;
 using EasySave.UI.Services;
 using EasySave.UI.ViewModels;
 using EasySave.UI.Views;
@@ -58,6 +60,7 @@ public partial class App : Application
         }
 
         Services.GetRequiredService<SchedulerDispatchService>().Start();
+        StartRemoteConsoleServerIfEnabled(Services);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -70,6 +73,27 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void StartRemoteConsoleServerIfEnabled(IServiceProvider services)
+    {
+        var settings = AppConfig.Instance.Settings;
+        if (!settings.RemoteConsoleEnabled) return;
+
+        var server = services.GetRequiredService<IRemoteConsoleServer>();
+        var orchestrator = services.GetRequiredService<IParallelBackupOrchestrator>();
+
+        server.CommandReceived += cmd =>
+        {
+            switch (cmd.Action)
+            {
+                case CommandType.Pause: orchestrator.Pause(cmd.JobName); break;
+                case CommandType.Play:  orchestrator.Resume(cmd.JobName); break;
+                case CommandType.Stop:  orchestrator.Stop(cmd.JobName);  break;
+            }
+        };
+
+        _ = server.StartAsync(settings.RemoteConsolePort, CancellationToken.None);
     }
 
     private static void ConfigureServices(IServiceCollection services)
@@ -109,6 +133,9 @@ public partial class App : Application
 
         // UI adapter layer
         services.AddSingleton<IBackupManagerAdapter, BackupManagerAdapter>();
+        services.AddSingleton<IRemoteConsoleServer, TcpRemoteConsoleServer>();
+        services.AddSingleton<IParallelBackupOrchestrator>(sp =>
+            new BackupManagerOrchestratorBridge(sp.GetRequiredService<IBackupManagerAdapter>()));
         services.AddSingleton<BusinessWatcherService>();
         services.AddSingleton<IRestoreService>(_ => new RestoreService(JobRepository.Instance));
         services.AddSingleton<ISchedulerService, SchedulerService>();
@@ -122,5 +149,6 @@ public partial class App : Application
         Services?.GetService<SchedulerDispatchService>()?.Dispose();
         Services?.GetService<IBackupManagerAdapter>()?.Dispose();
         Services?.GetService<BusinessWatcherService>()?.Dispose();
+        Services?.GetService<IRemoteConsoleServer>()?.StopAsync().GetAwaiter().GetResult();
     }
 }

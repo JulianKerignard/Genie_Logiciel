@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EasySave\EasySave.csproj" />
+    <ProjectReference Include="..\EasySave.Shared\EasySave.Shared.csproj" />
     <ProjectReference Include="..\EasyLog\EasyLog.csproj" />
   </ItemGroup>
 </Project>
