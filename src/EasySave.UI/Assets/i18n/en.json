@@ -73,5 +73,6 @@
   "schedule.col_interval": "Interval",
   "schedule.col_next": "Next run",
   "schedule.minutes": "min",
-  "common.ok": "OK"
+  "common.ok": "OK",
+  "error.persistence_unavailable": "Could not read schedule file. Saving is disabled until the file becomes accessible."
 }
