@@ -54,12 +54,15 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient
 
     public Task SendCommandAsync(CommandDto cmd)
     {
-        if (_tcp is null || !_tcp.Connected) return Task.CompletedTask;
+        // Capture once to avoid TOCTOU: ConnectLoopAsync or DisconnectAsync can null/dispose
+        // _tcp between the null-check and the GetStream() call on the next line.
+        var tcp = _tcp;
+        if (tcp is null || !tcp.Connected) return Task.CompletedTask;
         try
         {
             var line = JsonSerializer.Serialize(cmd, JsonOptions) + "\n";
             var bytes = Encoding.UTF8.GetBytes(line);
-            return _tcp.GetStream().WriteAsync(bytes).AsTask();
+            return tcp.GetStream().WriteAsync(bytes).AsTask();
         }
         catch
         {

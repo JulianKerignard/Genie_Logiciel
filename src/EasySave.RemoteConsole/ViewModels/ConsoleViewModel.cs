@@ -11,6 +11,9 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
 {
     private readonly IRemoteConsoleClient _client;
     private readonly IDisposable _stateSubscription;
+    // Stored so Dispose() can unsubscribe and prevent the handler keeping this
+    // instance alive after it has been disposed.
+    private readonly Action<EventDto> _eventHandler;
     private CancellationTokenSource? _connectCts;
 
     [ObservableProperty] private string _host = "localhost";
@@ -27,8 +30,8 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
             new LambdaObserver<ConnectionState>(state =>
                 Dispatcher.UIThread.Post(() => Connection = state)));
 
-        _client.EventReceived += evt =>
-            Dispatcher.UIThread.Post(() => HandleEvent(evt));
+        _eventHandler = evt => Dispatcher.UIThread.Post(() => HandleEvent(evt));
+        _client.EventReceived += _eventHandler;
     }
 
     [RelayCommand]
@@ -46,6 +49,8 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
         await _client.DisconnectAsync();
     }
 
+    // Spec-surface commands — kept for external callers / testing.
+    // Per-item buttons in the view use the commands injected on JobProgressVm.
     [RelayCommand]
     private async Task PauseJob(string? jobName)
     {
@@ -99,7 +104,7 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
     {
         Jobs.Clear();
         foreach (var dto in dtos)
-            Jobs.Add(JobProgressVm.FromDto(dto));
+            Jobs.Add(JobProgressVm.FromDto(dto, _client.SendCommandAsync));
     }
 
     private void UpsertJob(JobProgressDto dto)
@@ -108,7 +113,7 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
         if (existing is not null)
             existing.UpdateFromDto(dto);
         else
-            Jobs.Add(JobProgressVm.FromDto(dto));
+            Jobs.Add(JobProgressVm.FromDto(dto, _client.SendCommandAsync));
     }
 
     private void SetJobStatus(string? jobName, string status)
@@ -120,9 +125,11 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _client.EventReceived -= _eventHandler;
         _stateSubscription.Dispose();
         _connectCts?.Cancel();
         _connectCts?.Dispose();
+        _ = _client.DisconnectAsync();
     }
 
     private sealed class LambdaObserver<T>(Action<T> onNext) : IObserver<T>

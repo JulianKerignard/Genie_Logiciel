@@ -2,9 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:EasySave.RemoteConsole.ViewModels"
              x:Class="EasySave.RemoteConsole.Views.ConsoleView"
-             x:DataType="vm:ConsoleViewModel"
-             x:CompileBindings="False"
-             x:Name="Root">
+             x:DataType="vm:ConsoleViewModel">
 
   <DockPanel Margin="16" LastChildFill="True">
 
@@ -17,24 +15,14 @@
       <StackPanel Orientation="Horizontal" Spacing="10">
 
         <TextBlock Text="Host" VerticalAlignment="Center" Foreground="#9CA3AF" />
-        <TextBox Text="{Binding Host}"
-                 Width="170"
-                 PlaceholderText="localhost" />
+        <TextBox Text="{Binding Host}" Width="170" PlaceholderText="localhost" />
 
         <TextBlock Text="Port" VerticalAlignment="Center" Foreground="#9CA3AF" />
-        <TextBox Text="{Binding Port}"
-                 Width="76"
-                 PlaceholderText="9000" />
+        <TextBox Text="{Binding Port}" Width="76" PlaceholderText="9000" />
 
-        <Button Content="Connect"
-                Command="{Binding ConnectCommand}"
-                Padding="14,6" />
+        <Button Content="Connect"    Command="{Binding ConnectCommand}"    Padding="14,6" />
+        <Button Content="Disconnect" Command="{Binding DisconnectCommand}" Padding="14,6" />
 
-        <Button Content="Disconnect"
-                Command="{Binding DisconnectCommand}"
-                Padding="14,6" />
-
-        <!-- Connection status indicator -->
         <Border CornerRadius="4" Padding="8,4" Margin="8,0,0,0"
                 Background="{Binding Connection, Converter={StaticResource ConnectionStateToBrushConverter}}">
           <TextBlock Text="{Binding Connection}"
@@ -51,68 +39,34 @@
       <ItemsControl ItemsSource="{Binding Jobs}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:JobProgressVm">
-            <Border Margin="0,4"
-                    Padding="14,12"
-                    Background="#1A1D2E"
-                    CornerRadius="8">
+            <Border Margin="0,4" Padding="14,12" Background="#1A1D2E" CornerRadius="8">
               <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,8,Auto,4,Auto">
 
-                <!-- Job name -->
                 <TextBlock Grid.Row="0" Grid.Column="0"
                            Text="{Binding JobName}"
-                           FontWeight="SemiBold"
-                           FontSize="14" />
+                           FontWeight="SemiBold" FontSize="14" />
 
-                <!-- Status badge -->
                 <TextBlock Grid.Row="0" Grid.Column="1"
                            Text="{Binding Status}"
-                           Foreground="#6B7280"
-                           FontSize="12"
-                           VerticalAlignment="Center"
-                           Margin="0,0,8,0" />
+                           Foreground="#6B7280" FontSize="12"
+                           VerticalAlignment="Center" Margin="0,0,8,0" />
 
-                <!-- Progress bar -->
                 <ProgressBar Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
-                             Value="{Binding Progress}"
-                             Maximum="100"
-                             Height="6" />
+                             Value="{Binding Progress}" Maximum="100" Height="6" />
 
-                <!-- Files remaining -->
                 <TextBlock Grid.Row="4" Grid.Column="0"
-                           FontSize="11"
-                           Foreground="#6B7280">
-                  <TextBlock.Text>
-                    <MultiBinding StringFormat="{}{0} / {1} files — {2}">
-                      <Binding Path="FilesLeft" />
-                      <Binding Path="TotalFiles" />
-                      <Binding Path="CurrentFile" />
-                    </MultiBinding>
-                  </TextBlock.Text>
-                </TextBlock>
+                           Text="{Binding FilesSummary}"
+                           FontSize="11" Foreground="#6B7280" />
 
-                <!-- Pause / Play / Stop buttons -->
+                <!-- Commands are pre-bound per item; no parent ViewModel reference needed. -->
                 <StackPanel Grid.Row="4" Grid.Column="1"
-                            Orientation="Horizontal"
-                            Spacing="6"
-                            VerticalAlignment="Center">
-                  <Button Content="⏸"
-                          FontSize="14"
-                          Padding="8,4"
-                          Command="{Binding DataContext.PauseJobCommand, ElementName=Root}"
-                          CommandParameter="{Binding JobName}"
-                          ToolTip.Tip="Pause" />
-                  <Button Content="▶"
-                          FontSize="14"
-                          Padding="8,4"
-                          Command="{Binding DataContext.PlayJobCommand, ElementName=Root}"
-                          CommandParameter="{Binding JobName}"
-                          ToolTip.Tip="Resume" />
-                  <Button Content="■"
-                          FontSize="14"
-                          Padding="8,4"
-                          Command="{Binding DataContext.StopJobCommand, ElementName=Root}"
-                          CommandParameter="{Binding JobName}"
-                          ToolTip.Tip="Stop" />
+                            Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <Button Content="⏸" FontSize="14" Padding="8,4"
+                          Command="{Binding PauseCommand}" ToolTip.Tip="Pause" />
+                  <Button Content="▶" FontSize="14" Padding="8,4"
+                          Command="{Binding PlayCommand}"  ToolTip.Tip="Resume" />
+                  <Button Content="■" FontSize="14" Padding="8,4"
+                          Command="{Binding StopCommand}"  ToolTip.Tip="Stop" />
                 </StackPanel>
 
               </Grid>

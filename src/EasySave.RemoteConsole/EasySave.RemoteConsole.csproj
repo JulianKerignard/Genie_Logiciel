@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>EasySave.RemoteConsole</RootNamespace>
     <AssemblyName>EasySave.RemoteConsole</AssemblyName>
     <Nullable>enable</Nullable>

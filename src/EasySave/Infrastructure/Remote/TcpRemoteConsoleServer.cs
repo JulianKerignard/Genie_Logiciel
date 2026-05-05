@@ -15,6 +15,10 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
     private readonly record struct ClientEntry(TcpClient Client, NetworkStream Stream);
 
     private readonly ConcurrentDictionary<string, ClientEntry> _clients = new();
+    // Tracked so StopAsync can await every reader before returning, preventing
+    // a disposed TcpClient from being read/written by an in-flight handler.
+    private readonly ConcurrentDictionary<string, Task> _clientTasks = new();
+
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -40,16 +44,25 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         _cts?.Cancel();
         _listener?.Stop();
 
-        foreach (var (_, entry) in _clients)
-            entry.Client.Dispose();
-        _clients.Clear();
-
         if (_acceptLoop is not null)
         {
             try { await _acceptLoop.ConfigureAwait(false); }
-            catch (OperationCanceledException) { }
             catch { }
         }
+
+        // Wait for every client handler to drain cleanly after cancellation.
+        var pending = _clientTasks.Values.ToArray();
+        if (pending.Length > 0)
+        {
+            try { await Task.WhenAll(pending).ConfigureAwait(false); }
+            catch { }
+        }
+
+        // Dispose any clients whose handlers failed to clean up.
+        foreach (var (_, entry) in _clients)
+            entry.Client.Dispose();
+        _clients.Clear();
+        _clientTasks.Clear();
 
         _cts?.Dispose();
         _cts = null;
@@ -97,8 +110,8 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
             var stream = client.GetStream();
             _clients[id] = new ClientEntry(client, stream);
 
-            // Each client's read loop runs independently; fire-and-forget.
-            _ = Task.Run(() => HandleClientAsync(id, client, stream, ct), CancellationToken.None);
+            var task = Task.Run(() => HandleClientAsync(id, client, stream, ct), CancellationToken.None);
+            _clientTasks[id] = task;
         }
     }
 
@@ -135,6 +148,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         {
             if (_clients.TryRemove(id, out _))
                 client.Dispose();
+            _clientTasks.TryRemove(id, out _);
         }
     }
 }
