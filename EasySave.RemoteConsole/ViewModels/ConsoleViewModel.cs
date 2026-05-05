@@ -6,8 +6,18 @@ using EasySave.RemoteConsole.Abstractions;
 namespace EasySave.RemoteConsole.ViewModels;
 
 /// <summary>Root view-model for the remote console window.</summary>
-public sealed partial class ConsoleViewModel : ObservableObject
+public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
 {
+    private readonly IRemoteConsoleClient _client;
+    private readonly IDisposable _stateSubscription;
+
+    public ConsoleViewModel(IRemoteConsoleClient client)
+    {
+        _client = client;
+        _stateSubscription = _client.ConnectionState
+            .Subscribe(new StateObserver(s => Connection = s));
+    }
+
     /// <summary>Live list of backup jobs reported by the server.</summary>
     [ObservableProperty] private ObservableCollection<JobProgressVm> _jobs = new();
 
@@ -22,21 +32,33 @@ public sealed partial class ConsoleViewModel : ObservableObject
 
     /// <summary>Initiates a connection to the configured host and port.</summary>
     [RelayCommand]
-    private void Connect() => throw new NotImplementedException();
+    private Task ConnectAsync() => Task.FromException(new NotImplementedException());
 
     /// <summary>Closes the current server connection.</summary>
     [RelayCommand]
-    private void Disconnect() => throw new NotImplementedException();
+    private Task DisconnectAsync() => Task.FromException(new NotImplementedException());
 
     /// <summary>Sends a Pause command for <paramref name="jobName"/> to the server.</summary>
     [RelayCommand]
-    private void PauseJob(string jobName) => throw new NotImplementedException();
+    private Task PauseJobAsync(string jobName) => Task.FromException(new NotImplementedException());
 
     /// <summary>Sends a Play (resume) command for <paramref name="jobName"/> to the server.</summary>
     [RelayCommand]
-    private void PlayJob(string jobName) => throw new NotImplementedException();
+    private Task PlayJobAsync(string jobName) => Task.FromException(new NotImplementedException());
 
     /// <summary>Sends a Stop command for <paramref name="jobName"/> to the server.</summary>
     [RelayCommand]
-    private void StopJob(string jobName) => throw new NotImplementedException();
+    private Task StopJobAsync(string jobName) => Task.FromException(new NotImplementedException());
+
+    /// <inheritdoc/>
+    public void Dispose() => _stateSubscription.Dispose();
+
+    // Bridges IObservable<RemoteConnectionState> (BCL) to an Action without a Rx dependency.
+    private sealed class StateObserver(Action<RemoteConnectionState> onNext)
+        : IObserver<RemoteConnectionState>
+    {
+        public void OnNext(RemoteConnectionState value) => onNext(value);
+        public void OnError(Exception error) { }
+        public void OnCompleted() { }
+    }
 }

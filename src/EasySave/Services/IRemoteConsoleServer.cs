@@ -21,6 +21,10 @@ public interface IRemoteConsoleServer
     /// <summary>Serialises <paramref name="evt"/> and sends it to every connected client.</summary>
     Task BroadcastAsync(EventDto evt);
 
-    /// <summary>Raised on the thread-pool whenever a connected client sends a command.</summary>
-    event Action<CommandDto> CommandReceived;
+    /// <summary>
+    /// Raised whenever a connected client sends a command.
+    /// The implementation must await each handler and isolate per-handler exceptions so that
+    /// one faulted subscriber does not prevent the others from running.
+    /// </summary>
+    event Func<CommandDto, Task> CommandReceived;
 }

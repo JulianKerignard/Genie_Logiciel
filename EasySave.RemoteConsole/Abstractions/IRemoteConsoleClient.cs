@@ -29,8 +29,12 @@ public interface IRemoteConsoleClient
     /// <summary>Serialises <paramref name="cmd"/> and sends it to the server.</summary>
     Task SendCommandAsync(CommandDto cmd);
 
-    /// <summary>Raised on the thread-pool whenever the server pushes an event to this client.</summary>
-    event Action<EventDto> EventReceived;
+    /// <summary>
+    /// Raised whenever the server pushes an event to this client.
+    /// The implementation must await each handler and isolate per-handler exceptions so that
+    /// one faulted subscriber does not prevent the others from running.
+    /// </summary>
+    event Func<EventDto, Task> EventReceived;
 
     /// <summary>
     /// Observable stream of connection state transitions.
