@@ -1,0 +1,101 @@
+<mxfile host="app.diagrams.net" modified="2026-04-17T18:50:00.000Z" agent="EasySave" version="24.7.17" etag="easysave-seq-v2" type="device">
+  <diagram id="sequence-diagram" name="Sequence - Differential backup">
+    <mxGraphModel dx="1600" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="EasySave v1.0 — Sequence Diagram: Execute a differential backup job" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="800" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user" value="User" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="80" y="70" width="120" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="ui" value="ConsoleUI" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="280" y="70" width="120" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="mgr" value="BackupManager" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="480" y="70" width="140" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="strat" value="DifferentialBackupStrategy" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="700" y="70" width="200" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="state" value="StateTracker" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="980" y="70" width="120" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="logger" value="JsonDailyLogger" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="1180" y="70" width="140" height="960" as="geometry" />
+        </mxCell>
+        <mxCell id="fs" value="File System" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;size=40;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="1380" y="70" width="120" height="960" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m1" value="1: run &quot;1&quot;" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="user" target="ui">
+          <mxGeometry relative="1" y="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m2" value="2: ExecuteJob(0)" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="ui" target="mgr">
+          <mxGeometry relative="1" y="200" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m3" value="3: enumerate files" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="fs">
+          <mxGeometry relative="1" y="250" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m4" value="4: file list" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="fs" target="mgr">
+          <mxGeometry relative="1" y="290" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m5" value="5: Update(state=ACTIVE)" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="state">
+          <mxGeometry relative="1" y="340" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop" value="loop  [for each file]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;fontSize=12;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="460" y="390" width="1060" height="450" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m6" value="6: ShouldCopy(src, target)" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="strat">
+          <mxGeometry relative="1" y="440" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m7" value="7: true / false" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="strat" target="mgr">
+          <mxGeometry relative="1" y="480" as="geometry" />
+        </mxCell>
+
+        <mxCell id="alt" value="alt  [ShouldCopy == true]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;fontSize=12;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="480" y="520" width="1020" height="230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m8" value="8: copy file (UNC)" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="fs">
+          <mxGeometry relative="1" y="570" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m9" value="9: Append(LogEntry)" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="logger">
+          <mxGeometry relative="1" y="620" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m10" value="10: write yyyy-MM-dd.json" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="logger" target="fs">
+          <mxGeometry relative="1" y="660" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m11" value="11: Update(progression++)" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="state">
+          <mxGeometry relative="1" y="720" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m12" value="12: Update(state=END)" style="html=1;verticalAlign=bottom;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="state">
+          <mxGeometry relative="1" y="880" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m13" value="13: return" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="mgr" target="ui">
+          <mxGeometry relative="1" y="930" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m14" value="14: &quot;Done.&quot;" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;labelBackgroundColor=#ffffff" edge="1" parent="1" source="ui" target="user">
+          <mxGeometry relative="1" y="980" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

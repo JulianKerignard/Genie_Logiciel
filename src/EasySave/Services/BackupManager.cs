@@ -115,11 +115,15 @@ public sealed class BackupManager
     /// tracker at start, per file, and on completion.
     /// </summary>
     /// <param name="name">Name of the job to execute (case-insensitive).</param>
-    /// <param name="startFromIndex">
-    /// Number of eligible files to skip at the start. Used when resuming a
-    /// previously paused Full-backup job so already-copied files are not
-    /// re-processed. Differential jobs always restart at 0 (re-scan yields
-    /// only remaining files because copied files now have matching mtime).
+    /// <param name="resumeAfterPath">
+    /// Resume a paused Full-backup job at the eligible file whose full path is
+    /// ordinal-strictly-greater than this value. Null (default) means a fresh
+    /// run from the first file. Differential jobs ignore this parameter — the
+    /// re-scan already yields only remaining files because copied files now
+    /// have matching mtime. Path-based tracking (vs. an index) survives source
+    /// mutations between pause and resume: a file added before the cursor is
+    /// still picked up on the next clean run, and removed files no longer
+    /// shift the cursor and silently skip the wrong file.
     /// </param>
     /// <param name="ct">
     /// Token that stops the job at the next file boundary (atomically —
@@ -129,7 +133,7 @@ public sealed class BackupManager
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
     /// <exception cref="KeyNotFoundException">Thrown when no job with that name exists.</exception>
     /// <exception cref="DirectoryNotFoundException">Thrown when the source directory does not exist.</exception>
-    public void ExecuteJob(string name, int startFromIndex = 0, CancellationToken ct = default)
+    public void ExecuteJob(string name, string? resumeAfterPath = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -137,7 +141,7 @@ public sealed class BackupManager
         var job = jobs.FirstOrDefault(j => j.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                   ?? throw new KeyNotFoundException(name);
 
-        RunJob(job, startFromIndex, ct);
+        RunJob(job, resumeAfterPath, ct);
     }
 
     /// <summary>
@@ -148,7 +152,7 @@ public sealed class BackupManager
     {
         foreach (var job in _jobRepository.Load())
         {
-            try { RunJob(job, 0, CancellationToken.None); }
+            try { RunJob(job, resumeAfterPath: null, CancellationToken.None); }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
@@ -156,7 +160,7 @@ public sealed class BackupManager
         }
     }
 
-    private void RunJob(BackupJob job, int startFromIndex, CancellationToken ct)
+    private void RunJob(BackupJob job, string? resumeAfterPath, CancellationToken ct)
     {
         var sourceDir = new DirectoryInfo(job.SourcePath);
         if (!sourceDir.Exists)
@@ -166,9 +170,8 @@ public sealed class BackupManager
 
         // Sort by full path with an ordinal comparer so the eligible list order
         // is deterministic across runs. DirectoryInfo.GetFiles makes no
-        // ordering guarantee; without this, a paused Full job resumed with
-        // startFromIndex would skip arbitrary files on filesystems that
-        // re-order between calls.
+        // ordering guarantee; without that, the resume cursor (an ordinal path)
+        // could skip files on filesystems that re-order between calls.
         var eligible = sourceDir
             .GetFiles("*", SearchOption.AllDirectories)
             .Select(f => (file: f, target: GetTargetPath(job, sourceDir, f)))
@@ -176,12 +179,15 @@ public sealed class BackupManager
             .OrderBy(x => x.file.FullName, StringComparer.Ordinal)
             .ToList();
 
-        // Differential jobs re-scan from 0: files already backed up no longer appear
-        // in eligible (mtime matches source). Full jobs skip the first startFromIndex
-        // files so an interrupted run does not re-copy completed files.
-        int effectiveStart = job.Type == BackupType.Full
-            ? Math.Clamp(startFromIndex, 0, eligible.Count)
-            : 0;
+        // Differential jobs re-scan from scratch: copied files no longer appear
+        // in eligible (mtime matches source). Full jobs that resume drop every
+        // entry up to and including the last file persisted in state.json
+        // (state.CurrentSource on the previous tick). Path-based filtering is
+        // robust to source mutations between pause and resume, where an index-
+        // based cursor would point at the wrong file.
+        var toCopy = job.Type == BackupType.Full && !string.IsNullOrEmpty(resumeAfterPath)
+            ? eligible.Where(x => StringComparer.Ordinal.Compare(x.file.FullName, resumeAfterPath) > 0).ToList()
+            : eligible;
 
         var state = new StateEntry
         {
@@ -190,8 +196,8 @@ public sealed class BackupManager
             LastActionTime = DateTimeOffset.Now,
             TotalFilesEligible = eligible.Count,
             TotalSize = eligible.Sum(x => x.file.Length),
-            FilesRemaining = eligible.Count - effectiveStart,
-            SizeRemaining = eligible.Skip(effectiveStart).Sum(x => x.file.Length),
+            FilesRemaining = toCopy.Count,
+            SizeRemaining = toCopy.Sum(x => x.file.Length),
         };
         _stateTracker.Update(state);
 
@@ -199,7 +205,7 @@ public sealed class BackupManager
         bool paused = false;
         try
         {
-            foreach (var (file, targetPath) in eligible.Skip(effectiveStart))
+            foreach (var (file, targetPath) in toCopy)
             {
                 // Check at file boundary — never mid-copy — so the target file is
                 // never left in a partial state.
