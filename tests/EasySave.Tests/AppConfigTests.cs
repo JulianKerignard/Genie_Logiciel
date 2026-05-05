@@ -56,7 +56,7 @@ public class AppConfigTests : IDisposable
     }
 
     [Fact]
-    public void Load_CorruptedFile_FallsBackToDefaults()
+    public void Load_CorruptedFile_QuarantinesFile_AndFallsBackToDefaults()
     {
         var file = Path.Combine(_tempDir, "corrupt.json");
         File.WriteAllText(file, "{ not valid json");
@@ -64,6 +64,21 @@ public class AppConfigTests : IDisposable
         AppConfig.Load(file);
 
         Assert.Equal("en", AppConfig.Instance.Settings.Language);
+        Assert.NotEmpty(Directory.GetFiles(_tempDir, "corrupt.json.corrupted-*"));
+    }
+
+    [SkippableFact]
+    public void Load_PropagatesIOException_WhenFileLocked()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(),
+            "Unix file locks are advisory; File.ReadAllText is not blocked by FileShare.None.");
+
+        var file = Path.Combine(_tempDir, "locked.json");
+        File.WriteAllText(file, """{"LogDirectory":"X"}""");
+
+        using var locker = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        Assert.Throws<IOException>(() => AppConfig.Load(file));
     }
 
     [Fact]
