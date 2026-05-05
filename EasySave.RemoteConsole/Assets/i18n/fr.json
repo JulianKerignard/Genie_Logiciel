@@ -1,0 +1,8 @@
+{
+  "console.host_placeholder": "Hôte / IP",
+  "console.connect": "Connexion",
+  "console.disconnect": "Déconnexion",
+  "console.pause": "Pause",
+  "console.play": "Lecture",
+  "console.stop": "Arrêt"
+}

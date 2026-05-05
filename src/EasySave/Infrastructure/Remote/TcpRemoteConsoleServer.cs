@@ -57,7 +57,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
 
         foreach (var (key, entry) in _clients)
         {
-            try { entry.Client.Close(); } catch { }
+            try { entry.Client.Close(); } catch (Exception) { }
             _clients.TryRemove(key, out _);
         }
         return Task.CompletedTask;
@@ -90,7 +90,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         {
             if (_clients.TryRemove(key, out var removed))
             {
-                try { removed.Client.Close(); } catch { }
+                try { removed.Client.Close(); } catch (Exception) { }
             }
         }
     }
@@ -99,7 +99,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
     {
         var endpoint = client.Client.RemoteEndPoint?.ToString() ?? "unknown";
         var stream = client.GetStream();
-        var writer = new StreamWriter(stream, leaveOpen: true) { AutoFlush = false };
+        var writer = new StreamWriter(stream) { AutoFlush = false };
         var entry = new ClientEntry(client, writer);
         _clients[endpoint] = entry;
 
@@ -123,7 +123,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
                 foreach (var handler in CommandReceived.GetInvocationList().Cast<Func<CommandDto, Task>>())
                 {
                     try { await handler(cmd).ConfigureAwait(false); }
-                    catch { }
+                    catch (Exception) { }
                 }
             }
         }
@@ -131,7 +131,8 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         finally
         {
             _clients.TryRemove(endpoint, out _);
-            try { client.Close(); } catch { }
+            try { writer.Dispose(); } catch (Exception) { }
+            try { client.Close(); } catch (Exception) { }
         }
     }
 }

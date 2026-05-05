@@ -52,7 +52,10 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
         }
     };
 
-    _ = remoteServer.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, CancellationToken.None);
+    _ = remoteServer.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, CancellationToken.None)
+        .ContinueWith(
+            t => Console.Error.WriteLine($"[Remote] Server stopped unexpectedly: {t.Exception?.GetBaseException().Message}"),
+            TaskContinuationOptions.OnlyOnFaulted);
 }
 
 var cliArgs = Environment.GetCommandLineArgs().Skip(1).ToArray();

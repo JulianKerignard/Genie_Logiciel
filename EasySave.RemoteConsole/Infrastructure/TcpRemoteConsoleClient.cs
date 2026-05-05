@@ -35,12 +35,12 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IDisposable
         await ConnectInternalAsync(_cts.Token).ConfigureAwait(false);
     }
 
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync()
     {
         _cts.Cancel();
-        try { _tcp?.Close(); } catch { }
+        try { _tcp?.Close(); } catch (Exception) { }
         _stateSubject.Publish(RemoteConnectionState.Disconnected);
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     public async Task SendCommandAsync(CommandDto cmd)
@@ -107,7 +107,7 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IDisposable
                     foreach (var handler in EventReceived.GetInvocationList().Cast<Func<EventDto, Task>>())
                     {
                         try { await handler(evt).ConfigureAwait(false); }
-                        catch { }
+                        catch (Exception) { }
                     }
                 }
             }
@@ -169,16 +169,21 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IDisposable
                 snapshot = [.. _observers];
             }
             foreach (var o in snapshot)
-                try { o.OnNext(state); } catch { }
+                try { o.OnNext(state); } catch (Exception) { }
         }
 
         public IDisposable Subscribe(IObserver<RemoteConnectionState> observer)
         {
+            RemoteConnectionState current;
             lock (_lock)
             {
                 _observers.Add(observer);
-                observer.OnNext(_current);
+                current = _current;
             }
+            // Call outside the lock: observer.OnNext may set Avalonia properties
+            // that trigger re-entrant Subscribe calls, causing a deadlock if called
+            // while _lock is held.
+            observer.OnNext(current);
             return new Subscription(() =>
             {
                 lock (_lock) { _observers.Remove(observer); }

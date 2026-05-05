@@ -1,9 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:EasySave.RemoteConsole.ViewModels"
+             xmlns:rc="using:EasySave.RemoteConsole.Markup"
              x:Class="EasySave.RemoteConsole.Views.ConsoleView"
-             x:DataType="vm:ConsoleViewModel"
-             x:CompileBindings="False">
+             x:DataType="vm:ConsoleViewModel">
 
     <DockPanel>
 
@@ -16,18 +16,18 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBox Text="{Binding Host}"
                          Width="180"
-                         PlaceholderText="Host / IP" />
+                         PlaceholderText="{DynamicResource console.host_placeholder}" />
                 <NumericUpDown Value="{Binding Port}"
                                Minimum="1"
                                Maximum="65535"
                                Width="110"
                                FormatString="0" />
-                <Button Content="Connexion"
-                        Command="{Binding ConnectCommand}"
-                        Padding="12,6" />
-                <Button Content="Déconnexion"
-                        Command="{Binding DisconnectCommand}"
-                        Padding="12,6" />
+                <Button Command="{Binding ConnectCommand}" Padding="12,6">
+                    <TextBlock Text="{rc:T Key=console.connect}" />
+                </Button>
+                <Button Command="{Binding DisconnectCommand}" Padding="12,6">
+                    <TextBlock Text="{rc:T Key=console.disconnect}" />
+                </Button>
                 <TextBlock Text="{Binding Connection}"
                            VerticalAlignment="Center"
                            FontWeight="SemiBold"
@@ -39,14 +39,13 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Jobs}" Margin="12,8">
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="vm:JobProgressVm">
+                    <DataTemplate x:DataType="vm:JobProgressVm">
                         <Border Background="White"
                                 CornerRadius="6"
                                 Padding="12,10"
                                 Margin="0,0,0,6"
                                 BoxShadow="0 1 4 0 #18000000">
-                            <Grid ColumnDefinitions="180,*,90,Auto,Auto,Auto"
-                                  RowDefinitions="Auto">
+                            <Grid ColumnDefinitions="180,*,90,Auto,Auto,Auto">
                                 <TextBlock Grid.Column="0"
                                            Text="{Binding JobName}"
                                            FontWeight="SemiBold"
@@ -64,23 +63,26 @@
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center" />
                                 <Button Grid.Column="3"
-                                        Content="Pause"
-                                        Command="{Binding $parent[ItemsControl].DataContext.PauseJobCommand}"
+                                        Command="{ReflectionBinding $parent[ItemsControl].DataContext.PauseJobCommand}"
                                         CommandParameter="{Binding JobName}"
                                         Padding="10,5"
-                                        Margin="4,0,0,0" />
+                                        Margin="4,0,0,0">
+                                    <TextBlock Text="{rc:T Key=console.pause}" />
+                                </Button>
                                 <Button Grid.Column="4"
-                                        Content="Play"
-                                        Command="{Binding $parent[ItemsControl].DataContext.PlayJobCommand}"
+                                        Command="{ReflectionBinding $parent[ItemsControl].DataContext.PlayJobCommand}"
                                         CommandParameter="{Binding JobName}"
                                         Padding="10,5"
-                                        Margin="4,0,0,0" />
+                                        Margin="4,0,0,0">
+                                    <TextBlock Text="{rc:T Key=console.play}" />
+                                </Button>
                                 <Button Grid.Column="5"
-                                        Content="Stop"
-                                        Command="{Binding $parent[ItemsControl].DataContext.StopJobCommand}"
+                                        Command="{ReflectionBinding $parent[ItemsControl].DataContext.StopJobCommand}"
                                         CommandParameter="{Binding JobName}"
                                         Padding="10,5"
-                                        Margin="4,0,0,0" />
+                                        Margin="4,0,0,0">
+                                    <TextBlock Text="{rc:T Key=console.stop}" />
+                                </Button>
                             </Grid>
                         </Border>
                     </DataTemplate>
