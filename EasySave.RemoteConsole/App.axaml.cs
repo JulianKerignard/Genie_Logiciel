@@ -5,7 +5,7 @@ using EasySave.RemoteConsole.Views;
 
 namespace EasySave.RemoteConsole;
 
-public partial class App : Application
+public sealed partial class App : Application
 {
     public override void Initialize()
     {
