@@ -65,9 +65,15 @@ public sealed class AppConfig
             config.Settings = JsonSerializer.Deserialize<AppSettings>(json, DeserializeOptions) ?? new AppSettings();
             Instance = config;
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (JsonException ex)
         {
+            // Corrupted appsettings.json — quarantine and fall back to defaults so the app
+            // still boots. Same convention as JobRepository / StateTracker / SettingsRepository.
+            FileHelpers.QuarantineCorruptedFile(path, ex, "AppConfig");
             Instance = new AppConfig();
         }
+        // IOException intentionally propagated — see #69 / #97 / #112 / #118.
+        // A transient lock at boot must not silently swap operator-configured paths,
+        // encrypted_extensions, or business_software for the empty defaults.
     }
 }

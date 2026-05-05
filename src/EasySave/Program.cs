@@ -2,7 +2,15 @@ using EasyLog;
 using EasySave.CLI;
 using EasySave.Services;
 
-AppConfig.Load();
+try
+{
+    AppConfig.Load();
+}
+catch (IOException ex)
+{
+    Console.Error.WriteLine($"[Fatal] Cannot read appsettings.json: {ex.Message}");
+    return;
+}
 
 var logger = new JsonDailyLogger(AppConfig.Instance.LogDirectory);
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)

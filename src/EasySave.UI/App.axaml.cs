@@ -22,7 +22,16 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         // Load appsettings.json before any service reads AppConfig.Instance.
-        AppConfig.Load();
+        try
+        {
+            AppConfig.Load();
+        }
+        catch (IOException ex)
+        {
+            System.Diagnostics.Trace.TraceError(
+                $"[App] appsettings.json read failed ({ex.Message}). Aborting startup.");
+            Environment.Exit(1);
+        }
 
         // Seed settings.json from appsettings.json defaults on first run so the
         // GUI Settings screen reflects the bootstrap configuration. After the
