@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>EasySave.Shared</RootNamespace>
+    <AssemblyName>EasySave.Shared</AssemblyName>
+    <Description>DTOs shared between the EasySave engine (server) and EasySave.RemoteConsole (client). JSON-serialized over the v3 socket protocol. No engine or UI dependencies.</Description>
+  </PropertyGroup>
+
+</Project>
