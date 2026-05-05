@@ -52,7 +52,7 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         lock (_lock) return _running.ContainsKey(jobName);
     }
 
-    public async Task RunJobAsync(string jobName, int startFromIndex = 0, CancellationToken ct = default)
+    public async Task RunJobAsync(string jobName, string? resumeAfterPath = null, CancellationToken ct = default)
     {
         CancellationTokenSource cts;
         lock (_lock)
@@ -67,7 +67,7 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         {
             // ExecuteJob is synchronous; run on thread pool and pass the linked token
             // so cancel requests stop the job at the next file boundary.
-            await Task.Run(() => _manager.ExecuteJob(jobName, startFromIndex, cts.Token), cts.Token)
+            await Task.Run(() => _manager.ExecuteJob(jobName, resumeAfterPath, cts.Token), cts.Token)
                       .ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
@@ -126,17 +126,18 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         lock (_lock) wasPaused = _pausedByUs.Remove(jobName);
         if (!wasPaused) return;
 
-        // Compute the resume index from the last persisted state so a Full backup
-        // continues from where it stopped rather than re-copying everything.
-        int startFromIndex = 0;
+        // Carry the path of the last successfully copied file (persisted in state.json
+        // on every tick) so RunJob can drop everything ordinal-<= it. Robust to source
+        // mutations between pause and resume — the index-based cursor we used before
+        // (TotalFilesEligible - FilesRemaining) silently skipped the wrong file when
+        // a file was added or removed between the two scans.
         var state = StateTracker.Instance.GetState(jobName);
-        if (state is { TotalFilesEligible: > 0 })
-            startFromIndex = state.TotalFilesEligible - state.FilesRemaining;
+        var resumeAfterPath = string.IsNullOrEmpty(state?.CurrentSource) ? null : state.CurrentSource;
 
         // Clear the paused marker so state.json shows Active again when the job starts.
         StateTracker.Instance.Resume(jobName);
 
-        _ = RunJobAsync(jobName, startFromIndex);
+        _ = RunJobAsync(jobName, resumeAfterPath);
     }
 
     private bool HasRunningJobs() { lock (_lock) return _running.Count > 0; }

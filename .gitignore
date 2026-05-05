@@ -29,3 +29,10 @@ Thumbs.db
 
 # Env
 .env
+
+# Local Claude tooling (RAG db, scheduled tasks, etc.)
+.claude/
+
+# Self-contained publish output
+dist/
+
