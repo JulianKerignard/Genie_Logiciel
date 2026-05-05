@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EasySave.RemoteConsole.ViewModels"
+             x:Class="EasySave.RemoteConsole.Views.ConsoleView"
+             x:DataType="vm:ConsoleViewModel"
+             x:CompileBindings="False">
+
+    <DockPanel>
+
+        <!-- Connection bar -->
+        <Border DockPanel.Dock="Top"
+                Background="#F3F4F6"
+                Padding="12,10"
+                BorderBrush="#E5E7EB"
+                BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBox Text="{Binding Host}"
+                         Width="180"
+                         PlaceholderText="Host / IP" />
+                <NumericUpDown Value="{Binding Port}"
+                               Minimum="1"
+                               Maximum="65535"
+                               Width="110"
+                               FormatString="0" />
+                <Button Content="Connexion"
+                        Command="{Binding ConnectCommand}"
+                        Padding="12,6" />
+                <Button Content="Déconnexion"
+                        Command="{Binding DisconnectCommand}"
+                        Padding="12,6" />
+                <TextBlock Text="{Binding Connection}"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Margin="8,0,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- Jobs list -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Jobs}" Margin="12,8">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:JobProgressVm">
+                        <Border Background="White"
+                                CornerRadius="6"
+                                Padding="12,10"
+                                Margin="0,0,0,6"
+                                BoxShadow="0 1 4 0 #18000000">
+                            <Grid ColumnDefinitions="180,*,90,Auto,Auto,Auto"
+                                  RowDefinitions="Auto">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding JobName}"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                                <ProgressBar Grid.Column="1"
+                                             Value="{Binding ProgressPercent}"
+                                             Minimum="0"
+                                             Maximum="100"
+                                             Height="8"
+                                             CornerRadius="4"
+                                             Margin="10,0" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding Status}"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Center" />
+                                <Button Grid.Column="3"
+                                        Content="Pause"
+                                        Command="{Binding $parent[ItemsControl].DataContext.PauseJobCommand}"
+                                        CommandParameter="{Binding JobName}"
+                                        Padding="10,5"
+                                        Margin="4,0,0,0" />
+                                <Button Grid.Column="4"
+                                        Content="Play"
+                                        Command="{Binding $parent[ItemsControl].DataContext.PlayJobCommand}"
+                                        CommandParameter="{Binding JobName}"
+                                        Padding="10,5"
+                                        Margin="4,0,0,0" />
+                                <Button Grid.Column="5"
+                                        Content="Stop"
+                                        Command="{Binding $parent[ItemsControl].DataContext.StopJobCommand}"
+                                        CommandParameter="{Binding JobName}"
+                                        Padding="10,5"
+                                        Margin="4,0,0,0" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+    </DockPanel>
+</UserControl>
