@@ -9,7 +9,7 @@ try
 catch (IOException ex)
 {
     Console.Error.WriteLine($"[Fatal] Cannot read appsettings.json: {ex.Message}");
-    return;
+    Environment.Exit(1);
 }
 
 var logger = new JsonDailyLogger(AppConfig.Instance.LogDirectory);
