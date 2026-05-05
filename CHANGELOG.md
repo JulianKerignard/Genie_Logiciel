@@ -6,6 +6,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-05-05
+
+Maintenance release on `release/v2.x` rolling up the fixes and small UX
+improvements accumulated since `v2.0.0`. Scope is bug-fix-heavy; the runtime
+FR/EN re-render and a few new disposable contracts justify a minor bump
+rather than a patch. `EasyLog.dll` v1.0 public API stays frozen; `LogEntry`
+shape on disk is unchanged.
+
+### Added
+
+- **Runtime FR/EN switch** finishes the v2.0 feature: job-card chips
+  (`Idle`/`Running`/`Done`), backup-type label (`Full`/`Differential`), the
+  `JobEdit` window title and type ComboBox, and the `About` window title +
+  OK button now all flip language without a restart (#108).
+- **`error.persistence_unavailable` UI key** (en + fr) — surfaces a localized
+  banner when `schedules.json` cannot be read instead of leaving the user
+  with the raw key (#115).
+
+### Changed
+
+- `RunProgressViewModel` implements `IDisposable` so a future reset path can
+  release its `JobsViewModel` subscription without pinning the object graph
+  (#128).
+- `BackupManager.ExecuteJob` resume cursor is now a file path
+  (`string? resumeAfterPath`) instead of an integer index. Robust to source
+  mutations between pause and resume (#126).
+
+### Fixed
+
+- **`XmlDailyLogger.ReadExisting`** narrows its `catch` to `XmlException`,
+  so a transient `IOException` (antivirus / OneDrive / file lock) no longer
+  quarantines the live daily log and fragments the day (#113, closes #112).
+- **`SchedulerService.GetAll`** propagates `IOException` instead of returning
+  an empty list — prevents the next `Save` from silently overwriting
+  `schedules.json` with `[]`. `ScheduleViewModel` flags persistence failure
+  to disable Save and surface a localized error (#115, closes #111).
+- **`SchedulerDispatchService.Tick`** consults `BusinessWatcherService.
+  IsBusinessSoftwareRunning` and skips the tick when a watched process is
+  open. The reactive event-based gate was edge-triggered and missed the case
+  where the process was already running at watcher startup (#120,
+  closes #116).
+- **`AppConfig.Load`** propagates `IOException` instead of falling back to
+  hardcoded defaults, removing the same silent-overwrite trap as #69 / #97
+  / #112 / #115 from the config layer (#121, closes #118).
+- **Edit / Delete buttons on job cards** are now gated by
+  `BackupJobVM.IsBusy` (= `IsRunning || IsPaused`) — clicking Delete on a
+  running job no longer wipes the live `state.json` entry while the worker
+  thread re-creates it as an orphan, restoring the contract that #68 closed
+  (#119, closes #117).
+- **Pause/resume on a Full backup** survives source mutations: deleting a
+  copied file or adding a new one between pause and resume no longer makes
+  the index-based cursor silently skip the next file (#126).
+- Job-card layout: long source / target paths are clamped with ellipsis so
+  the `Delete` button never overlaps the path text (#108).
+- `JobEditViewModel` persists changes against the running `BackupManager`
+  singleton; the next navigation back to Jobs sees the new entry without a
+  restart (#108).
+
+### Documentation
+
+- `README.md` marks `v2.0.0` as the current released version, splits the
+  user manual into v1 (console) and v2 (GUI), and exposes
+  `cryptosoft-integration.md` and `docs/recettes/` (#114).
+
+### Tests
+
+- `XmlDailyLoggerTests` cover `IOException` propagation and the
+  no-quarantine-on-transient-lock contract — Windows-only tests guarded for
+  POSIX advisory-locking semantics (#106, #113).
+- `SchedulerServiceLockPropagationTests` verify the new `IOException`
+  propagation and quarantine-on-`JsonException` paths (#115).
+- `BackupManagerPauseResumeTests` add a regression test for the path-based
+  resume cursor — proves a deleted source file before resume no longer
+  causes a silent skip (#126).
+- `BackupManagerPauseTests` cover the pause/resume cancellation flow end to
+  end (#107).
+- `AppConfigMutationCollection` xUnit collection serializes tests that
+  mutate the `AppConfig.Instance` singleton (#115).
+
 ## [2.0.0] — 2026-04-29
 
 EasySave v2.0 adds a cross-platform Avalonia GUI, CryptoSoft encryption, XML/JSON log
@@ -65,7 +144,8 @@ the v1.x console and `EasyLog.dll` contracts fully intact.
   as paused — the job now stops at the next file boundary (no partial writes).
 - Resuming a paused Full-backup job no longer re-copies already-transferred files.
 
-[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...v2.0.0
 
 ## [1.0.1] — 2026-04-21
