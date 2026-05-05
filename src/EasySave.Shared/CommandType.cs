@@ -1,13 +1,12 @@
 namespace EasySave.Shared;
 
 // Discriminator for CommandDto: identifies what action the remote console is
-// asking the engine to perform. Explicit numeric values keep the JSON payload
-// stable across versions.
+// asking the engine to perform. Play covers both starting an idle/finished job
+// and resuming a paused one — the engine inspects the current JobState to
+// decide which path to take.
 public enum CommandType
 {
-    ListJobs = 0,
-    RunJob = 1,
-    PauseJob = 2,
-    ResumeJob = 3,
-    StopJob = 4
+    Pause = 0,
+    Play = 1,
+    Stop = 2
 }

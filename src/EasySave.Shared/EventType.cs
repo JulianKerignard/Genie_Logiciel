@@ -12,5 +12,6 @@ public enum EventType
     JobResumed = 4,
     JobFinished = 5,
     JobFailed = 6,
-    Error = 7
+    Error = 7,
+    LogEvent = 8
 }
