@@ -18,8 +18,13 @@ namespace EasySave.Services;
 public interface IBigFileGate
 {
     // Threshold above which (>=) a file is considered "large" and gated.
-    // Loaded from settings by the concrete implementation.
-    int LargeFileThresholdBytes { get; }
+    // Expressed in bytes for direct comparison with fileSizeBytes; the
+    // concrete implementation is responsible for reading AppSettings
+    // .LargeFileThresholdKb and multiplying by 1024 to land here. long
+    // matches the parameter type below and the rest of the codebase
+    // (FileInfo.Length, LogEntry.FileSize) so the comparison never loses
+    // bits on multi-GB thresholds.
+    long LargeFileThresholdBytes { get; }
 
     // Acquires a slot for the file about to be transferred. Returns
     // immediately if fileSizeBytes < LargeFileThresholdBytes (small file —
