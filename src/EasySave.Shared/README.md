@@ -23,6 +23,11 @@ choice of `System.Text.Json` (no `Newtonsoft.Json`).
 `JobStateEnum` mirrors `EasySave.JobState` numerically (so a cast on the
 server is loss-free) but with client-friendly labels.
 
+`Done` deliberately conflates "never run yet" and "completed": the engine
+keeps a single `Inactive` state for both. A client that needs to tell them
+apart must track whether a `JobFinished` event has been seen for that job
+during the current session — `JobStateEnum` alone cannot disambiguate.
+
 ## Adding a new event or command
 
 1. Append a new entry at the **end** of `EventType` / `CommandType` (never
