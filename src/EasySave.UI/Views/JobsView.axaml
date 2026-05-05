@@ -145,7 +145,8 @@
                                             <Button Command="{Binding $parent[ItemsControl].DataContext.EditJobCommand}"
                                                     CommandParameter="{Binding}"
                                                     Padding="10,6"
-                                                    FontSize="12">
+                                                    FontSize="12"
+                                                    IsEnabled="{Binding !IsBusy}">
                                                 <TextBlock Text="{markup:T Key=jobs.edit}" />
                                             </Button>
 
@@ -153,7 +154,8 @@
                                                     CommandParameter="{Binding}"
                                                     Padding="10,6"
                                                     FontSize="12"
-                                                    Foreground="#EF4444">
+                                                    Foreground="#EF4444"
+                                                    IsEnabled="{Binding !IsBusy}">
                                                 <TextBlock Text="{markup:T Key=jobs.delete}" />
                                             </Button>
 
