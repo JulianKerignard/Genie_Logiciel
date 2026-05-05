@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasySave.UI", "src\EasySave
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasySave.Shared", "src\EasySave.Shared\EasySave.Shared.csproj", "{21493C86-F8EA-4708-949E-A9542E55FD1D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasySave.RemoteConsole", "EasySave.RemoteConsole\EasySave.RemoteConsole.csproj", "{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -101,6 +103,18 @@ Global
 		{21493C86-F8EA-4708-949E-A9542E55FD1D}.Release|x64.Build.0 = Release|Any CPU
 		{21493C86-F8EA-4708-949E-A9542E55FD1D}.Release|x86.ActiveCfg = Release|Any CPU
 		{21493C86-F8EA-4708-949E-A9542E55FD1D}.Release|x86.Build.0 = Release|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Debug|x64.Build.0 = Debug|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Debug|x86.Build.0 = Debug|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Release|x64.ActiveCfg = Release|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Release|x64.Build.0 = Release|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Release|x86.ActiveCfg = Release|Any CPU
+		{2B8C5E3A-7F12-4D96-B034-E58A1C7F9D25}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
