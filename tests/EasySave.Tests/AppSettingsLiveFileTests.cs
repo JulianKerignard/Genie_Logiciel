@@ -60,6 +60,8 @@ public class AppSettingsLiveFileTests
         finally
         {
             File.Delete(tempFile);
+            var liveFile = Path.Combine(FindRepoRoot(), "src", "EasySave", "appsettings.json");
+            AppConfig.Load(liveFile);
         }
     }
 
