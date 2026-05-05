@@ -32,7 +32,7 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
 
     /// <summary>Initiates a connection to the configured host and port.</summary>
     [RelayCommand]
-    private Task ConnectAsync() => Task.FromException(new NotImplementedException());
+    private Task ConnectAsync(CancellationToken ct) => Task.FromException(new NotImplementedException());
 
     /// <summary>Closes the current server connection.</summary>
     [RelayCommand]
@@ -58,7 +58,7 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
         : IObserver<RemoteConnectionState>
     {
         public void OnNext(RemoteConnectionState value) => onNext(value);
-        public void OnError(Exception error) { }
+        public void OnError(Exception error) => onNext(RemoteConnectionState.Error);
         public void OnCompleted() { }
     }
 }
