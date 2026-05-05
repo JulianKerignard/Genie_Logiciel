@@ -131,7 +131,10 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
 
                 if (cmd is null) continue;
 
-                CommandReceived?.Invoke(cmd);
+                // Isolated try so a throwing subscriber does not disconnect the
+                // client — only that invocation is lost, not the read loop.
+                try { CommandReceived?.Invoke(cmd); }
+                catch { }
 
                 // Broadcast a log event so every console sees the command that
                 // was received (includes the originating client IP address).

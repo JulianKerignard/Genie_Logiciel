@@ -35,10 +35,17 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient
 
     public Task ConnectAsync(string host, int port, CancellationToken ct)
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Cancel and dispose the previous loop before creating a new one.
+        // Interlocked.Exchange atomically swaps the field so no concurrent call
+        // can observe a partially-initialised CTS, and the old loop exits at its
+        // next cancellable await rather than running alongside the new one.
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var prev = Interlocked.Exchange(ref _cts, cts);
+        prev?.Cancel();
+        prev?.Dispose();
+
         _stateSubject.OnNext(Infrastructure.ConnectionState.Connecting);
-        // Background connect-and-read loop; caller is not blocked.
-        _ = Task.Run(() => ConnectLoopAsync(host, port, _cts.Token), CancellationToken.None);
+        _ = Task.Run(() => ConnectLoopAsync(host, port, cts.Token), CancellationToken.None);
         return Task.CompletedTask;
     }
 

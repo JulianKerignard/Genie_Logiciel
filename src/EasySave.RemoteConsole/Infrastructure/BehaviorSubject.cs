@@ -14,11 +14,13 @@ internal sealed class BehaviorSubject<T> : IObservable<T>
 
     public IDisposable Subscribe(IObserver<T> observer)
     {
+        T current;
         lock (_lock)
         {
             _observers.Add(observer);
-            observer.OnNext(_current);
+            current = _current; // capture under lock, call OnNext after releasing
         }
+        observer.OnNext(current);
         return new Subscription(() => { lock (_lock) _observers.Remove(observer); });
     }
 
