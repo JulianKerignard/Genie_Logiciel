@@ -20,7 +20,20 @@ public sealed class JobExecutionContext : IDisposable
     public CancellationTokenSource Cts { get; }
     public ManualResetEventSlim PauseGate { get; }
     public IDailyLogger Logger { get; }
-    public JobProgressDto Progress { get; set; }
+
+    // Backed by a volatile field rather than an auto-property because the job
+    // thread writes Progress while a different thread (orchestrator / UI
+    // reporter) reads it concurrently. Without a memory barrier the reader
+    // can keep a stale reference cached in a register. volatile here is
+    // enough because JobProgressDto is an immutable record: once the
+    // reference is published, the contents are safe to read without further
+    // synchronization.
+    private volatile JobProgressDto _progress = null!;
+    public JobProgressDto Progress
+    {
+        get => _progress;
+        set => _progress = value;
+    }
 
     public JobExecutionContext(string jobName, IDailyLogger logger)
     {
