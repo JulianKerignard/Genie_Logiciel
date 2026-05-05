@@ -25,6 +25,42 @@ public class AppSettingsLiveFileTests
         // cannot drift apart silently.
         Assert.Equal(string.Empty, AppConfig.Instance.Settings.CryptoSoft.Path);
         Assert.Equal(30000, AppConfig.Instance.Settings.CryptoSoft.TimeoutMs);
+        Assert.Equal(4096, AppConfig.Instance.Settings.LargeFileThresholdKb);
+        Assert.False(AppConfig.Instance.Settings.RemoteConsoleEnabled);
+        Assert.Equal(9000, AppConfig.Instance.Settings.RemoteConsolePort);
+        Assert.Equal(4, AppConfig.Instance.Settings.MaxParallelJobs);
+    }
+
+    [Fact]
+    public void Load_V2SettingsJson_UsesV3Defaults_WhenKeysAbsent()
+    {
+        // A V2 settings.json has no V3 keys — missing keys must silently fall back
+        // to defaults without throwing or corrupting the instance.
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tempFile, """
+            {
+                "language": "fr",
+                "encrypted_extensions": [".pdf"],
+                "business_software": [],
+                "log_format": "json",
+                "crypto_soft": { "path": "", "timeout_ms": 30000 }
+            }
+            """);
+
+            AppConfig.Load(tempFile);
+
+            Assert.Equal("fr", AppConfig.Instance.Settings.Language);
+            Assert.Equal(4096, AppConfig.Instance.Settings.LargeFileThresholdKb);
+            Assert.False(AppConfig.Instance.Settings.RemoteConsoleEnabled);
+            Assert.Equal(9000, AppConfig.Instance.Settings.RemoteConsolePort);
+            Assert.Equal(4, AppConfig.Instance.Settings.MaxParallelJobs);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
     }
 
     private static string FindRepoRoot()

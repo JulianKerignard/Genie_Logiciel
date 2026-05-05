@@ -21,6 +21,18 @@ public sealed class AppSettings
 
     [JsonPropertyName("crypto_soft")]
     public CryptoSoftSettings CryptoSoft { get; init; } = new();
+
+    [JsonPropertyName("large_file_threshold_kb")]
+    public int LargeFileThresholdKb { get; init; } = 4096;
+
+    [JsonPropertyName("remote_console_enabled")]
+    public bool RemoteConsoleEnabled { get; init; } = false;
+
+    [JsonPropertyName("remote_console_port")]
+    public int RemoteConsolePort { get; init; } = 9000;
+
+    [JsonPropertyName("max_parallel_jobs")]
+    public int MaxParallelJobs { get; init; } = 4;
 }
 
 public sealed class CryptoSoftSettings
