@@ -1,26 +1,52 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace EasyLog;
 
 /// <summary>
 /// Writes <see cref="LogEntry"/> instances to a daily JSON file
 /// named "yyyy-MM-dd.json" inside a configurable directory.
-/// Each file contains a JSON array of entries appended over the day.
-/// Writes are serialized with a lock to stay safe under concurrent calls
-/// and performed atomically via a temporary file to avoid partial writes.
-/// Note: each append rewrites the whole day file (O(n) on the daily count);
-/// this is acceptable for v1.0 volumes and can be revisited later if needed.
 /// </summary>
-public sealed class JsonDailyLogger : IDailyLogger
+/// <remarks>
+/// <para>
+/// Concurrent <see cref="Append"/> calls (V3 multi-job runs) are funneled
+/// through an in-memory <see cref="Channel{T}"/> consumed by a single writer
+/// task. The writer drains everything currently queued, groups by day file,
+/// updates a per-day in-memory cache, and writes the file atomically — so
+/// 4 jobs publishing 1000 entries concurrently triggers a handful of file
+/// writes instead of 4000.
+/// </para>
+/// <para>
+/// <see cref="Append"/> stays <c>void</c> and synchronous: each call blocks
+/// until its entry has been flushed (or the writer reports an error), so the
+/// v1.0 durability contract is preserved — no log loss on crash between
+/// Append return and the next backup step.
+/// </para>
+/// <para>
+/// Order is preserved per caller: a thread that calls Append(A1) then
+/// Append(A2) sees A1 strictly before A2 in the day file. Cross-thread order
+/// is not guaranteed by design (no global write barrier between threads).
+/// </para>
+/// </remarks>
+public sealed class JsonDailyLogger : IDailyLogger, IDisposable
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
-        WriteIndented = true
+        WriteIndented = true,
     };
 
     private readonly string _logDirectory;
-    private readonly object _writeLock = new();
+    private readonly Channel<WriteRequest> _queue;
+    private readonly Task _writerLoop;
+    private readonly CancellationTokenSource _shutdown = new();
+
+    // Per-day cache so a busy day's append loop does not re-read the file
+    // from disk on every flush. The writer task is the only thread that
+    // touches it, so no extra synchronization is needed.
+    private readonly Dictionary<string, List<LogEntry>> _cachePerDay = new(StringComparer.OrdinalIgnoreCase);
+
+    private volatile bool _disposed;
 
     /// <summary>
     /// Initializes a new logger writing to <paramref name="logDirectory"/>.
@@ -37,6 +63,14 @@ public sealed class JsonDailyLogger : IDailyLogger
 
         _logDirectory = logDirectory;
         Directory.CreateDirectory(_logDirectory);
+
+        _queue = Channel.CreateUnbounded<WriteRequest>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false,
+        });
+
+        _writerLoop = Task.Run(WriterLoopAsync);
     }
 
     /// <summary>
@@ -49,35 +83,107 @@ public sealed class JsonDailyLogger : IDailyLogger
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        // Local date is intentional: daily files must align with the business day
-        // seen by the operator, not UTC.
+        // Day file is decided here so an entry produced just before midnight
+        // lands in the right file even if the writer task drains it later.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.json");
 
         // Cahier asks for UNC paths in the log. Real UNC only exists for
         // network shares — for local paths we fall back to the Windows
-        // extended-length prefix (\\?\), which is the closest portable
-        // equivalent. Copy the entry so we don't mutate the caller's object.
+        // extended-length prefix (\\?\). Copy the entry so we don't mutate
+        // the caller's object.
         LogEntry normalized = new()
         {
             Timestamp = entry.Timestamp,
             JobName = entry.JobName,
-            SourceFile = ToNormalizedPath(entry.SourceFile),
-            TargetFile = ToNormalizedPath(entry.TargetFile),
+            SourceFile = LogPathHelper.ToNormalizedPath(entry.SourceFile),
+            TargetFile = LogPathHelper.ToNormalizedPath(entry.TargetFile),
             FileSize = entry.FileSize,
             FileTransferTimeMs = entry.FileTransferTimeMs,
             EncryptionTimeMs = entry.EncryptionTimeMs,
+            EventType = entry.EventType,
         };
 
-        lock (_writeLock)
+        var ack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_queue.Writer.TryWrite(new WriteRequest(filePath, normalized, ack)))
         {
-            List<LogEntry> entries = ReadExisting(filePath);
-            entries.Add(normalized);
-            WriteAtomic(filePath, entries);
+            // Queue is closed (post-Dispose). Mirrors the existing v1 contract
+            // when the logger has been torn down: drop silently rather than
+            // throw across what is usually a host-shutdown code path.
+            return;
+        }
+
+        // Block until the writer task signals durability (or surfaces the
+        // I/O error) — keeps Append's v1 sync contract.
+        ack.Task.GetAwaiter().GetResult();
+    }
+
+    private async Task WriterLoopAsync()
+    {
+        try
+        {
+            while (await _queue.Reader.WaitToReadAsync(_shutdown.Token).ConfigureAwait(false))
+            {
+                // Drain everything currently queued so concurrent appends
+                // collapse into a single file write per day file. Bounded by
+                // what producers managed to enqueue between two iterations.
+                var batch = new List<WriteRequest>();
+                while (_queue.Reader.TryRead(out var req))
+                {
+                    batch.Add(req);
+                }
+
+                FlushBatch(batch);
+            }
+        }
+        catch (OperationCanceledException) { /* shutdown */ }
+        finally
+        {
+            // Drain anything left after shutdown signal — best effort: ack
+            // them so callers don't deadlock on Dispose.
+            while (_queue.Reader.TryRead(out var req))
+            {
+                req.Ack.TrySetResult();
+            }
         }
     }
 
-    private static string ToNormalizedPath(string path) =>
-        LogPathHelper.ToNormalizedPath(path);
+    private void FlushBatch(List<WriteRequest> batch)
+    {
+        // Group by day file: a midnight rollover inside one batch would
+        // otherwise mix entries across two files.
+        foreach (var group in batch.GroupBy(r => r.FilePath, StringComparer.OrdinalIgnoreCase))
+        {
+            string filePath = group.Key;
+            if (!_cachePerDay.TryGetValue(filePath, out var entries))
+            {
+                entries = ReadExisting(filePath);
+                _cachePerDay[filePath] = entries;
+            }
+
+            int addedThisGroup = 0;
+            foreach (var req in group)
+            {
+                entries.Add(req.Entry);
+                addedThisGroup++;
+            }
+
+            try
+            {
+                WriteAtomic(filePath, entries);
+            }
+            catch (Exception ex)
+            {
+                // Roll back the in-memory cache so the next flush retries
+                // the same entries cleanly, then surface the error to every
+                // caller in this group.
+                entries.RemoveRange(entries.Count - addedThisGroup, addedThisGroup);
+                foreach (var req in group) req.Ack.TrySetException(ex);
+                continue;
+            }
+
+            foreach (var req in group) req.Ack.TrySetResult();
+        }
+    }
 
     private static void WriteAtomic(string filePath, List<LogEntry> entries)
     {
@@ -123,4 +229,24 @@ public sealed class JsonDailyLogger : IDailyLogger
             return new List<LogEntry>();
         }
     }
+
+    /// <summary>
+    /// Stops accepting new entries, waits for the writer task to drain any
+    /// in-flight batch, and releases the channel. Safe to call multiple times.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        _queue.Writer.TryComplete();
+
+        try { _writerLoop.GetAwaiter().GetResult(); }
+        catch (OperationCanceledException) { }
+        catch (AggregateException ex) when (ex.InnerException is OperationCanceledException) { }
+
+        _shutdown.Dispose();
+    }
+
+    private sealed record WriteRequest(string FilePath, LogEntry Entry, TaskCompletionSource Ack);
 }
