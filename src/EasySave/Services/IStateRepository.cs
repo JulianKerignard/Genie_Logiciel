@@ -13,6 +13,7 @@ public interface IStateRepository
     StateEntry? GetJob(string name);
 
     // Returns a consistent snapshot of all currently tracked jobs.
+    // Callers must not mutate the returned entries.
     IReadOnlyList<StateEntry> GetAll();
 
     // Removes the entry for the given job and rewrites the store. No-op if absent.

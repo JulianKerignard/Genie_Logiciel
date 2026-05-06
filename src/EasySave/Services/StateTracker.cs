@@ -159,8 +159,9 @@ public sealed class StateTracker : IStateRepository
         }
     }
 
-    // IStateRepository — UpdateJob updates only the State field of an existing entry,
-    // or creates a minimal entry when the job is not yet known (first call at job start).
+    // IStateRepository — file-only: persists the new state to state.json but does NOT
+    // update _jobs or fire JobProgressChanged. Phase 2 skeleton only; full observable
+    // propagation (matching Update(StateEntry)) lands in the Phase 3 thread-safe impl.
     public void UpdateJob(string name, JobState state)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
