@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:EasySave.RemoteConsole.ViewModels"
+             x:DataType="vm:ConsoleViewModel"
+             x:Class="EasySave.RemoteConsole.Views.ConsoleView">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Connection bar -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8" Spacing="8">
+            <TextBox Text="{Binding Host}" Width="160" PlaceholderText="Host" />
+            <NumericUpDown x:CompileBindings="False"
+                           Value="{Binding Port}"
+                           Minimum="1" Maximum="65535" Width="110"
+                           FormatString="0" />
+            <Button Content="Connexion" Command="{Binding ConnectCommand}" />
+            <Button Content="Déconnexion" Command="{Binding DisconnectCommand}" />
+            <TextBlock Text="{Binding Connection}" VerticalAlignment="Center" FontWeight="SemiBold" />
+        </StackPanel>
+
+        <!-- Jobs list -->
+        <ListBox Grid.Row="1" ItemsSource="{Binding Jobs}" x:Name="JobsList">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:CompileBindings="False">
+                    <Grid ColumnDefinitions="160,*,100,Auto" Margin="4" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0" Text="{Binding JobName}" VerticalAlignment="Center" />
+                        <ProgressBar Grid.Column="1"
+                                     Minimum="0" Maximum="100"
+                                     Value="{Binding ProgressPercent}"
+                                     Margin="8,0" Height="16" />
+                        <TextBlock Grid.Column="2" Text="{Binding Status}" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4">
+                            <Button Content="Pause"
+                                    Command="{Binding #JobsList.DataContext.PauseJobCommand}"
+                                    CommandParameter="{Binding JobName}" />
+                            <Button Content="Play"
+                                    Command="{Binding #JobsList.DataContext.PlayJobCommand}"
+                                    CommandParameter="{Binding JobName}" />
+                            <Button Content="Stop"
+                                    Command="{Binding #JobsList.DataContext.StopJobCommand}"
+                                    CommandParameter="{Binding JobName}" />
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+    </Grid>
+</UserControl>

@@ -1,6 +1,8 @@
 using EasyLog;
 using EasySave.CLI;
+using EasySave.Infrastructure.Remote;
 using EasySave.Services;
+using EasySave.Shared;
 
 try
 {
@@ -25,6 +27,33 @@ var backupManager = new BackupManager(
     encryption,
     AppConfig.Instance.Settings.EncryptedExtensions);
 var langService = new LanguageService(AppConfig.Instance.Settings);
+
+if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
+{
+    var orchestrator = new ParallelBackupOrchestratorStub();
+    var server = new TcpRemoteConsoleServer(logger);
+    server.CommandReceived += cmd =>
+    {
+        switch (cmd.Action)
+        {
+            case CommandType.Pause:  orchestrator.Pause(cmd.JobName);  break;
+            case CommandType.Play:   orchestrator.Resume(cmd.JobName); break;
+            case CommandType.Stop:   orchestrator.Stop(cmd.JobName);   break;
+        }
+        logger.Append(new LogEntry
+        {
+            Timestamp = DateTimeOffset.Now.ToString("o"),
+            JobName = cmd.JobName,
+            SourceFile = cmd.SourceIp ?? string.Empty,
+            TargetFile = string.Empty,
+            FileSize = 0,
+            FileTransferTimeMs = 0,
+            EventType = LogEvent.CommandReceived,
+        });
+        return Task.CompletedTask;
+    };
+    _ = server.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, CancellationToken.None);
+}
 
 var cliArgs = Environment.GetCommandLineArgs().Skip(1).ToArray();
 if (cliArgs.Length > 0)
