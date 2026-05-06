@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using EasySave.RemoteConsole.Infrastructure;
+using EasySave.RemoteConsole.Services;
 using EasySave.RemoteConsole.ViewModels;
 using EasySave.RemoteConsole.Views;
 
@@ -19,8 +20,9 @@ public sealed partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var client = new TcpRemoteConsoleClient();
-            var vm = new ConsoleViewModel(client);
+            var vm = new ConsoleViewModel(client, new LanguageService());
             desktop.MainWindow = new MainWindow { DataContext = vm };
+            desktop.Exit += (_, _) => vm.Dispose();
         }
 
         base.OnFrameworkInitializationCompleted();

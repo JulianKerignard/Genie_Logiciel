@@ -19,4 +19,9 @@
     <ProjectReference Include="..\src\EasySave.Shared\EasySave.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Resources\en.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Resources\fr.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -52,7 +52,10 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
         });
         return Task.CompletedTask;
     };
-    _ = server.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, CancellationToken.None);
+    var serverCts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; serverCts.Cancel(); };
+    AppDomain.CurrentDomain.ProcessExit += (_, _) => serverCts.Cancel();
+    _ = server.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, serverCts.Token);
 }
 
 var cliArgs = Environment.GetCommandLineArgs().Skip(1).ToArray();

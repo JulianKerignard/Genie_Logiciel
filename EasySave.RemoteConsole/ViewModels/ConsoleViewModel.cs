@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EasySave.RemoteConsole.Abstractions;
+using EasySave.RemoteConsole.Services;
 using EasySave.Shared;
 
 namespace EasySave.RemoteConsole.ViewModels;
@@ -11,11 +12,13 @@ namespace EasySave.RemoteConsole.ViewModels;
 public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
 {
     private readonly IRemoteConsoleClient _client;
+    private readonly LanguageService _lang;
     private readonly IDisposable _stateSubscription;
 
-    public ConsoleViewModel(IRemoteConsoleClient client)
+    public ConsoleViewModel(IRemoteConsoleClient client, LanguageService lang)
     {
         _client = client;
+        _lang = lang;
         _stateSubscription = _client.ConnectionState
             .Subscribe(new StateObserver(s => Connection = s));
     }
@@ -32,10 +35,15 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
     /// <summary>Server TCP port.</summary>
     [ObservableProperty] private int _port = 9000;
 
+    public string LabelConnect => _lang.T("btn.connect");
+    public string LabelDisconnect => _lang.T("btn.disconnect");
+
     /// <summary>Initiates a connection to the configured host and port.</summary>
     [RelayCommand]
     private async Task ConnectAsync(CancellationToken ct)
     {
+        // Ensure the handler is registered exactly once even if ConnectAsync is called again.
+        _client.EventReceived -= OnEventReceivedAsync;
         _client.EventReceived += OnEventReceivedAsync;
         await _client.ConnectAsync(Host, Port, ct);
     }
@@ -80,9 +88,7 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
             vm = new JobProgressVm { JobName = p.JobName };
             Jobs.Add(vm);
         }
-        vm.ProgressPercent = p.TotalFiles == 0
-            ? 0
-            : (p.TotalFiles - p.FilesLeft) * 100.0 / p.TotalFiles;
+        vm.ProgressPercent = ToPercent(p);
         vm.Status = p.State.ToString();
         vm.FilesRemaining = p.FilesLeft;
     }
@@ -95,17 +101,25 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
             Jobs.Add(new JobProgressVm
             {
                 JobName = j.JobName,
-                ProgressPercent = j.TotalFiles == 0
-                    ? 0
-                    : (j.TotalFiles - j.FilesLeft) * 100.0 / j.TotalFiles,
+                ProgressPercent = ToPercent(j),
                 Status = j.State.ToString(),
                 FilesRemaining = j.FilesLeft,
             });
         }
     }
 
+    private static double ToPercent(JobProgressDto p)
+        => p.TotalFiles == 0 ? 0 : (p.TotalFiles - p.FilesLeft) * 100.0 / p.TotalFiles;
+
     /// <inheritdoc/>
-    public void Dispose() => _stateSubscription.Dispose();
+    public void Dispose()
+    {
+        _stateSubscription.Dispose();
+        if (_client is IAsyncDisposable ad)
+            _ = ad.DisposeAsync().AsTask();
+        else if (_client is IDisposable d)
+            d.Dispose();
+    }
 
     // Bridges IObservable<RemoteConnectionState> (BCL) to an Action without a Rx dependency.
     private sealed class StateObserver(Action<RemoteConnectionState> onNext)

@@ -13,8 +13,8 @@
                            Value="{Binding Port}"
                            Minimum="1" Maximum="65535" Width="110"
                            FormatString="0" />
-            <Button Content="Connexion" Command="{Binding ConnectCommand}" />
-            <Button Content="Déconnexion" Command="{Binding DisconnectCommand}" />
+            <Button Content="{Binding LabelConnect}" Command="{Binding ConnectCommand}" />
+            <Button Content="{Binding LabelDisconnect}" Command="{Binding DisconnectCommand}" />
             <TextBlock Text="{Binding Connection}" VerticalAlignment="Center" FontWeight="SemiBold" />
         </StackPanel>
 

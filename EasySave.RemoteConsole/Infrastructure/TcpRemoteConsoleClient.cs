@@ -23,6 +23,12 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
 
     public async Task ConnectAsync(string host, int port, CancellationToken ct)
     {
+        // Cancel and release any existing connection before opening a new one.
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _tcp?.Close();
+        _tcp = null;
+
         _host = host;
         _port = port;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
