@@ -156,4 +156,42 @@ public class JsonFormatterTests
         public long FileSize { get; set; }
         public long FileTransferTimeMs { get; set; }
     }
+
+    [Fact]
+    public void Format_OmitsEventType_WhenNull()
+    {
+        // V1 / V2 byte-shape compatibility: a row without a V3 event must not
+        // surface the new field, so older readers see the exact shape they had.
+        var formatter = new JsonFormatter();
+        var entry = new LogEntry { JobName = "no-event", FileTransferTimeMs = 1 };
+
+        var json = formatter.Format(entry);
+
+        Assert.DoesNotContain("EventType", json);
+    }
+
+    [Fact]
+    public void Format_IncludesEventType_AsEnumName_WhenSet()
+    {
+        // V3 daily logs must stay human-readable: the event must be serialized
+        // as the enum member name, not the numeric value.
+        var formatter = new JsonFormatter();
+        var entry = new LogEntry { JobName = "big-file", EventType = LogEvent.BigFileEnqueued };
+
+        var json = formatter.Format(entry);
+
+        Assert.Contains("\"EventType\": \"BigFileEnqueued\"", json);
+        Assert.DoesNotContain("\"EventType\": 5", json);
+    }
+
+    [Fact]
+    public void Format_RoundTrip_PreservesEventType()
+    {
+        var formatter = new JsonFormatter();
+        var original = new LogEntry { JobName = "rt", EventType = LogEvent.CommandReceived };
+
+        var rebuilt = JsonSerializer.Deserialize<LogEntry>(formatter.Format(original));
+
+        Assert.Equal(LogEvent.CommandReceived, rebuilt!.EventType);
+    }
 }

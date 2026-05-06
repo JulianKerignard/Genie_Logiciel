@@ -51,4 +51,14 @@ public sealed class LogEntry
     /// </remarks>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? EncryptionTimeMs { get; set; }
+
+    /// <summary>
+    /// V3 event category for this log row (EasyLog v3+). Null on v1 / v2 file-
+    /// transfer rows so existing consumers see the exact JSON / XML shape they
+    /// always have. Serialized as the enum member name (e.g. "BigFileEnqueued"),
+    /// not the numeric value, so the daily log stays human-readable.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LogEvent? EventType { get; set; }
 }

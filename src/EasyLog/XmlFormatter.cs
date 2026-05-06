@@ -39,6 +39,14 @@ public sealed class XmlFormatter : ILogFormatter
             element.Add(new XElement("EncryptionTimeMs", entry.EncryptionTimeMs.Value));
         }
 
+        // v3+ event category — serialized as the enum member name (e.g.
+        // "BigFileEnqueued") so the XML log stays human-readable. Omitted when
+        // null so v1 / v2 consumers continue to see the exact shape they had.
+        if (entry.EventType.HasValue)
+        {
+            element.Add(new XElement("EventType", entry.EventType.Value.ToString()));
+        }
+
         return element.ToString(SaveOptions.None);
     }
 
