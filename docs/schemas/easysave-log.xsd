@@ -26,7 +26,22 @@
       <xs:element name="FileSize"           type="xs:long"/>
       <xs:element name="FileTransferTimeMs" type="xs:long"/>
       <xs:element name="EncryptionTimeMs"   type="xs:long" minOccurs="0"/>
+      <xs:element name="EventType"          type="LogEventName" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
+
+  <!-- v3+ event categories. Mirrors the EasyLog.LogEvent enum. -->
+  <xs:simpleType name="LogEventName">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="FileTransfer"/>
+      <xs:enumeration value="RemoteConsoleConnected"/>
+      <xs:enumeration value="RemoteConsoleDisconnected"/>
+      <xs:enumeration value="ParallelJobStarted"/>
+      <xs:enumeration value="ParallelJobFinished"/>
+      <xs:enumeration value="BigFileEnqueued"/>
+      <xs:enumeration value="BigFileTransferred"/>
+      <xs:enumeration value="CommandReceived"/>
+    </xs:restriction>
+  </xs:simpleType>
 
 </xs:schema>

@@ -177,4 +177,29 @@ public class XmlFormatterTests
         doc.Validate(schemas, (sender, e) =>
             throw new XmlSchemaValidationException(e.Message));
     }
+
+    [Fact]
+    public void Format_OmitsEventType_WhenNull()
+    {
+        var formatter = new XmlFormatter();
+        var entry = new LogEntry { JobName = "no-event", FileTransferTimeMs = 1 };
+
+        var xml = formatter.Format(entry);
+
+        Assert.DoesNotContain("EventType", xml);
+    }
+
+    [Fact]
+    public void Format_IncludesEventType_AsEnumName_AndValidates()
+    {
+        var formatter = new XmlFormatter();
+        var entry = new LogEntry { JobName = "with-event", EventType = LogEvent.ParallelJobStarted };
+
+        var element = XElement.Parse(formatter.Format(entry));
+
+        Assert.Equal("ParallelJobStarted", element.Element("EventType")?.Value);
+
+        var doc = WrapInLogs(new[] { element });
+        ValidateAgainstSchema(doc);
+    }
 }
