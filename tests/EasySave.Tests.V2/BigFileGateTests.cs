@@ -106,6 +106,26 @@ public class BigFileGateTests
     }
 
     [Fact]
+    public async Task AcquireAsync_LargeFile_AlreadyCancelledToken_ThrowsImmediately()
+    {
+        // Common shape: caller passes a token that has already been cancelled
+        // (e.g. the orchestrator received Stop before the per-file acquire
+        // ran). The acquire must throw without ever touching the slot.
+        using var gate = new BigFileGate(largeFileThresholdBytes: 100);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => gate.AcquireAsync(fileSizeBytes: 1000, cts.Token));
+
+        // Slot was never taken — a fresh acquire completes immediately.
+        using var handle = await gate.AcquireAsync(
+            fileSizeBytes: 1000, CancellationToken.None);
+        Assert.NotNull(handle);
+    }
+
+    [Fact]
     public async Task AcquireAsync_LargeFile_TokenCancelledWhileWaiting_ThrowsAndDoesNotConsumeSlot()
     {
         using var gate = new BigFileGate(largeFileThresholdBytes: 100);

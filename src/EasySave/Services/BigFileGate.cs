@@ -34,6 +34,12 @@ public sealed class BigFileGate : IBigFileGate, IDisposable
         return new ReleaseHandle(_gate);
     }
 
+    // The host is expected to stop every running job (and let their gate
+    // handles fall out of scope) before disposing the gate itself. If a
+    // waiter is still parked in WaitAsync when Dispose runs, it surfaces as
+    // ObjectDisposedException on that waiter rather than the OCE that
+    // cancellation would deliver — caller's responsibility to avoid the
+    // race during shutdown.
     public void Dispose() => _gate.Dispose();
 
     private sealed class NoOpHandle : IDisposable
