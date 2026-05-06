@@ -32,7 +32,16 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IDisposable
         _cts.Dispose();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        await ConnectInternalAsync(_cts.Token).ConfigureAwait(false);
+        try
+        {
+            await ConnectInternalAsync(_cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Publish so the UI exits the Connecting state even on the first attempt.
+            _stateSubject.Publish(RemoteConnectionState.Disconnected);
+            throw;
+        }
     }
 
     public Task DisconnectAsync()

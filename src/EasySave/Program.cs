@@ -30,10 +30,13 @@ var langService = new LanguageService(AppConfig.Instance.Settings);
 if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
 {
     IParallelBackupOrchestrator orchestrator = new NoOpParallelBackupOrchestrator();
-    var remoteServer = new TcpRemoteConsoleServer(logger);
+    var remoteServer = new TcpRemoteConsoleServer();
 
     remoteServer.CommandReceived += async cmd =>
     {
+        // Audit log reusing LogEntry. SourceFile prefix "[remote-cmd]" marks this as
+        // a control event, not a file transfer. FileTransferTimeMs = -1 is used as an
+        // unambiguous sentinel (distinguishes from a genuine 0 ms copy).
         logger.Append(new LogEntry
         {
             Timestamp = DateTimeOffset.Now.ToString("o"),
@@ -41,7 +44,7 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
             SourceFile = $"[remote-cmd] {cmd.Action} from {cmd.SourceIp}",
             TargetFile = string.Empty,
             FileSize = 0,
-            FileTransferTimeMs = 0,
+            FileTransferTimeMs = -1,
         });
 
         switch (cmd.Action)

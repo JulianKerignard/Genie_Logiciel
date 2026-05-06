@@ -2,14 +2,12 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
-using EasyLog;
 using EasySave.Shared;
 
 namespace EasySave.Services;
 
 public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
 {
-    private readonly IDailyLogger _logger;
     private readonly ConcurrentDictionary<string, ClientEntry> _clients = new();
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
@@ -22,11 +20,6 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
     }
 
     public event Func<CommandDto, Task> CommandReceived = _ => Task.CompletedTask;
-
-    public TcpRemoteConsoleServer(IDailyLogger logger)
-    {
-        _logger = logger;
-    }
 
     public async Task StartAsync(int port, CancellationToken ct)
     {
@@ -57,6 +50,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
 
         foreach (var (key, entry) in _clients)
         {
+            try { entry.WriteLock.Dispose(); } catch (Exception) { }
             try { entry.Client.Close(); } catch (Exception) { }
             _clients.TryRemove(key, out _);
         }
@@ -90,6 +84,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         {
             if (_clients.TryRemove(key, out var removed))
             {
+                try { removed.WriteLock.Dispose(); } catch (Exception) { }
                 try { removed.Client.Close(); } catch (Exception) { }
             }
         }
@@ -131,6 +126,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         finally
         {
             _clients.TryRemove(endpoint, out _);
+            try { entry.WriteLock.Dispose(); } catch (Exception) { }
             try { writer.Dispose(); } catch (Exception) { }
             try { client.Close(); } catch (Exception) { }
         }
