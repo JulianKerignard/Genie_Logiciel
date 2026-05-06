@@ -135,6 +135,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
             EventType = LogEvent.RemoteConsoleDisconnected,
         });
 
+        try { entry.WriteLock.Dispose(); } catch { }
         try { entry.Writer.Dispose(); } catch { }
         try { entry.Client.Close(); } catch { }
     }

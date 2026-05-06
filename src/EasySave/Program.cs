@@ -52,7 +52,7 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
         });
         return Task.CompletedTask;
     };
-    var serverCts = new CancellationTokenSource();
+    using var serverCts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; serverCts.Cancel(); };
     AppDomain.CurrentDomain.ProcessExit += (_, _) => serverCts.Cancel();
     _ = server.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, serverCts.Token);
