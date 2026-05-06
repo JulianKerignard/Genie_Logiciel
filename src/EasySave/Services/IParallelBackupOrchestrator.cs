@@ -11,7 +11,11 @@ namespace EasySave.Services;
 // thread (typically the UI dispatcher or the remote console handler) while
 // RunAsync is in flight. Each running job is driven through its own
 // JobExecutionContext.
-public interface IParallelBackupOrchestrator
+//
+// Implementations own per-job CancellationTokenSources and a semaphore for
+// the parallelism cap, hence the IDisposable surface for app-shutdown
+// cleanup (matching the precedent set by IBackupManagerAdapter).
+public interface IParallelBackupOrchestrator : IDisposable
 {
     // Runs every job in jobNames concurrently, bounded by MaxParallelJobs,
     // and completes when all of them have finished, failed or been
@@ -20,20 +24,25 @@ public interface IParallelBackupOrchestrator
     // JobOutcome.Cancelled in the result list.
     //
     // The returned list contains exactly one JobResult per submitted name,
-    // in the same order as jobNames.
+    // in the same order as jobNames. Throws ArgumentException when jobNames
+    // contains duplicates, since Pause/Resume/Stop target by name and would
+    // otherwise be ambiguous.
     Task<IReadOnlyList<JobResult>> RunAsync(
         IEnumerable<string> jobNames,
         CancellationToken ct);
 
     // Pauses the named running job at the next file boundary. No-op when
-    // the job is not currently running or is already paused.
+    // the orchestrator has no active context for jobName (never started or
+    // already finished) or when the job is already paused.
     void Pause(string jobName);
 
     // Resumes a previously paused job. No-op when the job is not paused.
     void Resume(string jobName);
 
-    // Stops the named job. The job exits with JobOutcome.Cancelled. No-op
-    // when the job is not currently running.
+    // Stops the named job. Works on both Running and Paused jobs — a paused
+    // job is still alive and Stop must be able to reach it. The job exits
+    // with JobOutcome.Cancelled. No-op when the orchestrator has no active
+    // context for jobName (never started or already finished).
     void Stop(string jobName);
 
     // Raised every time a running job's progress snapshot is updated.
