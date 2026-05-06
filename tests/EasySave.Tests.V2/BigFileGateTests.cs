@@ -1,0 +1,176 @@
+using EasySave.Services;
+
+namespace EasySave.Tests.V2;
+
+public class BigFileGateTests
+{
+    // Small wait used to assert "task is still pending" without the test
+    // hanging if the assertion is wrong. Long enough to absorb scheduler
+    // jitter on CI; short enough to keep the suite fast.
+    private static readonly TimeSpan PendingProbe = TimeSpan.FromMilliseconds(100);
+
+    [Fact]
+    public void Constructor_NegativeThreshold_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new BigFileGate(largeFileThresholdBytes: -1));
+    }
+
+    [Fact]
+    public void LargeFileThresholdBytes_ExposesConstructorValue()
+    {
+        using var gate = new BigFileGate(largeFileThresholdBytes: 4096);
+        Assert.Equal(4096, gate.LargeFileThresholdBytes);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_NegativeFileSize_Throws()
+    {
+        using var gate = new BigFileGate(largeFileThresholdBytes: 100);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => gate.AcquireAsync(fileSizeBytes: -1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AcquireAsync_SmallFile_ReturnsImmediately()
+    {
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+
+        using var handle = await gate.AcquireAsync(fileSizeBytes: 100, CancellationToken.None);
+
+        Assert.NotNull(handle);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_SmallFile_BypassesGateEvenWhileLargeFileHoldsIt()
+    {
+        // The whole point of the gate: small files must NOT be serialized
+        // behind a large transfer. Hold the gate with a large file then
+        // confirm a small acquire completes without waiting.
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+
+        using var hugeHandle = await gate.AcquireAsync(
+            fileSizeBytes: 10_000, CancellationToken.None);
+
+        var smallAcquire = gate.AcquireAsync(
+            fileSizeBytes: 100, CancellationToken.None);
+
+        var winner = await Task.WhenAny(smallAcquire, Task.Delay(PendingProbe));
+        Assert.Same(smallAcquire, winner);
+
+        using var smallHandle = await smallAcquire;
+        Assert.NotNull(smallHandle);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_FileExactlyAtThreshold_IsTreatedAsLarge()
+    {
+        // Spec: ">=" is the gating condition, so a file at exactly the
+        // threshold takes the slot.
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+
+        var handle1 = await gate.AcquireAsync(
+            fileSizeBytes: 1024, CancellationToken.None);
+
+        var acquire2 = gate.AcquireAsync(
+            fileSizeBytes: 1024, CancellationToken.None);
+
+        var winner = await Task.WhenAny(acquire2, Task.Delay(PendingProbe));
+        Assert.NotSame(acquire2, winner);
+
+        handle1.Dispose();
+        using var handle2 = await acquire2;
+        Assert.NotNull(handle2);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_LargeFile_BlocksUntilFirstSlotIsReleased()
+    {
+        using var gate = new BigFileGate(largeFileThresholdBytes: 100);
+
+        var handle1 = await gate.AcquireAsync(
+            fileSizeBytes: 1000, CancellationToken.None);
+
+        var acquire2 = gate.AcquireAsync(
+            fileSizeBytes: 1000, CancellationToken.None);
+
+        // While handle1 is alive, acquire2 must stay pending.
+        var winner = await Task.WhenAny(acquire2, Task.Delay(PendingProbe));
+        Assert.NotSame(acquire2, winner);
+
+        handle1.Dispose();
+
+        // Releasing handle1 must unblock acquire2 promptly.
+        using var handle2 = await acquire2;
+        Assert.NotNull(handle2);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_LargeFile_TokenCancelledWhileWaiting_ThrowsAndDoesNotConsumeSlot()
+    {
+        using var gate = new BigFileGate(largeFileThresholdBytes: 100);
+
+        var handle1 = await gate.AcquireAsync(
+            fileSizeBytes: 1000, CancellationToken.None);
+
+        using var cts = new CancellationTokenSource();
+        var acquire2 = gate.AcquireAsync(fileSizeBytes: 1000, cts.Token);
+
+        // Confirm acquire2 is parked on the gate.
+        var winner = await Task.WhenAny(acquire2, Task.Delay(PendingProbe));
+        Assert.NotSame(acquire2, winner);
+
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await acquire2);
+
+        // Slot was not consumed by acquire2: handle1 still owns the only
+        // slot, so a fresh waiter must keep waiting until handle1 releases.
+        var acquire3 = gate.AcquireAsync(
+            fileSizeBytes: 1000, CancellationToken.None);
+
+        var winner3 = await Task.WhenAny(acquire3, Task.Delay(PendingProbe));
+        Assert.NotSame(acquire3, winner3);
+
+        handle1.Dispose();
+        using var handle3 = await acquire3;
+        Assert.NotNull(handle3);
+    }
+
+    [Fact]
+    public async Task Dispose_LargeFileHandle_IsIdempotent()
+    {
+        // The internal SemaphoreSlim has maxCount = 1, so a double-Release
+        // would throw SemaphoreFullException. The handle must short-circuit
+        // a second Dispose so callers can safely combine `using` and an
+        // explicit Dispose without crashing.
+        using var gate = new BigFileGate(largeFileThresholdBytes: 100);
+
+        var handle = await gate.AcquireAsync(
+            fileSizeBytes: 1000, CancellationToken.None);
+
+        handle.Dispose();
+        handle.Dispose();
+
+        // Slot should now be free — a fresh acquire completes without
+        // blocking. If the second Dispose had double-released, this call
+        // would have observed an over-counted semaphore (count = 2) and
+        // a follow-up Release in another test would throw, but here the
+        // immediate completion is what we verify.
+        using var handle2 = await gate.AcquireAsync(
+            fileSizeBytes: 1000, CancellationToken.None);
+        Assert.NotNull(handle2);
+    }
+
+    [Fact]
+    public async Task Dispose_SmallFileHandle_IsSafeToCallTwice()
+    {
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+
+        var handle = await gate.AcquireAsync(
+            fileSizeBytes: 100, CancellationToken.None);
+
+        handle.Dispose();
+        handle.Dispose();
+    }
+}
