@@ -24,7 +24,7 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
     private readonly SemaphoreSlim _slots;
     private readonly ConcurrentDictionary<string, JobExecutionContext> _running = new();
 
-    public event Action<JobProgressDto>? ProgressChanged;
+    public event Action<JobProgressDto> ProgressChanged = static _ => { };
 
     public ParallelBackupOrchestrator(
         IJobRunner runner,
@@ -40,7 +40,7 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
         _slots = new SemaphoreSlim(maxParallelJobs, maxParallelJobs);
     }
 
-    public Task<IReadOnlyList<JobResult>> RunAsync(
+    public async Task<IReadOnlyList<JobResult>> RunAsync(
         IEnumerable<string> jobNames,
         CancellationToken ct)
     {
@@ -54,16 +54,8 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
                 nameof(jobNames));
         }
 
-        return RunBatchAsync(names, ct);
-    }
-
-    private async Task<IReadOnlyList<JobResult>> RunBatchAsync(
-        string[] names,
-        CancellationToken batchCt)
-    {
-        var tasks = names.Select(n => RunSingleAsync(n, batchCt)).ToArray();
-        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
-        return results;
+        var tasks = names.Select(n => RunSingleAsync(n, ct)).ToArray();
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
     private async Task<JobResult> RunSingleAsync(string jobName, CancellationToken batchCt)
@@ -72,7 +64,10 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
 
         // The slot wait is its own try/catch so a batch cancellation that
         // arrives before the job ever starts surfaces cleanly as a
-        // Cancelled JobResult instead of throwing out of Task.WhenAll.
+        // Cancelled JobResult instead of throwing out of Task.WhenAll. The
+        // ObjectDisposedException branch covers the Dispose-while-queued
+        // race (see Dispose contract below); without it the queued task
+        // would fault.
         try
         {
             await _slots.WaitAsync(batchCt).ConfigureAwait(false);
@@ -83,6 +78,12 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
                 jobName, JobOutcome.Cancelled, submittedAt,
                 DateTimeOffset.UtcNow, Message: "batch cancelled before slot");
         }
+        catch (ObjectDisposedException)
+        {
+            return new JobResult(
+                jobName, JobOutcome.Cancelled, submittedAt,
+                DateTimeOffset.UtcNow, Message: "orchestrator disposed before slot");
+        }
 
         var startedAt = DateTimeOffset.UtcNow;
         try
@@ -91,7 +92,11 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
         }
         finally
         {
-            _slots.Release();
+            // Release can race with Dispose; the finally still has to run
+            // to honour the per-job result contract, so swallow the ODE
+            // rather than fault the task.
+            try { _slots.Release(); }
+            catch (ObjectDisposedException) { /* dispose race */ }
         }
     }
 
@@ -122,11 +127,12 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
             await _runner.RunAsync(ctx, snapshot =>
             {
                 ctx.Progress = snapshot;
-                // Snapshot the delegate to avoid a torn read if the last
-                // subscriber unsubscribes between the null check and the
-                // invoke.
+                // Snapshot the delegate before invoking so a concurrent -=
+                // can't reorder against this read. The event is seeded with
+                // a no-op so the field is never null even with zero
+                // subscribers.
                 var handler = ProgressChanged;
-                handler?.Invoke(snapshot);
+                handler.Invoke(snapshot);
             }).ConfigureAwait(false);
 
             return new JobResult(
@@ -184,10 +190,16 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
             ctx.Cts.Cancel();
     }
 
+    // Dispose initiates shutdown by cancelling every in-flight job's CTS
+    // (so token-aware runners exit promptly with Cancelled) and disposes the
+    // parallelism semaphore. Callers should still await every outstanding
+    // RunAsync(...) call before Dispose to collect the per-job results —
+    // this matches the contract of HttpClient and IBackupManagerAdapter.
+    // RunSingleAsync is defensive against the Dispose-during-flight race
+    // (ObjectDisposedException on slot wait or release surface as Cancelled)
+    // so an out-of-order Dispose never faults the running batch task.
     public void Dispose()
     {
-        // Cancel everything still running before tearing the semaphore down,
-        // so in-flight RunSingleAsync calls get a chance to wind up cleanly.
         foreach (var ctx in _running.Values)
         {
             try { ctx.Cts.Cancel(); }

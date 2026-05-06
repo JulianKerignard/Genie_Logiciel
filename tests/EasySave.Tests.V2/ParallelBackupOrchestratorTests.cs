@@ -187,6 +187,7 @@ public class ParallelBackupOrchestratorTests
     {
         int inFlight = 0;
         int observedMax = 0;
+        var capReached = new TaskCompletionSource();
         var releaseAll = new TaskCompletionSource();
 
         using var orch = Make(async (_, _) =>
@@ -200,20 +201,26 @@ public class ParallelBackupOrchestratorTests
                 if (now <= prev) break;
             } while (Interlocked.CompareExchange(ref observedMax, now, prev) != prev);
 
+            // Signal the test as soon as the cap (2 in-flight) is reached.
+            if (now == 2) capReached.TrySetResult();
+
             await releaseAll.Task;
             Interlocked.Decrement(ref inFlight);
         }, maxParallelJobs: 2);
 
         var task = orch.RunAsync(new[] { "A", "B", "C", "D" }, CancellationToken.None);
 
-        // Give the scheduler a beat for jobs A and B to enter the runner.
-        // With cap = 2, observedMax must never exceed 2.
-        await Task.Delay(150);
+        // Deterministic wait: jobs A and B are both in-flight and parked on
+        // releaseAll. With cap = 2 the slot semaphore now holds the other
+        // two queued, so observedMax must equal 2 right now and cannot grow
+        // until we release.
+        await capReached.Task;
         Assert.Equal(2, observedMax);
 
         releaseAll.SetResult();
         await task;
 
+        // After C and D have cycled through, the cap must still have held.
         Assert.Equal(2, observedMax);
     }
 
