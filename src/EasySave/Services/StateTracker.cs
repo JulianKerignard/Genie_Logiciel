@@ -8,7 +8,7 @@ namespace EasySave.Services;
 // Persists a JSON array to AppConfig.Instance.StateFilePath (rewritten atomically) and
 // exposes a per-job INotifyPropertyChanged view + a JobProgressChanged event so a GUI
 // can react to live updates without re-reading state.json.
-public sealed class StateTracker
+public sealed class StateTracker : IStateRepository
 {
     private static readonly Lazy<StateTracker> _instance = new(() => new StateTracker());
     public static StateTracker Instance => _instance.Value;
@@ -158,6 +158,49 @@ public sealed class StateTracker
             _jobs.TryRemove(match, out _);
         }
     }
+
+    // IStateRepository — file-only: persists the new state to state.json but does NOT
+    // update _jobs or fire JobProgressChanged. Phase 2 skeleton only; full observable
+    // propagation (matching Update(StateEntry)) lands in the Phase 3 thread-safe impl.
+    public void UpdateJob(string name, JobState state)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        lock (_lock)
+        {
+            var path = AppConfig.Instance.StateFilePath;
+            FileHelpers.EnsureDirectoryExists(path);
+
+            var states = ReadCurrentEntries(path);
+            var entry = states.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (entry is null)
+            {
+                entry = new StateEntry { Name = name };
+                states.Add(entry);
+            }
+
+            entry.State = state;
+            entry.LastActionTime = DateTimeOffset.Now;
+
+            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+        }
+    }
+
+    // IStateRepository
+    public StateEntry? GetJob(string name) => GetState(name);
+
+    // IStateRepository
+    public IReadOnlyList<StateEntry> GetAll()
+    {
+        lock (_lock)
+        {
+            var path = AppConfig.Instance.StateFilePath;
+            return ReadCurrentEntries(path);
+        }
+    }
+
+    // IStateRepository
+    public void RemoveJob(string name) => Remove(name);
 
     // Transient IOException is propagated to the caller (Update / Remove): swallowing it
     // and returning [] would cause the next atomic write to overwrite state.json with only
