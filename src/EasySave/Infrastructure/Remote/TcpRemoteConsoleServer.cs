@@ -72,7 +72,7 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         var key = client.Client.RemoteEndPoint?.ToString() ?? Guid.NewGuid().ToString();
         var stream = client.GetStream();
         var writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 4096, leaveOpen: true)
-            { AutoFlush = false };
+        { AutoFlush = false };
         _clients[key] = new ClientEntry(client, writer);
 
         _logger.Append(new LogEntry

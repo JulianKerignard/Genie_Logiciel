@@ -39,7 +39,6 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
     private readonly string _logDirectory;
     private readonly Channel<WriteRequest> _queue;
     private readonly Task _writerLoop;
-    private readonly CancellationTokenSource _shutdown = new();
 
     // Per-day cache so a busy day's append loop does not re-read the file
     // from disk on every flush. The writer task is the only thread that
@@ -121,7 +120,7 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
     {
         try
         {
-            while (await _queue.Reader.WaitToReadAsync(_shutdown.Token).ConfigureAwait(false))
+            while (await _queue.Reader.WaitToReadAsync().ConfigureAwait(false))
             {
                 // Drain everything currently queued so concurrent appends
                 // collapse into a single file write per day file. Bounded by
@@ -135,14 +134,24 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
                 FlushBatch(batch);
             }
         }
-        catch (OperationCanceledException) { /* shutdown */ }
         finally
         {
-            // Drain anything left after shutdown signal — best effort: ack
-            // them so callers don't deadlock on Dispose.
-            while (_queue.Reader.TryRead(out var req))
+            // Path normal: TryComplete() makes WaitToReadAsync return false
+            // only after the channel is drained, so this finally usually has
+            // nothing left. Safety net for any future forced-cancellation /
+            // unexpected exception path: route the survivors through
+            // FlushBatch so callers either see their entry on disk or get a
+            // surfaced exception — never a silent TrySetResult that would
+            // claim durability for entries that never reached the file.
+            var leftover = new List<WriteRequest>();
+            while (_queue.Reader.TryRead(out var req)) leftover.Add(req);
+            if (leftover.Count > 0)
             {
-                req.Ack.TrySetResult();
+                try { FlushBatch(leftover); }
+                catch (Exception ex)
+                {
+                    foreach (var req in leftover) req.Ack.TrySetException(ex);
+                }
             }
         }
     }
@@ -224,8 +233,9 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
             string backupPath = $"{filePath}.corrupted-{DateTime.Now:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
             File.Move(filePath, backupPath);
 
+            // Class-library diagnostic only. Mirrors XmlDailyLogger.ReadExisting
+            // — host owns Console; library must not write to stderr.
             Trace.TraceWarning($"[EasyLog] Corrupted log file moved to {backupPath} - {ex.Message}");
-            Console.Error.WriteLine($"[EasyLog] Corrupted log file moved to {backupPath} ({ex.Message})");
             return new List<LogEntry>();
         }
     }
@@ -239,13 +249,14 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        // Closing the writer side makes WaitToReadAsync return false once the
+        // channel is empty, so the loop sorts after draining any in-flight
+        // batch — preserving the durability contract for callers whose Append
+        // returned successfully before Dispose.
         _queue.Writer.TryComplete();
 
         try { _writerLoop.GetAwaiter().GetResult(); }
-        catch (OperationCanceledException) { }
-        catch (AggregateException ex) when (ex.InnerException is OperationCanceledException) { }
-
-        _shutdown.Dispose();
+        catch (AggregateException) { /* surfaced through individual ack TCS */ }
     }
 
     private sealed record WriteRequest(string FilePath, LogEntry Entry, TaskCompletionSource Ack);
