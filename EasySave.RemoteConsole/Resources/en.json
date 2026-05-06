@@ -1,4 +1,7 @@
 {
   "btn.connect": "Connect",
-  "btn.disconnect": "Disconnect"
+  "btn.disconnect": "Disconnect",
+  "btn.pause": "Pause",
+  "btn.play": "Play",
+  "btn.stop": "Stop"
 }

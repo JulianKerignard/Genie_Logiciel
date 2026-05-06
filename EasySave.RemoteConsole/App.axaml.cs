@@ -19,8 +19,9 @@ public sealed partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            var lang = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
             var client = new TcpRemoteConsoleClient();
-            var vm = new ConsoleViewModel(client, new LanguageService());
+            var vm = new ConsoleViewModel(client, new LanguageService(lang));
             desktop.MainWindow = new MainWindow { DataContext = vm };
             desktop.Exit += (_, _) => vm.Dispose();
         }

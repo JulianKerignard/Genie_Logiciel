@@ -137,6 +137,8 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync();
+        _cts?.Dispose();
+        _writeLock.Dispose();
         _stateSubject.OnCompleted();
     }
 }

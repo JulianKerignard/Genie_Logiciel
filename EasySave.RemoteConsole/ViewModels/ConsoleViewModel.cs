@@ -35,8 +35,11 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
     /// <summary>Server TCP port.</summary>
     [ObservableProperty] private int _port = 9000;
 
-    public string LabelConnect => _lang.T("btn.connect");
+    public string LabelConnect    => _lang.T("btn.connect");
     public string LabelDisconnect => _lang.T("btn.disconnect");
+    public string LabelPause      => _lang.T("btn.pause");
+    public string LabelPlay       => _lang.T("btn.play");
+    public string LabelStop       => _lang.T("btn.stop");
 
     /// <summary>Initiates a connection to the configured host and port.</summary>
     [RelayCommand]

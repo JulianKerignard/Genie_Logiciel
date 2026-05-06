@@ -30,13 +30,13 @@
                                      Margin="8,0" Height="16" />
                         <TextBlock Grid.Column="2" Text="{Binding Status}" VerticalAlignment="Center" />
                         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4">
-                            <Button Content="Pause"
+                            <Button Content="{Binding #JobsList.DataContext.LabelPause}"
                                     Command="{Binding #JobsList.DataContext.PauseJobCommand}"
                                     CommandParameter="{Binding JobName}" />
-                            <Button Content="Play"
+                            <Button Content="{Binding #JobsList.DataContext.LabelPlay}"
                                     Command="{Binding #JobsList.DataContext.PlayJobCommand}"
                                     CommandParameter="{Binding JobName}" />
-                            <Button Content="Stop"
+                            <Button Content="{Binding #JobsList.DataContext.LabelStop}"
                                     Command="{Binding #JobsList.DataContext.StopJobCommand}"
                                     CommandParameter="{Binding JobName}" />
                         </StackPanel>
