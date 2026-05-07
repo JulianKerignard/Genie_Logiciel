@@ -8,6 +8,10 @@ namespace EasySave.Services;
 // Persists a JSON array to AppConfig.Instance.StateFilePath (rewritten atomically) and
 // exposes a per-job INotifyPropertyChanged view + a JobProgressChanged event so a GUI
 // can react to live updates without re-reading state.json.
+//
+// V3 write path (UpdateJob): updates the in-memory cache immediately and schedules a
+// throttled disk flush (≤200 ms). The V2 write path (Update/Pause/Resume/Remove) still
+// flushes synchronously so monitoring tools always see a consistent file.
 public sealed class StateTracker : IStateRepository
 {
     private static readonly Lazy<StateTracker> _instance = new(() => new StateTracker());
@@ -15,6 +19,16 @@ public sealed class StateTracker : IStateRepository
 
     private readonly object _lock = new();
     private readonly ConcurrentDictionary<string, JobProgress> _jobs = new();
+
+    // In-memory cache — single source of truth for both V2 and V3 write paths.
+    // Guarded by _lock. Loaded lazily on first access; invalidated automatically
+    // when AppConfig.Instance.StateFilePath changes (test isolation).
+    private readonly Dictionary<string, StateEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private string _cachedPath = string.Empty;
+    private bool _cacheDirty;
+
+    // Throttles disk writes issued by UpdateJob: at most one write per 200 ms.
+    private readonly Timer _flushTimer;
 
     // Raised after every Update with the snapshot just persisted.
     // Subscribers receive the StateEntry passed to Update — treat it as a snapshot
@@ -27,7 +41,10 @@ public sealed class StateTracker : IStateRepository
     // their final progress until the consumer explicitly chooses to filter or evict them.
     public IReadOnlyDictionary<string, JobProgress> Jobs => _jobs;
 
-    private StateTracker() { }
+    private StateTracker()
+    {
+        _flushTimer = new Timer(_ => FlushFromTimer(), null, Timeout.Infinite, Timeout.Infinite);
+    }
 
     // Inserts or replaces the snapshot for a job, persists the full state.json atomically,
     // mutates the matching JobProgress to fire INotifyPropertyChanged, then raises JobProgressChanged.
@@ -37,22 +54,14 @@ public sealed class StateTracker : IStateRepository
 
         lock (_lock)
         {
-            var path = AppConfig.Instance.StateFilePath;
-            FileHelpers.EnsureDirectoryExists(path);
-
-            var states = ReadCurrentEntries(path);
-            states.RemoveAll(s => s.Name == entry.Name);
-            states.Add(entry);
-
-            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+            EnsureCacheLoaded();
+            _cache[entry.Name] = entry;
+            FlushCacheUnderLock();
         }
 
         // Observable side-effects run outside _lock on purpose: PropertyChanged subscribers
         // (Avalonia bindings, log forwarders) may call back into Update. Keeping them under
         // _lock would deadlock or violate the lock invariant on re-entry.
-        // The trade-off is eventually-consistent JobProgress (state.json is always consistent;
-        // the in-memory observable can briefly see interleaved values under concurrent updates
-        // for the same job — acceptable for a transient progress display).
         var progress = _jobs.GetOrAdd(entry.Name, name => new JobProgress(name));
         progress.CurrentFile = entry.CurrentSource;
         progress.FilesRemaining = entry.FilesRemaining;
@@ -85,12 +94,9 @@ public sealed class StateTracker : IStateRepository
 
         lock (_lock)
         {
-            var path = AppConfig.Instance.StateFilePath;
-            if (!File.Exists(path)) return;
+            EnsureCacheLoaded();
 
-            var states = ReadCurrentEntries(path);
-            var entry = states.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (entry is null) return;
+            if (!_cache.TryGetValue(name, out var entry)) return;
 
             var next = nextState(entry.State);
             // No state transition means the call is rejected (e.g. Pause on Inactive,
@@ -101,8 +107,7 @@ public sealed class StateTracker : IStateRepository
             entry.PauseReason = reason;
             entry.LastActionTime = DateTimeOffset.Now;
 
-            FileHelpers.EnsureDirectoryExists(path);
-            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+            FlushCacheUnderLock();
             snapshot = entry;
         }
 
@@ -119,10 +124,8 @@ public sealed class StateTracker : IStateRepository
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         lock (_lock)
         {
-            var path = AppConfig.Instance.StateFilePath;
-            if (!File.Exists(path)) return null;
-            var states = ReadCurrentEntries(path);
-            return states.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+            EnsureCacheLoaded();
+            return _cache.TryGetValue(name, out var e) ? e : null;
         }
     }
 
@@ -135,23 +138,14 @@ public sealed class StateTracker : IStateRepository
 
         lock (_lock)
         {
-            var path = AppConfig.Instance.StateFilePath;
-            if (File.Exists(path))
+            EnsureCacheLoaded();
+            if (_cache.Remove(name))
             {
-                var states = ReadCurrentEntries(path);
-                var initialCount = states.Count;
-                states.RemoveAll(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-
-                if (states.Count != initialCount)
-                {
-                    FileHelpers.EnsureDirectoryExists(path);
-                    FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
-                }
+                FlushCacheUnderLock();
             }
         }
 
         // Outside the lock — same reasoning as Update for observable side-effects.
-        // Case-insensitive lookup so an entry added under a different casing is still evicted.
         var match = _jobs.Keys.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
         if (match is not null)
         {
@@ -159,48 +153,100 @@ public sealed class StateTracker : IStateRepository
         }
     }
 
-    // IStateRepository — file-only: persists the new state to state.json but does NOT
-    // update _jobs or fire JobProgressChanged. Phase 2 skeleton only; full observable
-    // propagation (matching Update(StateEntry)) lands in the Phase 3 thread-safe impl.
+    // IStateRepository — V3 fast path. Updates the in-memory cache immediately and schedules
+    // a throttled disk flush (≤200 ms). Also propagates the observable event so Avalonia
+    // bindings react without waiting for the flush.
     public void UpdateJob(string name, JobState state)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
+        StateEntry snapshot;
         lock (_lock)
         {
-            var path = AppConfig.Instance.StateFilePath;
-            FileHelpers.EnsureDirectoryExists(path);
-
-            var states = ReadCurrentEntries(path);
-            var entry = states.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (entry is null)
+            EnsureCacheLoaded();
+            if (!_cache.TryGetValue(name, out var entry))
             {
                 entry = new StateEntry { Name = name };
-                states.Add(entry);
+                _cache[name] = entry;
             }
-
             entry.State = state;
             entry.LastActionTime = DateTimeOffset.Now;
-
-            FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(states, FileHelpers.IndentedJsonOptions));
+            _cacheDirty = true;
+            snapshot = entry;
         }
+
+        // Schedule a throttled flush; observable side-effects run outside _lock.
+        _flushTimer.Change(200, Timeout.Infinite);
+        var progress = _jobs.GetOrAdd(name, n => new JobProgress(n));
+        JobProgressChanged?.Invoke(this, snapshot);
     }
 
     // IStateRepository
-    public StateEntry? GetJob(string name) => GetState(name);
+    public StateEntry? GetJob(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        lock (_lock)
+        {
+            EnsureCacheLoaded();
+            return _cache.TryGetValue(name, out var e) ? e : null;
+        }
+    }
 
-    // IStateRepository
+    // IStateRepository — Callers must not mutate the returned entries.
     public IReadOnlyList<StateEntry> GetAll()
     {
         lock (_lock)
         {
-            var path = AppConfig.Instance.StateFilePath;
-            return ReadCurrentEntries(path);
+            EnsureCacheLoaded();
+            return _cache.Values.ToList();
         }
     }
 
     // IStateRepository
     public void RemoveJob(string name) => Remove(name);
+
+    // Forces an immediate cache flush — intended for tests and graceful shutdown.
+    public void FlushNow()
+    {
+        lock (_lock)
+        {
+            if (!_cacheDirty) return;
+            FlushCacheUnderLock();
+        }
+    }
+
+    // Populates _cache from disk when accessed for the first time, or when
+    // AppConfig.Instance.StateFilePath changes (handles test isolation automatically).
+    private void EnsureCacheLoaded()
+    {
+        var path = AppConfig.Instance.StateFilePath;
+        if (path == _cachedPath) return;
+
+        _cache.Clear();
+        _cacheDirty = false;
+        _cachedPath = path;
+
+        foreach (var e in ReadCurrentEntries(path))
+            _cache[e.Name] = e;
+    }
+
+    private void FlushCacheUnderLock()
+    {
+        _cacheDirty = false;
+        var path = AppConfig.Instance.StateFilePath;
+        FileHelpers.EnsureDirectoryExists(path);
+        FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(
+            _cache.Values.ToList(), FileHelpers.IndentedJsonOptions));
+    }
+
+    private void FlushFromTimer()
+    {
+        lock (_lock)
+        {
+            if (!_cacheDirty) return;
+            FlushCacheUnderLock();
+        }
+    }
 
     // Transient IOException is propagated to the caller (Update / Remove): swallowing it
     // and returning [] would cause the next atomic write to overwrite state.json with only
