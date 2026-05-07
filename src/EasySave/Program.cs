@@ -36,9 +36,9 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
     {
         switch (cmd.Action)
         {
-            case CommandType.Pause:  orchestrator.Pause(cmd.JobName);  break;
-            case CommandType.Play:   orchestrator.Resume(cmd.JobName); break;
-            case CommandType.Stop:   orchestrator.Stop(cmd.JobName);   break;
+            case CommandType.Pause: orchestrator.Pause(cmd.JobName); break;
+            case CommandType.Play: orchestrator.Resume(cmd.JobName); break;
+            case CommandType.Stop: orchestrator.Stop(cmd.JobName); break;
         }
         logger.Append(new LogEntry
         {

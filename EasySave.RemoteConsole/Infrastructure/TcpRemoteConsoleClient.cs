@@ -37,7 +37,7 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
         await _tcp.ConnectAsync(_host, _port, _cts.Token);
         var stream = _tcp.GetStream();
         _writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 4096, leaveOpen: true)
-            { AutoFlush = false };
+        { AutoFlush = false };
         _stateSubject.OnNext(RemoteConnectionState.Connected);
         _ = ReadLoopAsync(_cts.Token);
     }
@@ -91,7 +91,7 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
                 {
                     _writer?.Dispose();
                     _writer = new StreamWriter(stream, Encoding.UTF8, 4096, leaveOpen: true)
-                        { AutoFlush = false };
+                    { AutoFlush = false };
                 }
                 finally { _writeLock.Release(); }
                 _stateSubject.OnNext(RemoteConnectionState.Connected);
