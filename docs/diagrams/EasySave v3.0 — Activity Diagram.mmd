@@ -1,0 +1,44 @@
+stateDiagram-v2
+    %% Lifecycle of a single job inside ParallelBackupOrchestrator.RunAsync.
+    %% Each state corresponds to an observable JobStateEnum value plus the
+    %% internal "Queued" wait for a slot in the parallelism semaphore.
+
+    [*] --> Submitted : in jobNames
+
+    Submitted --> Queued : slots full
+    Submitted --> Running : slot available
+
+    Queued --> Running : slot freed
+    Queued --> Cancelled : batch cancelled\\nbefore slot
+
+    state Running {
+        [*] --> CopyingFiles
+        CopyingFiles --> WaitingOnGate : large file
+        WaitingOnGate --> CopyingFiles : gate acquired
+        CopyingFiles --> CopyingFiles : publish progress
+    }
+
+    Running --> Paused : Pause(jobName)\\n(PauseGate.Reset)
+    Paused --> Running : Resume(jobName)\\n(PauseGate.Set)
+
+    Running --> Done : runner completes
+    Running --> Failed : runner throws
+    Running --> Cancelled : Stop(jobName)\\nor batch ct cancelled
+
+    Paused --> Cancelled : Stop(jobName)\\n(token-aware wait throws OCE)
+
+    Done --> [*] : JobOutcome.Succeeded
+    Failed --> [*] : JobOutcome.Failed
+    Cancelled --> [*] : JobOutcome.Cancelled
+
+    note right of Running
+        ProgressChanged event fires on every
+        publishProgress(snapshot) call from the
+        runner, on the worker thread.
+    end note
+
+    note left of WaitingOnGate
+        BigFileGate is a single-slot global
+        semaphore — at most one large file
+        copy in flight across all jobs.
+    end note

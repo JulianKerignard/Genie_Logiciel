@@ -1,0 +1,56 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant Orch as ParallelBackupOrchestrator
+    participant Slots as SemaphoreSlim _slots
+    participant Runner as IJobRunner
+    participant CtxA as JobExecutionContext (A)
+    participant CtxB as JobExecutionContext (B)
+    participant Gate as BigFileGate
+
+    User->>Orch: RunAsync(["A","B","C"], ct)
+    Note over Orch: MaxParallelJobs = 2
+
+    par Job A
+        Orch->>Slots: WaitAsync(batchCt)
+        Slots-->>Orch: slot acquired
+        Orch->>CtxA: new JobExecutionContext("A")
+        Orch->>Runner: RunAsync(ctxA, publishA)
+        Runner->>CtxA: read PauseGate, Cts.Token
+
+        loop for each file in job A
+            alt fileSize >= LargeFileThresholdBytes
+                Runner->>Gate: AcquireAsync(fileSize, ctxA.Cts.Token)
+                Gate-->>Runner: IDisposable handle
+            else small file
+                Runner->>Gate: AcquireAsync(small, ...)
+                Gate-->>Runner: NoOpHandle
+            end
+            Runner->>Runner: copy + encrypt file
+            Runner->>Runner: handle.Dispose() (releases slot)
+            Runner->>Orch: publishA(JobProgressDto)
+            Orch-->>User: ProgressChanged event
+        end
+        Runner-->>Orch: completes
+    and Job B
+        Orch->>Slots: WaitAsync(batchCt)
+        Slots-->>Orch: slot acquired
+        Orch->>CtxB: new JobExecutionContext("B")
+        Orch->>Runner: RunAsync(ctxB, publishB)
+
+        Note over Runner,Gate: B hits a large file while A holds the gate
+        Runner->>Gate: AcquireAsync(largeSize, ctxB.Cts.Token)
+        Note over Gate: blocked — A is in
+        Gate-->>Runner: handle (after A releases)
+        Runner->>Runner: copy + encrypt
+        Runner->>Runner: handle.Dispose()
+        Runner-->>Orch: completes
+    end
+
+    Note over Orch: A and B finished — slots free
+    Orch->>Slots: WaitAsync (for C)
+    Slots-->>Orch: slot acquired
+    Orch->>Runner: RunAsync(ctxC, publishC)
+    Runner-->>Orch: completes
+
+    Orch-->>User: IReadOnlyList~JobResult~ (3 entries, input order)

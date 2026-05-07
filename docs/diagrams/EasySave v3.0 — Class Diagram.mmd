@@ -1,0 +1,179 @@
+classDiagram
+    direction LR
+
+    %% ========== EasySave.Shared (wire DTOs) ==========
+    class JobProgressDto {
+        <<record>>
+        +string JobName
+        +JobStateEnum State
+        +string CurrentFile
+        +int FilesLeft
+        +int TotalFiles
+        +long BytesLeft
+        +long BytesTotal
+    }
+
+    class CommandDto {
+        <<record>>
+        +string JobName
+        +CommandType Action
+    }
+
+    class EventDto {
+        <<record>>
+        +DateTimeOffset Timestamp
+        +EventType Type
+        +string? JobName
+        +JobProgressDto? Progress
+        +IReadOnlyList~JobProgressDto~? Jobs
+        +string? Message
+    }
+
+    class JobStateEnum {
+        <<enumeration>>
+        Done = 0
+        Running = 1
+        Paused = 2
+    }
+
+    class CommandType {
+        <<enumeration>>
+        Pause = 0
+        Play = 1
+        Stop = 2
+    }
+
+    class EventType {
+        <<enumeration>>
+        JobList
+        JobProgress
+        JobStarted
+        JobPaused
+        JobResumed
+        JobFinished
+        JobFailed
+        Error
+        LogEvent
+    }
+
+    %% ========== EasySave (engine, server-side) ==========
+    class IParallelBackupOrchestrator {
+        <<interface>>
+        +RunAsync(jobNames, ct) Task~IReadOnlyList~JobResult~~
+        +Pause(jobName) void
+        +Resume(jobName) void
+        +Stop(jobName) void
+        +ProgressChanged event Action~JobProgressDto~
+    }
+
+    class ParallelBackupOrchestrator {
+        -SemaphoreSlim _slots
+        -ConcurrentDictionary _running
+        -IJobRunner _runner
+        -Func~string,IDailyLogger~ _loggerFactory
+        +ProgressChanged event Action~JobProgressDto~
+    }
+
+    class IJobRunner {
+        <<interface>>
+        +RunAsync(context, publishProgress) Task
+    }
+
+    class JobExecutionContext {
+        +string JobName
+        +CancellationTokenSource Cts
+        +ManualResetEventSlim PauseGate
+        +IDailyLogger Logger
+        +JobProgressDto Progress
+    }
+
+    class JobResult {
+        <<record>>
+        +string JobName
+        +JobOutcome Outcome
+        +DateTimeOffset StartedAt
+        +DateTimeOffset EndedAt
+        +string? Message
+    }
+
+    class JobOutcome {
+        <<enumeration>>
+        Succeeded = 0
+        Failed = 1
+        Cancelled = 2
+    }
+
+    class IBigFileGate {
+        <<interface>>
+        +long LargeFileThresholdBytes
+        +AcquireAsync(fileSizeBytes, ct) Task~IDisposable~
+    }
+
+    class BigFileGate {
+        -SemaphoreSlim _gate
+        -static IDisposable _smallFileHandle
+    }
+
+    class BackupManager {
+        +ExecuteJob(name, startFromIndex, ct) void
+        +ListJobs() IReadOnlyList~BackupJob~
+        +AddJob(job) void
+        +RemoveJob(name) void
+    }
+
+    class IRemoteConsoleServer {
+        <<interface>>
+        +StartAsync(port, ct) Task
+        +StopAsync() Task
+    }
+
+    %% ========== EasySave.RemoteConsole (client-side) ==========
+    class IRemoteConsoleClient {
+        <<interface>>
+        +ConnectAsync(host, port, ct) Task
+        +SendAsync(command) Task
+        +Events IAsyncEnumerable~EventDto~
+    }
+
+    class ConsoleViewModel {
+        <<MVVM>>
+        +Jobs ObservableCollection~JobProgressVm~
+        +Pause(jobName) RelayCommand
+        +Play(jobName) RelayCommand
+        +Stop(jobName) RelayCommand
+    }
+
+    %% ========== Relationships ==========
+    IParallelBackupOrchestrator <|.. ParallelBackupOrchestrator
+    IBigFileGate <|.. BigFileGate
+
+    ParallelBackupOrchestrator o-- IJobRunner : delegates per-job work
+    ParallelBackupOrchestrator *-- "*" JobExecutionContext : owns
+    ParallelBackupOrchestrator ..> JobResult : returns
+    ParallelBackupOrchestrator ..> JobProgressDto : emits via event
+
+    IJobRunner ..> JobExecutionContext : drives
+    IJobRunner ..> IBigFileGate : gates large files
+
+    JobExecutionContext --> JobProgressDto : holds current
+    JobExecutionContext --> JobStateEnum : reports state
+
+    JobResult --> JobOutcome
+
+    EventDto --> EventType
+    EventDto --> JobProgressDto : payload
+    CommandDto --> CommandType
+    JobProgressDto --> JobStateEnum
+
+    IRemoteConsoleServer ..> CommandDto : receives
+    IRemoteConsoleServer ..> EventDto : pushes
+    IRemoteConsoleServer ..> IParallelBackupOrchestrator : forwards control
+    IRemoteConsoleServer ..> BackupManager : queries job list
+
+    IRemoteConsoleClient ..> CommandDto : sends
+    IRemoteConsoleClient ..> EventDto : receives
+    ConsoleViewModel --> IRemoteConsoleClient
+
+    note for IRemoteConsoleServer "NDJSON over TCP\\n(one JSON message per line)"
+    note for ParallelBackupOrchestrator "MaxParallelJobs cap\\nfrom AppSettings"
+    note for BigFileGate "SemaphoreSlim(1,1) global\\nfor files >= LargeFileThresholdBytes"

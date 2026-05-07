@@ -1,0 +1,42 @@
+flowchart LR
+    %% Mermaid does not have a dedicated UML deployment shape; this
+    %% flowchart uses subgraphs as deployment nodes (Server / Client) and
+    %% rectangles as deployed artifacts. Lollipop arrows mark protocol
+    %% surfaces; dashed arrows mark filesystem access.
+
+    subgraph ServerNode["fa:fa-server Server node (Windows / Linux / macOS)"]
+        direction TB
+        Engine["EasySave.exe<br/>(engine)"]
+        Orch["ParallelBackupOrchestrator<br/>+ BigFileGate<br/>+ JobExecutionContext per job"]
+        BackupMgr["BackupManager<br/>(Full / Differential strategies)"]
+        Crypto["CryptoSoft.exe<br/>(external process)"]
+        Server["IRemoteConsoleServer<br/>TCP listener"]
+        StateFile[("state.json")]
+        Logs[("Daily logs<br/>YYYY-MM-DD.json / .xml")]
+        Source[("Source folders<br/>(local / external / UNC)")]
+        Target[("Target folders<br/>(local / external / UNC)")]
+
+        Engine --- Orch
+        Engine --- BackupMgr
+        Engine --- Server
+        Orch -.calls.-> BackupMgr
+        BackupMgr -.spawns.-> Crypto
+        BackupMgr -.read.-> Source
+        BackupMgr -.write.-> Target
+        Orch -.write.-> StateFile
+        BackupMgr -.append.-> Logs
+    end
+
+    subgraph ClientNode["fa:fa-desktop Operator workstation"]
+        direction TB
+        ClientApp["EasySave.RemoteConsole.exe<br/>(Avalonia GUI)"]
+        ClientLib["IRemoteConsoleClient"]
+        ClientApp --- ClientLib
+    end
+
+    Server <-->|"NDJSON over TCP<br/>CommandDto / EventDto"| ClientLib
+
+    classDef artifact fill:#fff,stroke:#333,stroke-width:1px
+    classDef store fill:#fff8dc,stroke:#a07a00,stroke-width:1px
+    class Engine,Orch,BackupMgr,Crypto,Server,ClientApp,ClientLib artifact
+    class StateFile,Logs,Source,Target store

@@ -1,0 +1,67 @@
+sequenceDiagram
+    autonumber
+    actor Op as Operator
+    participant UI as ConsoleViewModel (Avalonia)
+    participant Client as IRemoteConsoleClient
+    participant Server as IRemoteConsoleServer (engine)
+    participant Orch as ParallelBackupOrchestrator
+    participant State as StateTracker
+
+    Note over Client,Server: NDJSON over TCP — one JSON per line
+
+    Op->>UI: launch RemoteConsole, enter host:port
+    UI->>Client: ConnectAsync(host, port, ct)
+    Client->>Server: TCP connect
+
+    Server-->>Client: EventDto(Type=JobList, Jobs=[...])
+    Client-->>UI: yield event
+    UI->>UI: render initial job list
+
+    rect rgb(245, 245, 245)
+        Note over Op,State: Pause flow
+        Op->>UI: click Pause on job "A"
+        UI->>Client: SendAsync(CommandDto("A", Pause))
+        Client->>Server: write line + "\\n"
+        Server->>Orch: Pause("A")
+        Orch->>Orch: ctx_A.PauseGate.Reset()
+        Server->>State: read state.json (or in-memory)
+        Server-->>Client: EventDto(Timestamp, JobPaused, JobName="A")
+        Client-->>UI: yield event
+        UI->>UI: mark "A" as Paused
+    end
+
+    rect rgb(245, 245, 245)
+        Note over Op,State: Live progress while running
+        Orch-->>Server: ProgressChanged(JobProgressDto)
+        Server-->>Client: EventDto(Timestamp, JobProgress, Progress=...)
+        Client-->>UI: yield event
+        UI->>UI: refresh per-job progress bar
+    end
+
+    rect rgb(245, 245, 245)
+        Note over Op,State: Resume flow
+        Op->>UI: click Play on job "A"
+        UI->>Client: SendAsync(CommandDto("A", Play))
+        Client->>Server: write line + "\\n"
+        Server->>Orch: Resume("A")
+        Orch->>Orch: ctx_A.PauseGate.Set()
+        Server-->>Client: EventDto(Timestamp, JobResumed, JobName="A")
+        Client-->>UI: yield event
+        UI->>UI: mark "A" as Running again
+    end
+
+    rect rgb(245, 245, 245)
+        Note over Op,State: Stop flow
+        Op->>UI: click Stop on job "A"
+        UI->>Client: SendAsync(CommandDto("A", Stop))
+        Client->>Server: write line + "\\n"
+        Server->>Orch: Stop("A")
+        Orch->>Orch: ctx_A.Cts.Cancel()
+        Note over Orch: token-aware Wait throws OCE
+        Orch-->>Server: ProgressChanged(final), then JobResult.Cancelled
+        Server-->>Client: EventDto(Timestamp, JobFinished, JobName="A")
+        Client-->>UI: yield event
+        UI->>UI: mark "A" as Done
+    end
+
+    Note over Server,Client: Server keeps streaming LogEvent\\nas the engine writes daily logs
