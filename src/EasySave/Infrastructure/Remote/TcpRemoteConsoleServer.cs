@@ -53,14 +53,31 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
 
         foreach (var (key, entry) in _clients)
         {
-            await entry.WriteLock.WaitAsync();
+            try
+            {
+                await entry.WriteLock.WaitAsync();
+            }
+            catch (ObjectDisposedException)
+            {
+                // HandleClientAsync raced us to RemoveClient and disposed
+                // the lock — the entry is already gone, just skip it.
+                dead.Add(key);
+                continue;
+            }
             try
             {
                 await entry.Writer.WriteLineAsync(json);
                 await entry.Writer.FlushAsync();
             }
             catch { dead.Add(key); }
-            finally { entry.WriteLock.Release(); }
+            finally
+            {
+                // Race: HandleClientAsync's finally may have disposed the
+                // semaphore between WaitAsync and here on a brutal client
+                // disconnect. Swallow and let the dead-list path clean up.
+                try { entry.WriteLock.Release(); }
+                catch (ObjectDisposedException) { }
+            }
         }
 
         foreach (var key in dead)
