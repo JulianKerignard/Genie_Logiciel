@@ -15,7 +15,7 @@
 
 ### Équipe complète (Julian, Chloé, Ilian, Samuel)
 
-- Branche git `release/v3` + tag `v2.0` final
+- Branche git `release/v3` + tag `v2.0.0` final (clôture V2 avant ouverture V3)
 
 ### Julian Kerignard
 
