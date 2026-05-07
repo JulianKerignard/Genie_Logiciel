@@ -17,7 +17,7 @@ catch (IOException ex)
 var logger = new JsonDailyLogger(AppConfig.Instance.LogDirectory);
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)
     ? new NoOpEncryptionService()
-    : new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft);
+    : new ThrottledEncryptionService(new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft));
 var backupManager = new BackupManager(
     logger,
     new FullBackupStrategy(),

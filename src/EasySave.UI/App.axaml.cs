@@ -95,7 +95,7 @@ public partial class App : Application
             var cryptoSettings = userSettings.CryptoSoft;
             return string.IsNullOrWhiteSpace(cryptoSettings.Path)
                 ? new NoOpEncryptionService()
-                : (IEncryptionService)new CryptoSoftAdapter(cryptoSettings);
+                : (IEncryptionService)new ThrottledEncryptionService(new CryptoSoftAdapter(cryptoSettings));
         });
 
         services.AddSingleton<BackupManager>(sp => new BackupManager(
