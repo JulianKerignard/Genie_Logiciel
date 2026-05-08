@@ -171,7 +171,15 @@ public sealed class ConsoleUI
             return;
         }
 
-        _lang.SetLanguage(lang);
+        // Reject the change if the resource file is missing/corrupt — without
+        // this guard the UI silently regressed to raw translation keys after
+        // confirming "Language set to fr."
+        if (!_lang.SetLanguage(lang))
+        {
+            Console.WriteLine(_lang.T("error.language_load_failed"));
+            return;
+        }
+
         Console.WriteLine(string.Format(_lang.T("confirm.language_changed"), lang));
     }
 }
