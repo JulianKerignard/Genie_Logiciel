@@ -103,8 +103,13 @@ public sealed class JsonDailyLogger : IDailyLogger
             File.WriteAllText(tmpPath, JsonSerializer.Serialize(entries, SerializerOptions));
             File.Move(tmpPath, filePath, overwrite: true);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // Narrow catch: only IO-class failures get the tmp cleanup +
+            // rethrow path. OutOfMemoryException, StackOverflowException,
+            // and other programmer errors propagate untouched — same posture
+            // as BackupManager.ExecuteAll after the v1.1 typed-catch fix
+            // (PR #109). The tmp cleanup is best-effort.
             try { File.Delete(tmpPath); } catch { }
             throw;
         }

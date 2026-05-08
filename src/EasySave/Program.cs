@@ -22,7 +22,10 @@ if (cliArgs.Length > 0)
     if (indices.Count == 0)
     {
         Console.Error.WriteLine(langService.T("error.invalid_selection"));
-        return;
+        // Non-zero exit code so wrapping shell scripts and CI pipelines
+        // can detect the bad invocation; the previous `return;` left the
+        // process exiting 0 alongside the stderr message.
+        Environment.Exit(1);
     }
 
     JobSelectionRunner.Execute(
