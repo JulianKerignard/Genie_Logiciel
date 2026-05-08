@@ -6,6 +6,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-05-09
+
+Maintenance patch on the v1.x line. v2.1.0 stays the latest GitHub
+release; the team keeps shipping fixes to v1 from `release/v1.x` for
+operators that have not migrated to the v2 GUI yet. No public API
+change — `EasyLog.dll` v1.x contract is preserved.
+
+### Fixed
+
+- **Silent UI regression on missing/corrupt language file**
+  (`LanguageService` + `ConsoleUI.ChangeLanguage`): selecting a
+  language whose `Resources/{lang}.json` was missing or malformed used
+  to confirm "Language set to fr." and then surface every menu string
+  as a raw translation key (`menu.title`, `menu.option.add`, …).
+  `SetLanguage` now returns `bool`; on failure it leaves the previous
+  translations untouched and the menu shows the localized
+  `error.language_load_failed` instead of regressing. The constructor
+  also falls back to `en` when the configured language fails so the
+  app never starts in raw-keys mode.
+- **`LanguageService` un-caught `IOException`**: a transient lock on
+  `Resources/{lang}.json` (antivirus, backup agent) used to crash the
+  process. Catch is now `JsonException` ∨ `IOException` ∨
+  `UnauthorizedAccessException`, mirroring the v1.0.1
+  `AppConfig.Load` typed-catch fix.
+- **Exit code 0 on invalid CLI selection** (`Program.cs`): an input
+  like `EasySave "9-99"` printed the localized error to stderr but
+  exited 0, so wrapping shell scripts and CI pipelines could not
+  detect the bad invocation. Now exits with 1.
+- **`JsonDailyLogger.WriteAtomic` catch-all**: the bare
+  `catch (Exception)` in the atomic-write cleanup path was swallowing
+  `OutOfMemoryException` / `StackOverflowException` alongside the
+  expected IO failures. Narrowed to `IOException` ∨
+  `UnauthorizedAccessException`, same posture as
+  `BackupManager.ExecuteAll` after PR #109.
+
+### Changed
+
+- **`AppConfig.Load` ensures the configured paths**: `LogDirectory`
+  and the parent directories of `StateFilePath` / `JobsFilePath` are
+  now `Directory.CreateDirectory`-ed at startup. Operators no longer
+  hit a cryptic `DirectoryNotFoundException` from the first
+  `JsonDailyLogger` write when `appsettings.json` points at a
+  not-yet-created tree. Failure is logged to stderr at startup
+  instead of crashing mid-job.
+
+### Documentation
+
+- New `error.language_load_failed` key in `Resources/en.json` and
+  `Resources/fr.json`.
+- 7 new tests in `tests/EasySave.Tests/`:
+  `LanguageServiceTests` (5: known load, missing file, corrupt JSON,
+  empty JSON, English fallback) and `AppConfigTests`
+  (`Load_NonexistentDirs_AreCreatedAtStartup`,
+  `Load_UnwritablePath_DoesNotThrow`).
+
 ## [1.1.0] — 2026-04-28
 
 Maintenance release on the v1.x line. v1.x ships **side-by-side** with the
@@ -145,7 +200,8 @@ full and differential strategies, daily JSON logging, and English/French UI.
 
 - Log and state paths default to paths under the executable — no hardcoded `C:\temp` or similar.
 
-[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/releases/tag/v1.0.0
