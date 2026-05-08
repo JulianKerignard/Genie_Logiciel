@@ -42,17 +42,52 @@ public sealed class AppConfig
         if (!File.Exists(path))
         {
             Instance = new AppConfig();
-            return;
+        }
+        else
+        {
+            try
+            {
+                var json = File.ReadAllText(path);
+                Instance = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+            }
+            catch (Exception ex) when (ex is JsonException or IOException)
+            {
+                Instance = new AppConfig();
+            }
         }
 
+        EnsurePathsWritable(Instance);
+    }
+
+    // Best-effort directory creation so JsonDailyLogger / StateTracker /
+    // JobRepository never crash on the very first write with a cryptic
+    // DirectoryNotFoundException when the configured directory just hasn't
+    // been created yet. On unwritable paths we surface a stderr warning at
+    // startup so the operator sees the configuration problem before the
+    // first backup runs, rather than mid-job.
+    private static void EnsurePathsWritable(AppConfig config)
+    {
+        TryEnsureDir(config.LogDirectory, nameof(LogDirectory));
+        TryEnsureDir(Path.GetDirectoryName(config.StateFilePath), nameof(StateFilePath));
+        TryEnsureDir(Path.GetDirectoryName(config.JobsFilePath), nameof(JobsFilePath));
+    }
+
+    private static void TryEnsureDir(string? dir, string source)
+    {
+        if (string.IsNullOrEmpty(dir)) return;
         try
         {
-            var json = File.ReadAllText(path);
-            Instance = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+            Directory.CreateDirectory(dir);
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (Exception ex)
+            when (ex is IOException
+                or UnauthorizedAccessException
+                or PathTooLongException
+                or NotSupportedException
+                or ArgumentException)
         {
-            Instance = new AppConfig();
+            Console.Error.WriteLine(
+                $"[AppConfig] Could not create directory for {source} at '{dir}': {ex.Message}");
         }
     }
 }
