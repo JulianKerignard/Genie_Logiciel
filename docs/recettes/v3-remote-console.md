@@ -66,7 +66,7 @@ manual run and paste the screenshot link if relevant.
 | 1.2 | Launch the client: `dotnet run --project EasySave.RemoteConsole` | Window appears, `Host = 127.0.0.1`, `Port = 9000`, `Disconnected` |
 | 1.3 | Click **Connect** in the client | Status flips to `Connected` within 1–2 s |
 | 1.4 | In the engine GUI, click **Run** on a configured job | The client's job grid shows the job with progress updating live (FilesLeft decreasing, CurrentFile updating) |
-| 1.5 | Open today's log file (`%AppData%\ProSoft\EasySave\<yyyy-MM-dd>.json`) | Contains a `RemoteConsoleConnected` entry with the client's IP |
+| 1.5 | Open today's log file (`%AppData%\ProSoft\EasySave\Logs\<yyyy-MM-dd>.json` on Windows; `~/.config/ProSoft/EasySave/Logs/` on Linux/macOS) | Contains a `RemoteConsoleConnected` entry with the client's IP |
 
 **Pass / Fail:** ____  **Tester:** ____  **Date:** ____
 
@@ -96,7 +96,7 @@ manual run and paste the screenshot link if relevant.
 | Step | Action | Expected |
 |---|---|---|
 | 4.1 | Start another long-running job | Job state = `Running` in client |
-| 4.2 | Click **Stop** on the job | Job stops at the next file boundary, state → `Done`/`Inactive`, no exception in the engine console output |
+| 4.2 | Click **Stop** on the job | Job stops at the next file boundary; client view shows `Done`, `state.json` shows `"State": "Inactive"`. No exception in the engine console output |
 | 4.3 | Engine GUI is still responsive (other jobs runnable) | No frozen state, no stack trace in stderr |
 | 4.4 | Daily log | Last entry for the job is a clean partial run, `FileTransferTimeMs ≥ 0` for copied files |
 
