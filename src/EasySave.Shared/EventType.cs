@@ -13,5 +13,11 @@ public enum EventType
     JobFinished = 5,
     JobFailed = 6,
     Error = 7,
-    LogEvent = 8
+    LogEvent = 8,
+    // Audit broadcast: the engine echoes every incoming CommandDto back to
+    // ALL connected clients (including the sender) so multi-console setups
+    // stay synchronised. JobName carries the targeted job; Message holds
+    // "<sourceIp:port> → <Action>" so the receiving UI can display a
+    // command history with the origin.
+    CommandReceived = 9
 }

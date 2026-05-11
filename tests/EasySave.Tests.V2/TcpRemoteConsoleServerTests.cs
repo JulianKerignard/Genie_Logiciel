@@ -164,6 +164,52 @@ public class TcpRemoteConsoleServerTests
     }
 
     [Fact]
+    public async Task ClientCommand_BroadcastsCommandReceivedEventToAllClients()
+    {
+        // Multi-console audit: when one console sends a command, the server
+        // echoes a CommandReceived event to every connected client (sender
+        // included) so a second console attached to the same engine sees
+        // who issued what.
+        int port = GetFreePort();
+        var server = new TcpRemoteConsoleServer(NullLogger.Instance);
+        using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var serverTask = server.StartAsync(port, serverCts.Token);
+        await WaitForListenerAsync(port);
+
+        using var sender = new TcpClient();
+        await sender.ConnectAsync(IPAddress.Loopback, port);
+        using var senderReader = new StreamReader(sender.GetStream(), Encoding.UTF8);
+        using var senderWriter = new StreamWriter(sender.GetStream(), Encoding.UTF8) { AutoFlush = true };
+
+        using var observer = new TcpClient();
+        await observer.ConnectAsync(IPAddress.Loopback, port);
+        using var observerReader = new StreamReader(observer.GetStream(), Encoding.UTF8);
+
+        await Task.Delay(150);
+
+        var cmd = new CommandDto(JobName: "Docs", Action: CommandType.Pause);
+        await senderWriter.WriteLineAsync(JsonSerializer.Serialize(cmd));
+
+        // Both clients must receive the audit event. ReadLineAsync may
+        // surface unrelated frames (none expected from this server in this
+        // test, but be defensive) — pick the first CommandReceived line.
+        var senderEvt = await ReadCommandReceivedAsync(senderReader, TimeSpan.FromSeconds(2));
+        var observerEvt = await ReadCommandReceivedAsync(observerReader, TimeSpan.FromSeconds(2));
+
+        Assert.Equal("Docs", senderEvt.JobName);
+        Assert.Equal("Docs", observerEvt.JobName);
+        Assert.NotNull(senderEvt.Message);
+        Assert.NotNull(observerEvt.Message);
+        // Message shape: "<sourceIp:port> → <Action>"
+        Assert.Contains("→ Pause", senderEvt.Message);
+        Assert.Contains("→ Pause", observerEvt.Message);
+        // The sender's endpoint must show up in both audits.
+        Assert.Equal(senderEvt.Message, observerEvt.Message);
+
+        await server.StopAsync();
+    }
+
+    [Fact]
     public async Task StopAsync_ClosesAllConnectedClients()
     {
         int port = GetFreePort();
@@ -232,6 +278,23 @@ public class TcpRemoteConsoleServerTests
         var task = reader.ReadLineAsync();
         var line = await task.WaitAsync(timeout);
         return line ?? throw new InvalidOperationException("Stream closed before a line arrived.");
+    }
+
+    // Drains the stream until a CommandReceived event arrives or the timeout
+    // budget elapses. Skips unrelated event types so the test stays robust
+    // if the server emits additional frames concurrently.
+    private static async Task<EventDto> ReadCommandReceivedAsync(StreamReader reader, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero) break;
+            var line = await ReadLineAsync(reader, remaining);
+            var evt = JsonSerializer.Deserialize<EventDto>(line);
+            if (evt is { Type: EventType.CommandReceived }) return evt;
+        }
+        throw new TimeoutException("No CommandReceived event arrived within the deadline.");
     }
 
     // No-op IDailyLogger so the server can record its connect/disconnect

@@ -26,6 +26,14 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
     /// <summary>Live list of backup jobs reported by the server.</summary>
     [ObservableProperty] private ObservableCollection<JobProgressVm> _jobs = new();
 
+    /// <summary>
+    /// Rolling audit trail of remote commands broadcast by the server.
+    /// Populated from EventType.CommandReceived events; newest first; capped
+    /// to keep the panel light on long sessions.
+    /// </summary>
+    public ObservableCollection<string> CommandHistory { get; } = new();
+    private const int CommandHistoryMaxEntries = 50;
+
     /// <summary>Current TCP connection state.</summary>
     [ObservableProperty] private RemoteConnectionState _connection = RemoteConnectionState.Disconnected;
 
@@ -80,7 +88,19 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
             Dispatcher.UIThread.Post(() => ApplyProgress(p));
         else if (evt.Type == EventType.JobList && evt.Jobs is { } jobs)
             Dispatcher.UIThread.Post(() => ApplyJobList(jobs));
+        else if (evt.Type == EventType.CommandReceived)
+            Dispatcher.UIThread.Post(() => ApplyCommandReceived(evt));
         return Task.CompletedTask;
+    }
+
+    private void ApplyCommandReceived(EventDto evt)
+    {
+        // Newest first; cap the list so a long-running session doesn't grow
+        // the panel unbounded.
+        var line = $"[{evt.Timestamp.ToLocalTime():HH:mm:ss}] {evt.JobName} — {evt.Message ?? string.Empty}";
+        CommandHistory.Insert(0, line);
+        while (CommandHistory.Count > CommandHistoryMaxEntries)
+            CommandHistory.RemoveAt(CommandHistory.Count - 1);
     }
 
     private void ApplyProgress(JobProgressDto p)

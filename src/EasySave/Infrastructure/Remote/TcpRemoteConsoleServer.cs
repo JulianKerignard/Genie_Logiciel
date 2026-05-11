@@ -120,6 +120,16 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
 
                 cmd = cmd with { SourceIp = key };
                 await FireCommandReceivedAsync(cmd);
+
+                // Audit broadcast so a second console connected to the same
+                // engine sees who issued the command. Fire-and-forget after
+                // the engine has been notified — this is observability, not
+                // a contract the local dispatch waits on.
+                _ = BroadcastAsync(new EventDto(
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Type: EventType.CommandReceived,
+                    JobName: cmd.JobName,
+                    Message: $"{cmd.SourceIp ?? "?"} → {cmd.Action}"));
             }
         }
         catch { /* network disconnect */ }
