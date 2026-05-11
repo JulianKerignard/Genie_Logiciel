@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using EasySave.Models;
 
@@ -232,19 +233,33 @@ public sealed class StateTracker : IStateRepository
 
     private void FlushCacheUnderLock()
     {
-        _cacheDirty = false;
         var path = AppConfig.Instance.StateFilePath;
         FileHelpers.EnsureDirectoryExists(path);
         FileHelpers.WriteAllTextAtomic(path, JsonSerializer.Serialize(
             _cache.Values.ToList(), FileHelpers.IndentedJsonOptions));
+        // Only mark clean after a successful write — a failed write must leave
+        // _cacheDirty true so FlushNow() and the next timer tick can retry.
+        _cacheDirty = false;
     }
 
     private void FlushFromTimer()
     {
-        lock (_lock)
+        // Timer callbacks run on a thread-pool thread; an unhandled exception
+        // there terminates the process on .NET 8. Catch and log so a transient
+        // state.json lock (AV scan, OneDrive, network share momentary drop)
+        // degrades gracefully — _cacheDirty stays true and the next UpdateJob
+        // call re-arms the timer for a retry.
+        try
         {
-            if (!_cacheDirty) return;
-            FlushCacheUnderLock();
+            lock (_lock)
+            {
+                if (!_cacheDirty) return;
+                FlushCacheUnderLock();
+            }
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning("[StateTracker] Throttled flush failed: {0}. Will retry on next UpdateJob.", ex.Message);
         }
     }
 

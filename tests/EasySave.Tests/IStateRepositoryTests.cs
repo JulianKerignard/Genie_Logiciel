@@ -8,6 +8,7 @@ public class IStateRepositoryTests : IDisposable
 {
     private readonly string _tempDir;
     private readonly string _statePath;
+    private readonly string _configPath;
 
     public IStateRepositoryTests()
     {
@@ -16,9 +17,9 @@ public class IStateRepositoryTests : IDisposable
         _statePath = Path.Combine(_tempDir, "state.json");
 
         // Point AppConfig at the temp directory so StateTracker uses our isolated state file.
-        var configPath = Path.Combine(_tempDir, "appsettings.json");
-        File.WriteAllText(configPath, JsonSerializer.Serialize(new { StateFilePath = _statePath }));
-        AppConfig.Load(configPath);
+        _configPath = Path.Combine(_tempDir, "appsettings.json");
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(new { StateFilePath = _statePath }));
+        AppConfig.Load(_configPath);
     }
 
     public void Dispose()
@@ -104,5 +105,65 @@ public class IStateRepositoryTests : IDisposable
         var json = File.ReadAllText(_statePath);
         var fileEntries = JsonSerializer.Deserialize<List<StateEntry>>(json)!;
         Assert.All(jobs, job => Assert.Contains(fileEntries, e => e.Name == job));
+    }
+
+    [Fact]
+    public void UpdateJob_ProcessSurvives_WhenTimerFlushFails()
+    {
+        // Place a regular file at the path EnsureDirectoryExists would create as a
+        // directory — any atomic write attempt throws IOException deterministically
+        // on all platforms (no OS file-locking required).
+        var obstacle = Path.Combine(_tempDir, "obstacle-a");
+        File.WriteAllText(obstacle, "block");
+        var badStatePath = Path.Combine(obstacle, "state.json");
+
+        var badConfig = Path.Combine(_tempDir, "bad-appsettings-a.json");
+        File.WriteAllText(badConfig, JsonSerializer.Serialize(new { StateFilePath = badStatePath }));
+        AppConfig.Load(badConfig);
+
+        IStateRepository repo = StateTracker.Instance;
+        repo.UpdateJob("survivor", JobState.Active);
+
+        // Wait for the 200 ms throttled timer to fire and swallow the IOException.
+        // If FlushFromTimer had no try/catch, the test host would crash here and the
+        // assertion below would never execute — test failure proves the regression.
+        Thread.Sleep(400);
+
+        // The fact that execution reaches this line proves the process survived.
+        // Restore the good config so FlushNow can repair the dirty cache.
+        AppConfig.Load(_configPath);
+        StateTracker.Instance.FlushNow();
+
+        var entries = JsonSerializer.Deserialize<List<StateEntry>>(File.ReadAllText(_statePath))!;
+        Assert.Contains(entries, e => e.Name == "survivor");
+    }
+
+    [Fact]
+    public void FlushNow_RepairsCache_AfterTimerFlushFailed()
+    {
+        // Same bad-path trick as above to make the timer flush throw IOException.
+        var obstacle = Path.Combine(_tempDir, "obstacle-b");
+        File.WriteAllText(obstacle, "block");
+        var badStatePath = Path.Combine(obstacle, "state.json");
+
+        var badConfig = Path.Combine(_tempDir, "bad-appsettings-b.json");
+        File.WriteAllText(badConfig, JsonSerializer.Serialize(new { StateFilePath = badStatePath }));
+        AppConfig.Load(badConfig);
+
+        IStateRepository repo = StateTracker.Instance;
+        repo.UpdateJob("job-repair", JobState.Active);
+
+        // Let the timer fire and fail — _cacheDirty must remain true because the
+        // write did not succeed (defect 2 fix: _cacheDirty = false only after write).
+        Thread.Sleep(400);
+
+        // Switch back to the valid path: FlushNow must detect _cacheDirty == true
+        // and successfully write the entry that the timer flush missed.
+        AppConfig.Load(_configPath);
+        StateTracker.Instance.FlushNow();
+
+        Assert.True(File.Exists(_statePath));
+        var entries = JsonSerializer.Deserialize<List<StateEntry>>(File.ReadAllText(_statePath))!;
+        Assert.Contains(entries, e => e.Name == "job-repair" && e.State == JobState.Active);
     }
 }
