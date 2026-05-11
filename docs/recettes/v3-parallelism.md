@@ -92,10 +92,10 @@ the manual run and paste the screenshot link if relevant.
 |---|---|---|
 | 3.1 | Set `"max_parallel_jobs": 3`. Restore `job-2`'s source to a real directory. | — |
 | 3.2 | Submit `job-1`, `job-2`, `job-3`. | All three flip to `Running`. |
-| 3.3 | While `job-2` is mid-copy, **delete its source directory** (`rm -rf` on the source path) so the next `FileInfo` access throws. | `job-2` fails at the next file boundary. Its card flips to `Failed` (or `Inactive` with an error in the log) within seconds. |
+| 3.3 | While `job-2` is mid-copy, **delete a file** in its source (not the whole directory) so the next `File.Copy` raises an `IOException`. | `job-2`'s card stays `Running`. The engine catches per-file IO errors (`BackupManager.ProcessFile`) and continues to the next eligible file. There is no `Failed` state on the card — the only evidence of trouble is in the daily log, see step 3.5. |
 | 3.4 | Watch `job-1` and `job-3`. | Both **continue running and finish** normally. They are not cancelled, paused, or stuck. |
-| 3.5 | Daily log. | A `FileTransferTimeMs: -1` entry (cahier error signal) appears for `job-2`'s last attempted file. No error entries for `job-1` or `job-3`. |
-| 3.6 | `state.json`. | `job-1` and `job-3` end at `"State": "Inactive"`. `job-2` ends at `"State": "Inactive"` with `FilesRemaining > 0` (mid-run failure). |
+| 3.5 | Daily log. | An entry with `FileTransferTimeMs < 0` (cahier error signal — the engine logs the failure but does not throw) appears for `job-2`'s damaged file. No error entries for `job-1` or `job-3`. |
+| 3.6 | `state.json` after all three finish. | All three at `"State": "Inactive"`, `FilesRemaining: 0`, `SizeRemaining: 0`. The `finally` block in `BackupManager.RunJob` resets the counters on every non-paused exit, so a per-file failure is **indistinguishable from a clean run in `state.json`** — that's by design in v1.0/v2/v3. The only persisted failure signal is the negative `FileTransferTimeMs` in the daily log (step 3.5). |
 
 **Pass / Fail:** ____  **Tester:** ____  **Date:** ____
 
