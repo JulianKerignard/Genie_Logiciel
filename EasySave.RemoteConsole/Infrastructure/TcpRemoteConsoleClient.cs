@@ -64,15 +64,29 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
     {
         if (!UseTls) return raw;
 
-        _sslStream = new SslStream(raw, leaveInnerStreamOpen: false,
+        // Authenticate on a local SslStream first and only publish it to the
+        // _sslStream field on success. A failed handshake (TOFU mismatch,
+        // protocol issue, network error) disposes the stream right here so
+        // we don't carry an unusable SslStream until the next Connect /
+        // Disconnect runs the cleanup at the top of this class.
+        var ssl = new SslStream(raw, leaveInnerStreamOpen: false,
             userCertificateValidationCallback: ValidateServerCertificate);
-        await _sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+        try
         {
-            TargetHost = _host,
-            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-            CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-        }, ct);
-        return _sslStream;
+            await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+            {
+                TargetHost = _host,
+                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+            }, ct);
+        }
+        catch
+        {
+            ssl.Dispose();
+            throw;
+        }
+        _sslStream = ssl;
+        return ssl;
     }
 
     // SslStream certificate callback applying trust-on-first-use:
