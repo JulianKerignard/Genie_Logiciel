@@ -131,7 +131,23 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
                     batch.Add(req);
                 }
 
-                FlushBatch(batch);
+                try
+                {
+                    FlushBatch(batch);
+                }
+                catch (Exception ex)
+                {
+                    // Belt-and-braces: FlushBatch is now expected to swallow
+                    // per-group failures itself (issue #155), but any code
+                    // path that ever re-introduces a throw here would kill
+                    // the writer task and hang every future Append on its
+                    // TaskCompletionSource. Catch + surface to surviving
+                    // acks so the writer stays alive.
+                    foreach (var req in batch)
+                    {
+                        req.Ack.TrySetException(ex);
+                    }
+                }
             }
         }
         finally
@@ -163,34 +179,46 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
         foreach (var group in batch.GroupBy(r => r.FilePath, StringComparer.OrdinalIgnoreCase))
         {
             string filePath = group.Key;
-            if (!_cachePerDay.TryGetValue(filePath, out var entries))
-            {
-                entries = ReadExisting(filePath);
-                _cachePerDay[filePath] = entries;
-            }
 
+            // Wrap the whole per-group body. Pre-fix (issue #155), only the
+            // WriteAtomic try/catch was here, and a throw from ReadExisting
+            // (transient IOException from AV / OneDrive on the first append
+            // of the day) escaped FlushBatch, killed the writer task, and
+            // left every future Append blocked on its TaskCompletionSource.
             int addedThisGroup = 0;
-            foreach (var req in group)
-            {
-                entries.Add(req.Entry);
-                addedThisGroup++;
-            }
-
+            List<LogEntry>? entries = null;
             try
             {
+                if (!_cachePerDay.TryGetValue(filePath, out entries))
+                {
+                    entries = ReadExisting(filePath);
+                    _cachePerDay[filePath] = entries;
+                }
+
+                foreach (var req in group)
+                {
+                    entries.Add(req.Entry);
+                    addedThisGroup++;
+                }
+
                 WriteAtomic(filePath, entries);
+                foreach (var req in group) req.Ack.TrySetResult();
             }
             catch (Exception ex)
             {
                 // Roll back the in-memory cache so the next flush retries
-                // the same entries cleanly, then surface the error to every
-                // caller in this group.
-                entries.RemoveRange(entries.Count - addedThisGroup, addedThisGroup);
+                // the same entries cleanly. addedThisGroup is 0 when the
+                // throw came from ReadExisting (entries was never mutated)
+                // or when entries is still null (initial assignment failed).
+                if (entries is not null && addedThisGroup > 0)
+                {
+                    entries.RemoveRange(entries.Count - addedThisGroup, addedThisGroup);
+                }
+                // Surface the failure to every caller in this group and let
+                // the next foreach iteration handle the next day file —
+                // the writer task stays alive.
                 foreach (var req in group) req.Ack.TrySetException(ex);
-                continue;
             }
-
-            foreach (var req in group) req.Ack.TrySetResult();
         }
     }
 

@@ -149,4 +149,83 @@ public class JsonDailyLoggerConcurrencyTests : IDisposable
         if (dash < 0) return -1;
         return int.Parse(sourceFile.AsSpan(dash + 1, dot - dash - 1));
     }
+
+    // ── Regression: issue #155 ──────────────────────────────────────────────
+    //
+    // Pre-fix, ReadExisting could throw IOException (transient AV / OneDrive /
+    // log-viewer read lock on the first append of the day) outside FlushBatch's
+    // only try/catch. The exception killed the writer task; every subsequent
+    // Append then hung forever on its TaskCompletionSource.
+    //
+    // Windows-only because Unix file locks are advisory: File.ReadAllText is
+    // not blocked by FileShare.None on Linux / macOS, so the IOException never
+    // fires and the test cannot reproduce the bug.
+
+    [Fact]
+    public async Task Append_PropagatesIOException_WhenDayFileLocked_AndDoesNotHang()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var dayFile = Path.Combine(_tempDir, $"{DateTime.Now:yyyy-MM-dd}.json");
+        File.WriteAllText(dayFile, "[]");
+
+        using var locker = new FileStream(dayFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        using var logger = new JsonDailyLogger(_tempDir);
+
+        var entry = new LogEntry { Timestamp = DateTime.Now.ToString("o"), JobName = "Foo" };
+
+        // The call must finish (surface the IOException) within a couple
+        // seconds — pre-fix it hung forever because the writer task was dead.
+        var task = Task.Run(() => logger.Append(entry));
+        var ex = await Assert.ThrowsAsync<IOException>(() => task.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public async Task Append_KeepsWorking_AfterTransientLockReleased()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var dayFile = Path.Combine(_tempDir, $"{DateTime.Now:yyyy-MM-dd}.json");
+        File.WriteAllText(dayFile, "[]");
+        using var logger = new JsonDailyLogger(_tempDir);
+
+        // First append while locked — must throw, not hang. The writer task
+        // must survive so the second append can succeed.
+        using (new FileStream(dayFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var first = Task.Run(() => logger.Append(new LogEntry { JobName = "during-lock", FileTransferTimeMs = 1 }));
+            await Assert.ThrowsAsync<IOException>(() => first.WaitAsync(TimeSpan.FromSeconds(2)));
+        }
+
+        // Lock released. Next Append must reach disk normally.
+        logger.Append(new LogEntry { JobName = "after-lock", FileTransferTimeMs = 2 });
+        logger.Dispose();
+
+        var raw = File.ReadAllText(dayFile);
+        var entries = JsonSerializer.Deserialize<List<LogEntry>>(raw)!;
+        Assert.Contains(entries, e => e.JobName == "after-lock");
+    }
+
+    [Fact]
+    public async Task Append_DoesNotStrandBatchSiblings_WhenOneGroupFailsToLoad()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        // Pre-fix, a failing group killed the whole writer task and any
+        // subsequent Append in the same process hung forever waiting on its
+        // TaskCompletionSource. Fire two consecutive locked-day Appends and
+        // assert both surface the IOException — the writer survived the
+        // first failure to serve the second one.
+        var dayFile = Path.Combine(_tempDir, $"{DateTime.Now:yyyy-MM-dd}.json");
+        File.WriteAllText(dayFile, "[]");
+        using var locker = new FileStream(dayFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        using var logger = new JsonDailyLogger(_tempDir);
+
+        var first = Task.Run(() => logger.Append(new LogEntry { JobName = "first", FileTransferTimeMs = 1 }));
+        await Assert.ThrowsAsync<IOException>(() => first.WaitAsync(TimeSpan.FromSeconds(2)));
+
+        var second = Task.Run(() => logger.Append(new LogEntry { JobName = "second", FileTransferTimeMs = 2 }));
+        await Assert.ThrowsAsync<IOException>(() => second.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
 }
