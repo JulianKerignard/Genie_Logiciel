@@ -43,12 +43,20 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
     /// <summary>Server TCP port.</summary>
     [ObservableProperty] private int _port = 9000;
 
+    /// <summary>
+    /// Upgrades the next connection to TLS (SslStream + TOFU known_hosts).
+    /// Must match the server's RemoteConsoleTlsEnabled setting — turn it on
+    /// here only when the engine has TLS enabled on its side.
+    /// </summary>
+    [ObservableProperty] private bool _useTls;
+
     public string LabelConnect => _lang.T("btn.connect");
     public string LabelDisconnect => _lang.T("btn.disconnect");
     public string LabelPause => _lang.T("btn.pause");
     public string LabelPlay => _lang.T("btn.play");
     public string LabelStop => _lang.T("btn.stop");
     public string LabelCommandHistory => _lang.T("lbl.commandHistory");
+    public string LabelUseTls => _lang.T("lbl.useTls");
 
     /// <summary>Initiates a connection to the configured host and port.</summary>
     [RelayCommand]
@@ -57,6 +65,8 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
         // Ensure the handler is registered exactly once even if ConnectAsync is called again.
         _client.EventReceived -= OnEventReceivedAsync;
         _client.EventReceived += OnEventReceivedAsync;
+        // Push the UI's TLS toggle down to the client before connecting.
+        _client.UseTls = UseTls;
         await _client.ConnectAsync(Host, Port, ct);
     }
 

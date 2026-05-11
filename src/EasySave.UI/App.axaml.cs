@@ -141,7 +141,16 @@ public partial class App : Application
         // RemoteConsoleEnabled in OnFrameworkInitializationCompleted.
         services.AddSingleton<IEventBus>(_ => new ChannelEventBus());
         services.AddSingleton<IRemoteConsoleServer>(sp =>
-            new TcpRemoteConsoleServer(sp.GetRequiredService<IDailyLogger>()));
+        {
+            // Load the self-signed cert once at registration time when TLS
+            // is enabled — generates the file on first run, then reuses the
+            // same key pair across restarts so clients' TOFU pins stay valid.
+            var cert = AppConfig.Instance.Settings.RemoteConsoleTlsEnabled
+                ? EasySave.Infrastructure.Remote.SelfSignedCertProvider.LoadOrCreate(
+                    EasySave.Infrastructure.Remote.SelfSignedCertProvider.DefaultCertPath())
+                : null;
+            return new TcpRemoteConsoleServer(sp.GetRequiredService<IDailyLogger>(), cert);
+        });
         services.AddSingleton(sp =>
             new StateTrackerEventBridge(StateTracker.Instance, sp.GetRequiredService<IEventBus>()));
         services.AddSingleton(sp =>

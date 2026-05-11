@@ -1,4 +1,7 @@
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using EasySave.RemoteConsole.Abstractions;
@@ -12,20 +15,28 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
 
     private readonly SimpleSubject<RemoteConnectionState> _stateSubject = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly KnownHostsStore _knownHosts;
     private CancellationTokenSource? _cts;
     private TcpClient? _tcp;
+    private SslStream? _sslStream;
     private StreamWriter? _writer;
     private string _host = string.Empty;
     private int _port;
 
     public event Func<EventDto, Task>? EventReceived;
     public IObservable<RemoteConnectionState> ConnectionState => _stateSubject;
+    public bool UseTls { get; set; }
+
+    public TcpRemoteConsoleClient() : this(new KnownHostsStore(KnownHostsStore.DefaultPath())) { }
+    public TcpRemoteConsoleClient(KnownHostsStore knownHosts) => _knownHosts = knownHosts;
 
     public async Task ConnectAsync(string host, int port, CancellationToken ct)
     {
         // Cancel and release any existing connection before opening a new one.
         _cts?.Cancel();
         _cts?.Dispose();
+        _sslStream?.Dispose();
+        _sslStream = null;
         _tcp?.Close();
         _tcp = null;
 
@@ -35,11 +46,72 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
         _stateSubject.OnNext(RemoteConnectionState.Connecting);
         _tcp = new TcpClient();
         await _tcp.ConnectAsync(_host, _port, _cts.Token);
-        var stream = _tcp.GetStream();
+
+        Stream stream = await UpgradeStreamAsync(_tcp.GetStream(), _cts.Token);
+
         _writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 4096, leaveOpen: true)
         { AutoFlush = false };
         _stateSubject.OnNext(RemoteConnectionState.Connected);
         _ = ReadLoopAsync(_cts.Token);
+    }
+
+    // Upgrades the raw network stream to TLS when UseTls is set, applying
+    // the TOFU known_hosts policy. Returns either the SslStream (TLS) or
+    // the original NetworkStream (plain). A handshake failure or a TOFU
+    // mismatch surfaces as an exception out of the caller so ConnectAsync
+    // does not silently fall back to plain TCP.
+    private async Task<Stream> UpgradeStreamAsync(NetworkStream raw, CancellationToken ct)
+    {
+        if (!UseTls) return raw;
+
+        // Authenticate on a local SslStream first and only publish it to the
+        // _sslStream field on success. A failed handshake (TOFU mismatch,
+        // protocol issue, network error) disposes the stream right here so
+        // we don't carry an unusable SslStream until the next Connect /
+        // Disconnect runs the cleanup at the top of this class.
+        var ssl = new SslStream(raw, leaveInnerStreamOpen: false,
+            userCertificateValidationCallback: ValidateServerCertificate);
+        try
+        {
+            await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+            {
+                TargetHost = _host,
+                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+            }, ct);
+        }
+        catch
+        {
+            ssl.Dispose();
+            throw;
+        }
+        _sslStream = ssl;
+        return ssl;
+    }
+
+    // SslStream certificate callback applying trust-on-first-use:
+    //   - first contact for (_host, _port) → pin the cert thumbprint and
+    //     accept.
+    //   - subsequent contact → accept iff the thumbprint still matches.
+    //     A mismatch returns false, which SslStream surfaces as
+    //     AuthenticationException out of AuthenticateAsClientAsync, and
+    //     the operator can investigate via the known_hosts file.
+    // sslPolicyErrors are ignored on purpose for the self-signed case —
+    // the thumbprint comparison is the trust anchor, not the CA chain.
+    private bool ValidateServerCertificate(
+        object sender,
+        X509Certificate? certificate,
+        X509Chain? chain,
+        SslPolicyErrors sslPolicyErrors)
+    {
+        if (certificate is null) return false;
+        var current = certificate.GetCertHashString();
+
+        if (_knownHosts.TryGetThumbprint(_host, _port, out var pinned))
+            return string.Equals(pinned, current, StringComparison.OrdinalIgnoreCase);
+
+        _knownHosts.Add(_host, _port, current);
+        return true;
     }
 
     private async Task ReadLoopAsync(CancellationToken ct)
@@ -50,8 +122,11 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
         {
             try
             {
+                // Read from the same upgraded stream we wrote to — if TLS
+                // is on the reader must speak SslStream, not the raw socket.
+                Stream readStream = _sslStream is not null ? _sslStream : _tcp!.GetStream();
                 using var reader = new StreamReader(
-                    _tcp!.GetStream(), Encoding.UTF8, false, -1, leaveOpen: true);
+                    readStream, Encoding.UTF8, false, -1, leaveOpen: true);
                 while (!ct.IsCancellationRequested)
                 {
                     string? line;
@@ -82,10 +157,13 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
             _stateSubject.OnNext(RemoteConnectionState.Connecting);
             try
             {
+                _sslStream?.Dispose();
+                _sslStream = null;
                 _tcp?.Close();
                 _tcp = new TcpClient();
                 await _tcp.ConnectAsync(_host, _port, ct);
-                var stream = _tcp.GetStream();
+
+                Stream stream = await UpgradeStreamAsync(_tcp.GetStream(), ct);
                 await _writeLock.WaitAsync(ct);
                 try
                 {
@@ -97,6 +175,17 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
                 _stateSubject.OnNext(RemoteConnectionState.Connected);
             }
             catch (OperationCanceledException) { return; }
+            catch (AuthenticationException)
+            {
+                // TOFU mismatch or handshake failure — non-retriable. No
+                // amount of backoff fixes a pinned thumbprint that no
+                // longer matches; the operator must edit known_hosts.txt
+                // (or accept the new server cert in any other way). Exit
+                // the loop so the UI sticks on Error and the user can
+                // intervene.
+                _stateSubject.OnNext(RemoteConnectionState.Error);
+                return;
+            }
             catch { _stateSubject.OnNext(RemoteConnectionState.Error); }
         }
     }
@@ -128,7 +217,15 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
     {
         _cts?.Cancel();
         await _writeLock.WaitAsync();
-        try { _writer?.Dispose(); }
+        try
+        {
+            _writer?.Dispose();
+            // Dispose the SslStream before closing the TcpClient so the
+            // TLS shutdown alert is written cleanly (SslStream.Dispose
+            // sends close_notify when possible).
+            _sslStream?.Dispose();
+            _sslStream = null;
+        }
         finally { _writeLock.Release(); }
         _tcp?.Close();
         _stateSubject.OnNext(RemoteConnectionState.Disconnected);
