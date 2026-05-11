@@ -214,12 +214,18 @@ public class TcpRemoteConsoleServerTests
         await stream.FlushAsync();
 
         // The server must drop the connection: drain until EOF.
+        // Catch IOException — the server may issue a TCP RST instead of a clean FIN,
+        // which surfaces as an IOException on the client side; both mean disconnected.
         // WaitAsync throws TimeoutException if the server does not close within 3 s.
         var buf = new byte[256];
         var drainTask = Task.Run(async () =>
         {
-            int n;
-            while ((n = await stream.ReadAsync(buf)) > 0) { }
+            try
+            {
+                int n;
+                while ((n = await stream.ReadAsync(buf)) > 0) { }
+            }
+            catch (IOException) { /* RST from server — connection dropped as expected */ }
         });
         await drainTask.WaitAsync(TimeSpan.FromSeconds(3));
 
