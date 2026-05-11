@@ -115,8 +115,14 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
                     enabledSslProtocols: SslProtocols.Tls12 | SslProtocols.Tls13,
                     checkCertificateRevocation: false).WaitAsync(ct);
             }
-            catch
+            catch (Exception ex)
             {
+                // Common causes: a plain-TCP client hit a TLS-enabled port,
+                // protocol mismatch (TLS 1.0/1.1), or a cert mismatch on the
+                // wire. Trace so the operator has a diagnostic instead of a
+                // silent drop; the listener loop is unaffected.
+                System.Diagnostics.Trace.TraceWarning(
+                    $"[TcpRemoteConsoleServer] TLS handshake failed for {key}: {ex.GetType().Name}: {ex.Message}");
                 sslStream.Dispose();
                 client.Close();
                 return;

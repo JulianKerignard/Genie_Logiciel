@@ -10,6 +10,12 @@ namespace EasySave.RemoteConsole.Infrastructure;
 //   • does not find the host and appends a new pin (first contact).
 // File layout matches the OpenSSH precedent rather than JSON so the
 // operator can edit / wipe entries with any text editor.
+//
+// Concurrency: instances are not synchronised across processes. Two
+// console processes hitting the same host on first-contact at the same
+// time can append duplicate lines; benign — both threads see the same
+// thumbprint, the first match wins on subsequent reads, and a manual
+// cleanup is one editor save away.
 public sealed class KnownHostsStore
 {
     private readonly string _path;

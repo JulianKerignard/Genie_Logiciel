@@ -161,6 +161,17 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
                 _stateSubject.OnNext(RemoteConnectionState.Connected);
             }
             catch (OperationCanceledException) { return; }
+            catch (AuthenticationException)
+            {
+                // TOFU mismatch or handshake failure — non-retriable. No
+                // amount of backoff fixes a pinned thumbprint that no
+                // longer matches; the operator must edit known_hosts.txt
+                // (or accept the new server cert in any other way). Exit
+                // the loop so the UI sticks on Error and the user can
+                // intervene.
+                _stateSubject.OnNext(RemoteConnectionState.Error);
+                return;
+            }
             catch { _stateSubject.OnNext(RemoteConnectionState.Error); }
         }
     }

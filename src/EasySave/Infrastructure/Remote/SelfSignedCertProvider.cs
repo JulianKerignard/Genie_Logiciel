@@ -29,8 +29,7 @@ public static class SelfSignedCertProvider
         {
             return new X509Certificate2(
                 certPath, password: (string?)null,
-                keyStorageFlags: X509KeyStorageFlags.MachineKeySet
-                                 | X509KeyStorageFlags.PersistKeySet
+                keyStorageFlags: X509KeyStorageFlags.EphemeralKeySet
                                  | X509KeyStorageFlags.Exportable);
         }
 
@@ -46,7 +45,10 @@ public static class SelfSignedCertProvider
 
     // RSA 2048 with a 5-year validity, subject "CN=EasySave RemoteConsole
     // Server". 2048 bits is the SslStream minimum on .NET 8 and matches what
-    // makecert / openssl produce for development certificates.
+    // makecert / openssl produce for development certificates. EphemeralKeySet
+    // keeps the private key in memory only (no machine-wide CNG store entry
+    // and no admin requirement on first run); the PFX file is the only
+    // persistence boundary.
     public static X509Certificate2 Generate()
     {
         using var rsa = RSA.Create(2048);
@@ -57,8 +59,11 @@ public static class SelfSignedCertProvider
             RSASignaturePadding.Pkcs1);
 
         var now = DateTimeOffset.UtcNow;
-        var cert = request.CreateSelfSigned(notBefore: now.AddMinutes(-5),
-                                            notAfter: now.AddYears(5));
+        // Dispose the intermediate certificate — its key handle wraps an
+        // unmanaged CNG resource that the re-imported copy below does not
+        // share, so leaking it accumulates handles per restart.
+        using var cert = request.CreateSelfSigned(notBefore: now.AddMinutes(-5),
+                                                  notAfter: now.AddYears(5));
 
         // CreateSelfSigned returns a cert whose key is not directly
         // exportable on Windows. Re-import via PFX bytes so the returned
@@ -67,8 +72,7 @@ public static class SelfSignedCertProvider
         var bytes = cert.Export(X509ContentType.Pfx);
         return new X509Certificate2(
             bytes, password: (string?)null,
-            keyStorageFlags: X509KeyStorageFlags.MachineKeySet
-                             | X509KeyStorageFlags.PersistKeySet
+            keyStorageFlags: X509KeyStorageFlags.EphemeralKeySet
                              | X509KeyStorageFlags.Exportable);
     }
 }
