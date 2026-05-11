@@ -259,7 +259,7 @@ public sealed class StateTracker : IStateRepository
         }
         catch (Exception ex)
         {
-            Trace.TraceWarning("[StateTracker] Throttled flush failed: {0}. Will retry on next UpdateJob.", ex.Message);
+            Trace.TraceWarning("[StateTracker] Throttled flush failed: {0}. Cache remains dirty — next UpdateJob or FlushNow will retry.", ex.Message);
         }
     }
 
