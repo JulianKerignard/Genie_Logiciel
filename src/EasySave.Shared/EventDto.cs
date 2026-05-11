@@ -8,12 +8,15 @@ namespace EasySave.Shared;
 // truth for the job identity, JobName is ONLY set on events that don't carry a
 // per-job snapshot; when Progress is set, JobName must be null and consumers
 // must read Progress.JobName.
-//   JobList     -> Jobs is set, others null
-//   JobProgress -> Progress is set, JobName is null
+//   JobList         -> Jobs is set, others null
+//   JobProgress     -> Progress is set, JobName is null
 //   JobStarted / JobPaused / JobResumed / JobFinished -> JobName is set
-//   JobFailed   -> JobName is set, Message carries the failure reason
-//   LogEvent    -> Message carries the log line; JobName is set when scoped
-//   Error       -> Message is set, JobName is set only if scoped to a job
+//   JobFailed       -> JobName is set, Message carries the failure reason
+//   LogEvent        -> Message carries the log line; JobName is set when scoped
+//   Error           -> Message is set, JobName is set only if scoped to a job
+//   CommandReceived -> JobName is the command target, Message is the audit
+//                      line "<sourceIp:port> → <Action>" emitted by the
+//                      server when a console issues Pause/Play/Stop
 public sealed record EventDto(
     DateTimeOffset Timestamp,
     EventType Type,
