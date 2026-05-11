@@ -48,10 +48,20 @@ second machine on the LAN.
 - Configure at least one backup job that runs long enough to interact with —
   e.g. ≥ 200 small files or ~50 MB to copy, so Pause / Play windows are
   observable. Use the v2 GUI Jobs view to create it.
-- Pre-condition: the wiring of `TcpRemoteConsoleServer.StartAsync` in
-  `App.OnFrameworkInitializationCompleted` must be merged. The class itself,
-  the bridges, and the unit tests are already in. If the wiring task is still
-  open, this recette runs against a local mock or is held until wiring lands.
+- Wiring is live since the V3 wire-remote-console PR: `App.axaml.cs`
+  resolves `IEventBus` / `IRemoteConsoleServer` / `StateTrackerEventBridge`
+  / `RemoteConsoleBroadcastBridge` from the DI container and starts the
+  TCP listener + bridges when `RemoteConsoleEnabled` is true. Disabling
+  the flag in `appsettings.json` keeps the GUI's startup unchanged.
+
+### Known limitation — scenario 4
+
+The adapter has no dedicated `Stop` API yet. The `Stop` button in the
+client routes through `PauseJob` with reason `"Stopped"`, so the job
+halts at the next file boundary but `state.json` reports `"Paused"`
+(not `"Inactive"`) until a follow-up exposes a true Stop transition.
+Expect step 4.2 to be a partial pass; track via the issue raised in
+the next iteration.
 
 ## Scenarios
 

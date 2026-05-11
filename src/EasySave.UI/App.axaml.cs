@@ -2,7 +2,10 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using EasyLog;
+using EasySave.Infrastructure.Events;
+using EasySave.Infrastructure.Remote;
 using EasySave.Services;
+using EasySave.Shared;
 using EasySave.UI.Services;
 using EasySave.UI.ViewModels;
 using EasySave.UI.Views;
@@ -13,6 +16,11 @@ namespace EasySave.UI;
 public partial class App : Application
 {
     public static IServiceProvider? Services { get; private set; }
+
+    // Cancellation source for the in-process TCP server. Cancelled in
+    // DisposeServices so the listener stops accepting and exits its loop
+    // before the process exits.
+    private static CancellationTokenSource? _remoteServerCts;
 
     public override void Initialize()
     {
@@ -58,6 +66,19 @@ public partial class App : Application
         }
 
         Services.GetRequiredService<SchedulerDispatchService>().Start();
+
+        // V3 remote console wiring. Gated on appsettings.json so the GUI
+        // boot stays minimal for operators who don't need a remote operator
+        // station. When enabled:
+        //   - StateTrackerEventBridge publishes JobProgress events on the bus,
+        //   - RemoteConsoleBroadcastBridge forwards them to every connected
+        //     client over TCP,
+        //   - the server's CommandReceived event routes Pause/Play/Stop into
+        //     the BackupManagerAdapter.
+        if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
+        {
+            StartRemoteConsole(Services);
+        }
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -114,11 +135,115 @@ public partial class App : Application
         services.AddSingleton<ISchedulerService, SchedulerService>();
         services.AddSingleton<SchedulerDispatchService>();
 
+        // V3 event-bus + bridges. Registered unconditionally (cheap to
+        // construct, no thread or socket allocated until Start is called);
+        // the actual server + bridge startup is gated by
+        // RemoteConsoleEnabled in OnFrameworkInitializationCompleted.
+        services.AddSingleton<IEventBus>(_ => new ChannelEventBus());
+        services.AddSingleton<IRemoteConsoleServer>(sp =>
+            new TcpRemoteConsoleServer(sp.GetRequiredService<IDailyLogger>()));
+        services.AddSingleton(sp =>
+            new StateTrackerEventBridge(StateTracker.Instance, sp.GetRequiredService<IEventBus>()));
+        services.AddSingleton(sp =>
+            new RemoteConsoleBroadcastBridge(
+                sp.GetRequiredService<IEventBus>(),
+                sp.GetRequiredService<IRemoteConsoleServer>()));
+
         services.AddSingleton<MainWindowViewModel>();
+    }
+
+    private static void StartRemoteConsole(IServiceProvider services)
+    {
+        var server = services.GetRequiredService<IRemoteConsoleServer>();
+        var backup = services.GetRequiredService<IBackupManagerAdapter>();
+        var logger = services.GetRequiredService<IDailyLogger>();
+
+        server.CommandReceived += cmd => HandleRemoteCommandAsync(cmd, backup, logger);
+
+        services.GetRequiredService<StateTrackerEventBridge>().Start();
+        services.GetRequiredService<RemoteConsoleBroadcastBridge>().Start();
+
+        _remoteServerCts = new CancellationTokenSource();
+        // Fire-and-forget: the listener loop runs until the CTS is cancelled
+        // in DisposeServices. Surface unexpected exits to Trace so they don't
+        // disappear silently.
+        _ = server.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, _remoteServerCts.Token)
+            .ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        $"[App] Remote console server stopped with error: {t.Exception?.GetBaseException().Message}");
+                }
+            }, TaskScheduler.Default);
+    }
+
+    private static Task HandleRemoteCommandAsync(CommandDto cmd, IBackupManagerAdapter backup, IDailyLogger logger)
+    {
+        // Route the command into the same adapter the GUI uses, so a remote
+        // operator sees identical job behaviour to a local one.
+        try
+        {
+            switch (cmd.Action)
+            {
+                case CommandType.Pause:
+                    backup.PauseJob(cmd.JobName, "RemoteCommand");
+                    break;
+                case CommandType.Play:
+                    // ResumeJob is a no-op if the job is not paused; the
+                    // follow-up RunJobAsync is a no-op if the job is already
+                    // running. Together they cover both "resume" and "start
+                    // from idle" without the caller having to inspect state.
+                    backup.ResumeJob(cmd.JobName);
+                    _ = backup.RunJobAsync(cmd.JobName);
+                    break;
+                case CommandType.Stop:
+                    // No native Stop on the adapter yet — Pause with a
+                    // dedicated reason is the closest available behaviour:
+                    // the job halts at the next file boundary. The engine
+                    // still marks the job Paused (not Inactive) in
+                    // state.json; the recette flags this as a known gap.
+                    backup.PauseJob(cmd.JobName, "Stopped");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never let a command handler fail back to the TCP server's
+            // dispatch loop — the server isolates per-handler exceptions,
+            // but losing the audit log line would be worse than the throw.
+            System.Diagnostics.Trace.TraceError(
+                $"[App] Remote command {cmd.Action} on '{cmd.JobName}' failed: {ex.Message}");
+        }
+
+        logger.Append(new LogEntry
+        {
+            Timestamp = DateTimeOffset.Now.ToString("o"),
+            JobName = cmd.JobName,
+            SourceFile = cmd.SourceIp ?? string.Empty,
+            TargetFile = string.Empty,
+            FileSize = 0,
+            FileTransferTimeMs = 0,
+            EventType = LogEvent.CommandReceived,
+        });
+
+        return Task.CompletedTask;
     }
 
     private static void DisposeServices()
     {
+        // Stop the TCP listener first so no new commands land while we are
+        // tearing down the adapter / bridges they would forward to.
+        _remoteServerCts?.Cancel();
+        try { Services?.GetService<IRemoteConsoleServer>()?.StopAsync().GetAwaiter().GetResult(); }
+        catch { /* shutdown best-effort */ }
+        _remoteServerCts?.Dispose();
+        _remoteServerCts = null;
+
+        Services?.GetService<RemoteConsoleBroadcastBridge>();  // resolved already, no Stop API
+        Services?.GetService<StateTrackerEventBridge>()?.Dispose();
+        (Services?.GetService<IEventBus>() as IDisposable)?.Dispose();
+
         Services?.GetService<SchedulerDispatchService>()?.Dispose();
         Services?.GetService<IBackupManagerAdapter>()?.Dispose();
         Services?.GetService<BusinessWatcherService>()?.Dispose();
