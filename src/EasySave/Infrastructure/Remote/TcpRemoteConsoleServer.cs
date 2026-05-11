@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -133,7 +134,11 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         foreach (var h in handler.GetInvocationList().Cast<Func<CommandDto, Task>>())
         {
             try { await h(cmd); }
-            catch { /* isolate faulted subscribers */ }
+            catch (Exception ex)
+            {
+                Trace.TraceError("[TcpRemoteConsoleServer] Handler for {0} on '{1}' failed: {2}",
+                    cmd.Action, cmd.JobName, ex.Message);
+            }
         }
     }
 
