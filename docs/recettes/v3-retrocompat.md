@@ -27,8 +27,8 @@ under real-world inputs.
   can have **N** entries simultaneously when the parallel orchestrator
   is wired. The on-disk schema is identical — no migration code needed.
 - **`LogEntry.EventType`** is `LogEvent?` with
-  `[JsonIgnore(Condition = WhenWritingNull)]` and
-  `[JsonConverter(JsonStringEnumConverter)]`. v1 / v2 entries leave it
+  `[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]` and
+  `[JsonConverter(typeof(JsonStringEnumConverter))]`. v1 / v2 entries leave it
   null, the JSON / XML output omits the field, and existing readers see
   the exact byte shape they had.
 - **`EasySave.Schemas.easysave-log.xsd`** declares the new `EventType`
