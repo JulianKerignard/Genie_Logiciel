@@ -239,6 +239,45 @@ public class TcpRemoteConsoleServerTests
         Assert.Null(line2);
     }
 
+    [Fact]
+    public async Task HandleClient_DropsConnection_WhenLineExceedsCap()
+    {
+        int port = GetFreePort();
+        var server = new TcpRemoteConsoleServer(NullLogger.Instance);
+        using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        _ = server.StartAsync(port, serverCts.Token);
+
+        await WaitForListenerAsync(port);
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port);
+        var stream = client.GetStream();
+
+        // Send 70 KB without a newline — exceeds the 64 KB cap.
+        var payload = new byte[70 * 1024];
+        Array.Fill(payload, (byte)'A');
+        await stream.WriteAsync(payload);
+        await stream.FlushAsync();
+
+        // The server must drop the connection: drain until EOF.
+        // Catch IOException — the server may issue a TCP RST instead of a clean FIN,
+        // which surfaces as an IOException on the client side; both mean disconnected.
+        // WaitAsync throws TimeoutException if the server does not close within 3 s.
+        var buf = new byte[256];
+        var drainTask = Task.Run(async () =>
+        {
+            try
+            {
+                int n;
+                while ((n = await stream.ReadAsync(buf)) > 0) { }
+            }
+            catch (IOException) { /* RST from server — connection dropped as expected */ }
+        });
+        await drainTask.WaitAsync(TimeSpan.FromSeconds(3));
+
+        await server.StopAsync();
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private static int GetFreePort()
