@@ -18,6 +18,15 @@ public enum RemoteConnectionState
 public interface IRemoteConsoleClient
 {
     /// <summary>
+    /// When true, the next <see cref="ConnectAsync"/> upgrades the socket to
+    /// TLS via <c>SslStream</c> and verifies the server certificate against
+    /// the trust-on-first-use known_hosts store. Off by default — must be
+    /// turned on by the operator before connecting if the engine has TLS
+    /// enabled on its side.
+    /// </summary>
+    bool UseTls { get; set; }
+
+    /// <summary>
     /// Establishes a TCP connection to the EasySave server at
     /// <paramref name="host"/>:<paramref name="port"/>.
     /// </summary>

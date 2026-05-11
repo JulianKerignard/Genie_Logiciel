@@ -31,7 +31,11 @@ var langService = new LanguageService(AppConfig.Instance.Settings);
 if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
 {
     var orchestrator = new ParallelBackupOrchestratorStub();
-    var server = new TcpRemoteConsoleServer(logger);
+    var cert = AppConfig.Instance.Settings.RemoteConsoleTlsEnabled
+        ? EasySave.Infrastructure.Remote.SelfSignedCertProvider.LoadOrCreate(
+            EasySave.Infrastructure.Remote.SelfSignedCertProvider.DefaultCertPath())
+        : null;
+    var server = new TcpRemoteConsoleServer(logger, cert);
     server.CommandReceived += cmd =>
     {
         switch (cmd.Action)

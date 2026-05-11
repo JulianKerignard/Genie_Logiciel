@@ -4,5 +4,6 @@
   "btn.pause": "Pause",
   "btn.play": "Play",
   "btn.stop": "Stop",
-  "lbl.commandHistory": "Command history"
+  "lbl.commandHistory": "Command history",
+  "lbl.useTls": "TLS"
 }

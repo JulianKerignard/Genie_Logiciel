@@ -33,6 +33,14 @@ public sealed class AppSettings
 
     [JsonPropertyName("max_parallel_jobs")]
     public int MaxParallelJobs { get; init; } = 4;
+
+    // Wraps the v3 remote-console TCP socket in TLS (SslStream) using a
+    // self-signed certificate generated on first run. Off by default —
+    // existing deployments keep working unchanged. Recommended when the
+    // console is reachable from an untrusted network (shared VPN, public
+    // Wi-Fi). See docs/v3-remote-console-tls.md for cert handling.
+    [JsonPropertyName("remote_console_tls_enabled")]
+    public bool RemoteConsoleTlsEnabled { get; init; } = false;
 }
 
 public sealed class CryptoSoftSettings

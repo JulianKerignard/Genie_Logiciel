@@ -15,6 +15,8 @@
                            FormatString="0" />
             <Button Content="{Binding LabelConnect}" Command="{Binding ConnectCommand}" />
             <Button Content="{Binding LabelDisconnect}" Command="{Binding DisconnectCommand}" />
+            <CheckBox Content="{Binding LabelUseTls}" IsChecked="{Binding UseTls}"
+                      VerticalAlignment="Center" />
             <TextBlock Text="{Binding Connection}" VerticalAlignment="Center" FontWeight="SemiBold" />
         </StackPanel>
 
