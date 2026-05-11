@@ -136,19 +136,16 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
     private static async Task<string?> ReadLineBoundedAsync(StreamReader reader, int max, CancellationToken ct)
     {
         var sb = new StringBuilder();
-        var buf = new char[256];
+        var buf = new char[1];
         while (!ct.IsCancellationRequested)
         {
             int n = await reader.ReadAsync(buf.AsMemory(), ct);
             if (n == 0) return sb.Length == 0 ? null : sb.ToString();
-            for (var i = 0; i < n; i++)
-            {
-                if (buf[i] == '\n') return sb.ToString();
-                if (buf[i] == '\r') continue;
-                if (sb.Length >= max)
-                    throw new InvalidDataException($"Line over {max} chars — client dropped");
-                sb.Append(buf[i]);
-            }
+            if (buf[0] == '\n') return sb.ToString();
+            if (buf[0] == '\r') continue;
+            if (sb.Length >= max)
+                throw new InvalidDataException($"Line over {max} chars — client dropped");
+            sb.Append(buf[0]);
         }
         return null;
     }
