@@ -50,7 +50,7 @@
                 BorderBrush="#444" BorderThickness="1" CornerRadius="3"
                 Height="140">
             <Grid RowDefinitions="Auto,*">
-                <TextBlock Grid.Row="0" Text="Command history"
+                <TextBlock Grid.Row="0" Text="{Binding LabelCommandHistory}"
                            FontWeight="SemiBold" Margin="2,0,0,4" />
                 <ListBox Grid.Row="1" ItemsSource="{Binding CommandHistory}"
                          FontFamily="Consolas, Menlo, monospace" FontSize="12" />

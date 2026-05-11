@@ -3,5 +3,6 @@
   "btn.disconnect": "Disconnect",
   "btn.pause": "Pause",
   "btn.play": "Play",
-  "btn.stop": "Stop"
+  "btn.stop": "Stop",
+  "lbl.commandHistory": "Command history"
 }

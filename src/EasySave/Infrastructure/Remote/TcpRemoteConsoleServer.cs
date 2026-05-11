@@ -122,10 +122,14 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
                 await FireCommandReceivedAsync(cmd);
 
                 // Audit broadcast so a second console connected to the same
-                // engine sees who issued the command. Fire-and-forget after
-                // the engine has been notified — this is observability, not
-                // a contract the local dispatch waits on.
-                _ = BroadcastAsync(new EventDto(
+                // engine sees who issued the command. Must be awaited (not
+                // fire-and-forget) so the CommandReceived frame is observed
+                // before the orchestrator's resulting JobPaused/JobResumed
+                // broadcast — otherwise clients can see the state change
+                // before the command that caused it. HandleClientAsync is
+                // already a detached task per AcceptTcpClientAsync, so
+                // awaiting here does not block the accept loop.
+                await BroadcastAsync(new EventDto(
                     Timestamp: DateTimeOffset.UtcNow,
                     Type: EventType.CommandReceived,
                     JobName: cmd.JobName,

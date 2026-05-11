@@ -48,6 +48,7 @@ public sealed partial class ConsoleViewModel : ObservableObject, IDisposable
     public string LabelPause => _lang.T("btn.pause");
     public string LabelPlay => _lang.T("btn.play");
     public string LabelStop => _lang.T("btn.stop");
+    public string LabelCommandHistory => _lang.T("lbl.commandHistory");
 
     /// <summary>Initiates a connection to the configured host and port.</summary>
     [RelayCommand]
