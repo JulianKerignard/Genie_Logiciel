@@ -169,14 +169,19 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         catch (IOException) { /* transient — next poll will retry */ }
         catch (JsonException ex)
         {
-            // Not transient: a corrupt state.json keeps failing on every
-            // subsequent poll until the engine rewrites it. Trace the
-            // failure so the operator has a diagnostic — quarantine is
-            // already handled at the write side in StateTracker
-            // .ReadCurrentEntries via FileHelpers.QuarantineCorruptedFile,
-            // so duplicating it here is unnecessary.
+            // Corrupt state.json keeps failing every poll until the engine rewrites it; quarantine happens write-side in StateTracker.ReadCurrentEntries.
             System.Diagnostics.Trace.TraceWarning(
                 $"[BackupManagerAdapter] state.json deserialize failed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Backstop: an exception escaping a System.Threading.Timer
+            // callback in .NET 8 terminates the process. Cover the ACL /
+            // unknown-exception case (e.g. UnauthorizedAccessException is
+            // a SystemException, not an IOException) so the poll loop and
+            // the GUI stay alive.
+            System.Diagnostics.Trace.TraceWarning(
+                $"[BackupManagerAdapter] PollState unexpected error: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
