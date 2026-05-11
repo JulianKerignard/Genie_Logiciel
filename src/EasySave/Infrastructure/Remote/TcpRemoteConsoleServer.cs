@@ -109,7 +109,8 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
             while (!ct.IsCancellationRequested)
             {
                 string? line;
-                try { line = await reader.ReadLineAsync(ct); }
+                try { line = await ReadLineBoundedAsync(reader, MaxLineLengthBytes, ct); }
+                catch (InvalidDataException) { break; }
                 catch (OperationCanceledException) { break; }
                 if (line is null) break;
 
@@ -124,6 +125,28 @@ public sealed class TcpRemoteConsoleServer : IRemoteConsoleServer
         }
         catch { /* network disconnect */ }
         finally { RemoveClient(key); }
+    }
+
+    private const int MaxLineLengthBytes = 64 * 1024;
+
+    // Reads one line from reader, capping at max chars. Returns null on EOF.
+    // Throws InvalidDataException when a line exceeds the cap so the caller
+    // can drop the misbehaving client without buffering the full payload.
+    private static async Task<string?> ReadLineBoundedAsync(StreamReader reader, int max, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        var buf = new char[1];
+        while (!ct.IsCancellationRequested)
+        {
+            int n = await reader.ReadAsync(buf.AsMemory(), ct);
+            if (n == 0) return sb.Length == 0 ? null : sb.ToString();
+            if (buf[0] == '\n') return sb.ToString();
+            if (buf[0] == '\r') continue;
+            if (sb.Length >= max)
+                throw new InvalidDataException($"Line over {max} bytes — client dropped");
+            sb.Append(buf[0]);
+        }
+        return null;
     }
 
     private async Task FireCommandReceivedAsync(CommandDto cmd)
