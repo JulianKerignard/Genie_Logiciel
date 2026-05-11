@@ -166,7 +166,18 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
             foreach (var entry in entries)
                 StateUpdated?.Invoke(this, entry);
         }
-        catch { /* transient I/O error — next poll will retry */ }
+        catch (IOException) { /* transient — next poll will retry */ }
+        catch (JsonException ex)
+        {
+            // Not transient: a corrupt state.json keeps failing on every
+            // subsequent poll until the engine rewrites it. Trace the
+            // failure so the operator has a diagnostic — quarantine is
+            // already handled at the write side in StateTracker
+            // .ReadCurrentEntries via FileHelpers.QuarantineCorruptedFile,
+            // so duplicating it here is unnecessary.
+            System.Diagnostics.Trace.TraceWarning(
+                $"[BackupManagerAdapter] state.json deserialize failed: {ex.Message}");
+        }
     }
 
     public void Dispose()
