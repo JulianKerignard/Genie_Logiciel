@@ -195,7 +195,19 @@ public partial class App : Application
                     // running. Together they cover both "resume" and "start
                     // from idle" without the caller having to inspect state.
                     backup.ResumeJob(cmd.JobName);
-                    _ = backup.RunJobAsync(cmd.JobName);
+                    // Observe the task so async failures (job not found,
+                    // orchestrator throw) surface to Trace — same posture as
+                    // StartAsync above. Without this continuation an async
+                    // fault disappears silently with no audit signal.
+                    _ = backup.RunJobAsync(cmd.JobName)
+                        .ContinueWith(t =>
+                        {
+                            if (t.IsFaulted)
+                            {
+                                System.Diagnostics.Trace.TraceError(
+                                    $"[App] RunJobAsync('{cmd.JobName}') from remote Play failed: {t.Exception?.GetBaseException().Message}");
+                            }
+                        }, TaskScheduler.Default);
                     break;
                 case CommandType.Stop:
                     // No native Stop on the adapter yet — Pause with a
@@ -240,7 +252,9 @@ public partial class App : Application
         _remoteServerCts?.Dispose();
         _remoteServerCts = null;
 
-        Services?.GetService<RemoteConsoleBroadcastBridge>();  // resolved already, no Stop API
+        // RemoteConsoleBroadcastBridge has no Stop/Dispose — the bus it
+        // subscribed to is disposed below, which drops the consumer task
+        // and releases the subscription transitively.
         Services?.GetService<StateTrackerEventBridge>()?.Dispose();
         (Services?.GetService<IEventBus>() as IDisposable)?.Dispose();
 
