@@ -92,7 +92,7 @@ public sealed class LogCentralizerE2ETests : IClassFixture<LogCentralizerE2EFixt
         // Container writes asynchronously; poll the bind-mounted dir until
         // all 150 entries have flushed. Generous timeout because the
         // container's filesystem layer adds latency vs. native.
-        var lines = await WaitForLinesAsync(
+        var lines = await LogFilePoller.WaitForLinesAsync(
             _fx.HostLogsDir!,
             expected: clientCount * entriesPerClient,
             timeout: TimeSpan.FromSeconds(20));
@@ -115,31 +115,6 @@ public sealed class LogCentralizerE2ETests : IClassFixture<LogCentralizerE2EFixt
         Assert.Equal(users.ToHashSet(), distinctUsers);
     }
 
-    // Poll the logs directory until the expected number of lines is observed
-    // or the timeout elapses.
-    private static async Task<string[]> WaitForLinesAsync(
-        string logsDir, int expected, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            var files = Directory.GetFiles(logsDir, "*.jsonl");
-            if (files.Length > 0)
-            {
-                using var fs = new FileStream(
-                    files[0], FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var sr = new StreamReader(fs);
-                var content = await sr.ReadToEndAsync();
-                var lines = content.Split(
-                    new[] { '\r', '\n' },
-                    StringSplitOptions.RemoveEmptyEntries);
-                if (lines.Length >= expected) return lines;
-            }
-            await Task.Delay(200);
-        }
-        throw new Xunit.Sdk.XunitException(
-            $"Expected {expected} persisted lines under {logsDir} within {timeout.TotalSeconds:F0}s.");
-    }
 }
 
 /// <summary>

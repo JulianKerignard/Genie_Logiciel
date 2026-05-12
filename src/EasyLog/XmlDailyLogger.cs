@@ -47,24 +47,10 @@ public sealed class XmlDailyLogger : IDailyLogger
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        // Local date is intentional: daily files must align with the business day
-        // seen by the operator, not UTC.
+        // Local date intentional: daily files align with the operator's
+        // business day, not UTC.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.xml");
-
-        LogEntry normalized = new()
-        {
-            Timestamp = entry.Timestamp,
-            JobName = entry.JobName,
-            SourceFile = ToNormalizedPath(entry.SourceFile),
-            TargetFile = ToNormalizedPath(entry.TargetFile),
-            FileSize = entry.FileSize,
-            FileTransferTimeMs = entry.FileTransferTimeMs,
-            EncryptionTimeMs = entry.EncryptionTimeMs,
-            EventType = entry.EventType,
-            // See JsonDailyLogger.Append for the host/user stamping contract.
-            MachineName = entry.MachineName ?? Environment.MachineName,
-            UserName = entry.UserName ?? Environment.UserName,
-        };
+        LogEntry normalized = LogRouter.Normalize(entry);
 
         if (LogRouter.ShouldShip(_mode))
         {
@@ -83,9 +69,6 @@ public sealed class XmlDailyLogger : IDailyLogger
             WriteAtomic(filePath, doc);
         }
     }
-
-    private static string ToNormalizedPath(string path) =>
-        LogPathHelper.ToNormalizedPath(path);
 
     private static XDocument ReadExisting(string filePath)
     {
