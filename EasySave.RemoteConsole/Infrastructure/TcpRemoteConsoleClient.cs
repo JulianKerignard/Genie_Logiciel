@@ -61,7 +61,7 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
             // The caller (or DisposeAsync) cancelled the initial attempt —
             // surface Disconnected, not Error, so the UI stays neutral.
             _stateSubject.OnNext(RemoteConnectionState.Disconnected);
-            CleanupAfterFailedConnect();
+            await CleanupAfterFailedConnectAsync();
             throw;
         }
         catch
@@ -71,7 +71,7 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
             // loop. Without this catch the state subject would sit on
             // Connecting forever and the UI label would freeze.
             _stateSubject.OnNext(RemoteConnectionState.Error);
-            CleanupAfterFailedConnect();
+            await CleanupAfterFailedConnectAsync();
             throw;
         }
     }
@@ -79,12 +79,20 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
     // Releases the half-built TCP / TLS / writer state after a failed
     // ConnectAsync so the next attempt starts from a clean baseline and the
     // disposed _tcp does not leak its socket handle until the next call.
-    private void CleanupAfterFailedConnect()
+    // _writer is disposed under _writeLock to match DisconnectAsync — a
+    // failed initial connect with an in-flight SendCommandAsync would
+    // otherwise race the dispose against the write, even if narrow.
+    private async Task CleanupAfterFailedConnectAsync()
     {
-        try { _writer?.Dispose(); } catch { }
-        _writer = null;
-        try { _sslStream?.Dispose(); } catch { }
-        _sslStream = null;
+        await _writeLock.WaitAsync();
+        try
+        {
+            try { _writer?.Dispose(); } catch { }
+            _writer = null;
+            try { _sslStream?.Dispose(); } catch { }
+            _sslStream = null;
+        }
+        finally { _writeLock.Release(); }
         try { _tcp?.Close(); } catch { }
         _tcp = null;
     }
