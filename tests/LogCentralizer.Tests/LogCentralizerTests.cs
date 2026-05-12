@@ -188,6 +188,49 @@ public class LogCentralizerTests : IDisposable
         Assert.DoesNotContain("UserName", line);
     }
 
+    [Fact]
+    public async Task ShipperToCollector_RoundTrip_PreservesEveryField()
+    {
+        // End-to-end wire-format guard. The shipper (production client)
+        // posts a fully-populated LogEntry; the collector deserializes
+        // and writes it to disk. Every field must survive the round-trip
+        // — JobName, SourceFile, TargetFile, FileSize, FileTransferTimeMs,
+        // MachineName, UserName, EncryptionTimeMs. A regression that
+        // re-introduces a wrapper envelope (or renames a field) would
+        // surface here.
+        using var httpClient = _factory.CreateClient();
+        await using var shipper = new HttpLogShipper(
+            new Uri(httpClient.BaseAddress!, "/logs"),
+            httpClient);
+
+        var sent = new LogEntry
+        {
+            Timestamp = "2026-05-12T12:00:00+02:00",
+            JobName = "round-trip",
+            SourceFile = @"\\nas\src\report.pdf",
+            TargetFile = @"\\nas\dst\report.pdf",
+            FileSize = 12345,
+            FileTransferTimeMs = 42,
+            EncryptionTimeMs = 7,
+            MachineName = "WS-ROUNDTRIP",
+            UserName = "round-tripper",
+        };
+        shipper.Append(sent);
+
+        var line = (await WaitForLinesAsync(_logsDir, expected: 1))[0];
+        var persisted = JsonSerializer.Deserialize<LogEntry>(line)!;
+
+        Assert.Equal(sent.JobName, persisted.JobName);
+        Assert.Equal(sent.SourceFile, persisted.SourceFile);
+        Assert.Equal(sent.TargetFile, persisted.TargetFile);
+        Assert.Equal(sent.FileSize, persisted.FileSize);
+        Assert.Equal(sent.FileTransferTimeMs, persisted.FileTransferTimeMs);
+        Assert.Equal(sent.EncryptionTimeMs, persisted.EncryptionTimeMs);
+        Assert.Equal(sent.MachineName, persisted.MachineName);
+        Assert.Equal(sent.UserName, persisted.UserName);
+        Assert.Equal(sent.Timestamp, persisted.Timestamp);
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────
