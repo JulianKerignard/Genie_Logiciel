@@ -19,11 +19,12 @@ var (logger, logShipper) = DailyLoggerFactory.Create(
     AppConfig.Instance.Settings.LogFormat,
     AppConfig.Instance.Settings.LogMode,
     AppConfig.Instance.Settings.LogCentralizedEndpoint);
-AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
-{
-    if (logShipper is not null)
-        await logShipper.DisposeAsync();
-};
+// ProcessExit is sync — an async lambda would be async void and the
+// runtime would not wait for the channel drain, losing buffered entries
+// on shutdown. Block here so DisposeAsync completes before the process
+// exits.
+AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+    logShipper?.DisposeAsync().AsTask().GetAwaiter().GetResult();
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)
     ? new NoOpEncryptionService()
     : new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft);

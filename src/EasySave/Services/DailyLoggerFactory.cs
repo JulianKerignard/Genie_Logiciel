@@ -24,9 +24,14 @@ public static class DailyLoggerFactory
         // otherwise silently drop every entry: the logger ctors guard for
         // this (LogRouter.Effective falls back to Local) but we prefer to
         // never construct the shipper at all in that case.
+        // Uri.TryCreate accepts file://, ftp://, etc. — HttpLogShipper's
+        // ctor would then throw ArgumentException. Filter to http/https
+        // here so a typo in appsettings.json silently falls back to Local
+        // instead of crashing the entry point.
         if (logMode != LogMode.Local
             && !string.IsNullOrWhiteSpace(centralizedEndpoint)
-            && Uri.TryCreate(centralizedEndpoint, UriKind.Absolute, out var endpoint))
+            && Uri.TryCreate(centralizedEndpoint, UriKind.Absolute, out var endpoint)
+            && (endpoint.Scheme == Uri.UriSchemeHttp || endpoint.Scheme == Uri.UriSchemeHttps))
         {
             shipper = new HttpLogShipper(endpoint);
         }

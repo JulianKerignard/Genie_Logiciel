@@ -22,6 +22,11 @@ public partial class App : Application
     // before the process exits.
     private static CancellationTokenSource? _remoteServerCts;
 
+    // Kept alive so DisposeServices can drain the buffered HTTP queue
+    // before the window closes — otherwise an in-flight POST gets dropped
+    // when the singleton IDailyLogger is collected.
+    private static IAsyncDisposable? _logShipper;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -113,11 +118,12 @@ public partial class App : Application
         services.AddSingleton<IDailyLogger>(_ =>
         {
             var settings = SettingsRepository.Instance.Load();
-            var (logger, _) = DailyLoggerFactory.Create(
+            var (logger, shipper) = DailyLoggerFactory.Create(
                 AppConfig.Instance.LogDirectory,
                 settings.LogFormat,
                 settings.LogMode,
                 settings.LogCentralizedEndpoint);
+            _logShipper = shipper;
             return logger;
         });
 
@@ -327,5 +333,12 @@ public partial class App : Application
         Services?.GetService<IParallelBackupOrchestrator>()?.Dispose();
         (Services?.GetService<IBigFileGate>() as IDisposable)?.Dispose();
         (Services?.GetService<IPriorityGate>() as IDisposable)?.Dispose();
+
+        // Drain the centralized log shipper last so any entry the engine
+        // produced during teardown (e.g. "job stopped") has a chance to
+        // be POSTed before the queue is abandoned.
+        try { _logShipper?.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        catch { /* shutdown best-effort */ }
+        _logShipper = null;
     }
 }

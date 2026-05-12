@@ -80,4 +80,25 @@ public class DailyLoggerFactoryTests : IDisposable
         Assert.IsType<JsonDailyLogger>(logger);
         if (logger is IDisposable d) d.Dispose();
     }
+
+    [Fact]
+    public async Task Create_BothMode_WithEndpoint_BuildsShipper()
+    {
+        var (logger, shipper) = DailyLoggerFactory.Create(_logDir, "json", LogMode.Both, "http://collector:9100/logs");
+
+        Assert.NotNull(logger);
+        Assert.NotNull(shipper);
+        await shipper!.DisposeAsync();
+        if (logger is IDisposable d) d.Dispose();
+    }
+
+    [Fact]
+    public void Create_NonHttpScheme_FallsBackToLocal()
+    {
+        var (logger, shipper) = DailyLoggerFactory.Create(_logDir, "json", LogMode.Centralized, "file:///tmp/logs");
+
+        Assert.NotNull(logger);
+        Assert.Null(shipper);
+        if (logger is IDisposable d) d.Dispose();
+    }
 }
