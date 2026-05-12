@@ -17,9 +17,17 @@ des prio restants est non nulle.
 
 - EasySave v3 buildé en Release (`dotnet build EasySave.sln -c Release`).
 - GUI Avalonia (`dotnet run --project src/EasySave.UI`).
-- Deux dossiers source distincts pour deux jobs parallèles :
-  - **Job A** : `Demo\A\` contenant 1 `.docx` et 5 `.txt`.
-  - **Job B** : `Demo\B\` contenant 3 `.docx` et 5 `.txt`.
+- Deux dossiers source distincts pour deux jobs parallèles. **3 fichiers
+  prioritaires + 3 non prioritaires par job** (sample symétrique pour
+  rendre l'assertion "tous les `.docx` avant tous les `.txt`" évidente
+  sur la timeline) :
+  - **Job A** : `Demo\A\` contenant `a1.docx`, `a2.docx`, `a3.docx`,
+    `a1.txt`, `a2.txt`, `a3.txt`.
+  - **Job B** : `Demo\B\` contenant `b1.docx`, `b2.docx`, `b3.docx`,
+    `b1.txt`, `b2.txt`, `b3.txt`.
+- Garder une console ouverte sur `tail -f %AppData%\ProSoft\EasySave\state.json`
+  (Windows) ou `~/.config/ProSoft/EasySave/state.json` (Linux/macOS)
+  pour suivre l'évolution en temps réel.
 
 ## Configuration
 
@@ -49,9 +57,50 @@ le BackupManager prenne en compte la nouvelle liste.
 | # | Action | Résultat attendu |
 |---|---|---|
 | 1 | Créer Job A et Job B comme décrit ci-dessus. | 2 jobs `Idle` dans la GUI. |
-| 2 | Cliquer **Run All**. | Les 2 jobs passent à `Active`. |
-| 3 | Observer la séquence de copie côté cible (mtimes) **et** dans le log journalier. | **Aucun `.txt`** (ni A ni B) n'apparaît avant que **tous les `.docx`** des deux jobs soient copiés. Job A finit son seul `.docx` puis se met à attendre sur le gate ; Job B copie ses 3 `.docx` ; à la dernière `.docx` de B, les 5 `.txt` de A peuvent commencer (en parallèle avec les `.txt` de B). |
-| 4 | Attendre la fin. | Les 2 jobs `Inactive`, tous les fichiers en cible, chacun copié une seule fois. |
+| 2 | Cliquer **Run All**. | Les 2 jobs passent à `Active` dans `state.json` (chacun avec `FilesRemaining = 6`). |
+| 3 | Observer la séquence de copie dans le log JSON journalier (`yyyy-MM-dd.json`). | **Les 6 premières lignes `FileTransfer`** doivent toutes être des `.docx` (3 de A + 3 de B, ordre cross-job indifférent). **Les 6 lignes suivantes** sont les `.txt`. Aucun mélange. |
+| 4 | À mi-parcours (vers la 6e copie), inspecter `state.json`. | Les deux jobs sont `Active`. `CurrentSource` pointe vers des `.docx` ou vient de passer au premier `.txt`. `FilesRemaining` reflète les 6 prio écoulés. |
+| 5 | Attendre la fin. | Les 2 jobs `Inactive` dans `state.json`, `FilesRemaining = 0`, `Progress = 100`. Tous les fichiers présents en cible, chacun copié une seule fois. |
+
+### Vérification log + state.json (oracle)
+
+Une fois la course terminée :
+
+```bash
+# Linux/macOS — extraire l'ordre des fichiers copiés depuis le log
+jq -r '.[] | select(.EventType==null or .EventType=="FileTransfer") | .SourceFile' \
+    "$HOME/.config/ProSoft/EasySave/Logs/$(date +%Y-%m-%d).json" \
+    | awk -F'/' '{print $NF}'
+```
+
+La sortie attendue (l'ordre cross-job entre A et B peut varier, mais les
+**6 `.docx` viennent TOUS avant les 6 `.txt`**) :
+
+```
+a1.docx
+b1.docx
+a2.docx
+b2.docx
+a3.docx
+b3.docx
+a1.txt
+b1.txt
+a2.txt
+b2.txt
+a3.txt
+b3.txt
+```
+
+## Test négatif — `priority_extensions` vide
+
+Remettre le setting à `[]` dans `appsettings.json` puis relancer la GUI
+avec les **mêmes** dossiers Job A / Job B.
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 1 | `priority_extensions: []`, **Run All**. | Les 2 jobs passent à `Active`. |
+| 2 | Inspecter le log journalier. | Pour chaque job, l'**ordre FIFO du système de fichiers** est respecté (les fichiers sortent dans l'ordre que `Directory.EnumerateFiles` renvoie, typiquement alphabétique sur ext4 / NTFS — mais aucun tri prio-d'abord). Les `.docx` et `.txt` sont **mélangés** dans la sortie. |
+| 3 | Comparer avec la course précédente. | La différence prouve que le tri prio-d'abord venait bien du gate, pas d'un effet de bord du système de fichiers. |
 
 ## Critères d'acceptation
 
@@ -66,6 +115,14 @@ le BackupManager prenne en compte la nouvelle liste.
       abandonne).
 - [ ] Le critère reste vérifiable via les **mtimes des fichiers cibles**
       ou la **séquence des lignes `FileTransfer`** dans le log JSON.
+- [ ] **Test négatif** : avec `priority_extensions: []` et les mêmes
+      sources, l'ordre n'est plus prio-d'abord (mélange `.docx` / `.txt`
+      dans la séquence du log). Confirme que le tri vient bien du gate.
+- [ ] **state.json** reflète l'état attendu pendant l'exécution : les
+      deux jobs `Active` simultanément, `FilesRemaining` décroît au fur
+      et à mesure des copies (la phase "parqué sur le gate" est observable
+      par un job dont `CurrentSource` reste vide en attendant que l'autre
+      job finisse ses prio).
 
 ## Cas limites
 
