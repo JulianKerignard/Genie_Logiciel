@@ -20,12 +20,10 @@ namespace EasySave.Services;
 /// </remarks>
 public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
 {
-    // The Global\ prefix scopes the mutex across user sessions on
-    // Windows. On Linux / macOS, .NET maps named mutexes to per-runtime
-    // POSIX semaphores under /tmp/.dotnet/shm/ — the prefix is ignored
-    // but the name still gives cross-process isolation within the
-    // ProSoft installation, which is good enough for the dev path.
-    private const string GlobalMutexName = @"Global\ProSoft.CryptoSoft.SingleInstance";
+    // Global\ scopes the mutex across user sessions on Windows. On Linux /
+    // macOS .NET maps it to a per-runtime POSIX semaphore (prefix ignored
+    // but name still gives cross-process isolation).
+    internal const string GlobalMutexName = @"Global\ProSoft.CryptoSoft.SingleInstance";
 
     private readonly CryptoSoftSettings _settings;
     private readonly Mutex _gate;
@@ -36,27 +34,13 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
     {
         ArgumentNullException.ThrowIfNull(settings);
         _settings = settings;
-
-        // Mutex(initiallyOwned: false, name) creates the named mutex or
-        // opens the existing one. Multiple CryptoSoftAdapter instances
-        // (one per BackupManager / per process) all share the same OS
-        // handle by name.
         _gate = new Mutex(initiallyOwned: false, name: GlobalMutexName);
 
-        // A queued caller waits at most 2× the per-file budget for the
-        // gate. Predictable upper bound makes operator triage easier:
-        // a single queued encryption is bounded by 2 × timeout_ms, which
-        // accommodates the worst case of the holder running until its
-        // own timeout fires plus the new caller's own encryption budget.
-        // If the lock is contended longer, the file is dropped as Failed
-        // and logged — operators see the conflict in the daily log
-        // instead of an indefinite hang.
-        //
-        // Math.Min on a widened long guards against int overflow when an
-        // operator sets a huge timeout (>1 billion ms ≈ 11 days). Without
-        // the widening, _lockWaitMs would wrap to a negative value and
-        // Mutex.WaitOne would throw ArgumentOutOfRangeException at the
-        // first call.
+        // Lock wait = 2 × per-file timeout. A queued caller bounded by
+        // (holder finishing + own budget). Math.Min on widened long
+        // guards against int overflow when an operator sets a huge
+        // timeout — without it _lockWaitMs would wrap negative and
+        // Mutex.WaitOne would throw ArgumentOutOfRangeException.
         int timeoutMs = _settings.TimeoutMs > 0 ? _settings.TimeoutMs : 30_000;
         _lockWaitMs = (int)Math.Min((long)timeoutMs * 2, int.MaxValue);
     }
@@ -67,11 +51,10 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(dest);
 
-        // Late-arriving call after Dispose(): the OS mutex handle is
-        // already closed, so AcquireGate would throw ObjectDisposedException
-        // on WaitOne. Convert to a soft Failed instead — same shape as the
-        // empty-path fall-back below, so the caller's fall-back path (plain
-        // copy, no encryption) handles both cases uniformly.
+        // Post-Dispose: the OS mutex handle is closed; WaitOne would
+        // throw ObjectDisposedException. Return soft Failed so the
+        // caller's fall-back (plain copy, no encryption) covers both
+        // Dispose and empty-path cases uniformly.
         if (Volatile.Read(ref _disposed) != 0)
         {
             return EncryptResult.Failed();
@@ -79,8 +62,7 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
 
         if (string.IsNullOrWhiteSpace(_settings.Path))
         {
-            // CryptoSoft not deployed on this workstation. The caller is
-            // expected to fall back to a plain copy (no encryption).
+            // CryptoSoft not deployed → caller falls back to plain copy.
             return EncryptResult.Failed();
         }
 
@@ -105,11 +87,6 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
         }
     }
 
-    // Splits the Mutex acquisition from the catch path so the
-    // AbandonedMutexException handling stays local. AbandonedMutex means
-    // the previous holder died without releasing — the OS still grants
-    // the mutex to the next waiter, and behaving as if we acquired
-    // normally is the documented contract.
     private bool AcquireGate()
     {
         try
@@ -118,9 +95,9 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
         }
         catch (AbandonedMutexException)
         {
-            // Previous holder crashed. CryptoSoft itself is responsible
-            // for cleaning up its own partial output on the next launch;
-            // EasySave just continues.
+            // Previous holder crashed without releasing — the OS grants
+            // the mutex to us. CryptoSoft itself handles partial-output
+            // cleanup on the next launch.
             return true;
         }
     }
@@ -132,19 +109,16 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
             FileName = _settings.Path,
             UseShellExecute = false,
             CreateNoWindow = true,
-            // Standard streams are intentionally NOT redirected: the contract
-            // (docs/cryptosoft-integration.md) communicates only via the exit
-            // code. Redirecting without draining the OS pipes would deadlock
-            // CryptoSoft as soon as it writes past the pipe buffer (~64 KB).
+            // Standard streams NOT redirected: the contract
+            // (docs/cryptosoft-integration.md) communicates only via the
+            // exit code. Redirecting without draining the OS pipes would
+            // deadlock CryptoSoft past the pipe buffer (~64 KB).
         };
         psi.ArgumentList.Add(source);
         psi.ArgumentList.Add(dest);
 
         try
         {
-            // Process.Start with UseShellExecute=false returns a live Process
-            // or throws — it never returns null. The null-forgiving operator
-            // documents that contract for static analysis.
             using var process = Process.Start(psi)!;
 
             int timeoutMs = _settings.TimeoutMs > 0 ? _settings.TimeoutMs : 30_000;

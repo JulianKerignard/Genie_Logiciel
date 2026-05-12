@@ -3,67 +3,37 @@ using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using EasyLog;
 
-// EasySave v3 centralized log collector.
-//
-// Design goals (CdC requirement: "un seul et unique fichier journalier quel
-// que soit le nombre d'utilisateurs"):
-//
-//  - POST /logs accepts a single LogEntry JSON document, enqueues it on an
-//    in-memory Channel and returns 204 immediately. The HTTP path never
-//    touches disk — slow filesystems on a noisy host cannot back-pressure
-//    the EasySave clients into stalling their backup jobs.
-//
-//  - A single background writer task drains the Channel and appends each
-//    entry as one JSON line to the day's file (yyyy-MM-dd.jsonl). With
-//    SingleReader=true there is exactly one thread writing to disk, so
-//    concurrent clients never race on the file handle and no entry is
-//    interleaved or corrupted.
-//
-//  - Append-only JSON Lines is the on-disk format: every flush is a single
-//    O(n) write of the new bytes (vs. O(file_size) for a JSON array we
-//    would have to re-serialize on every append). Tail-readers can stream
-//    the file line-by-line.
-//
-//  - Horizontal scale is intentionally not supported in v1: a single
-//    "fichier journalier unique" maps to a single writer process. Run one
-//    replica behind a TCP load balancer if you need redundancy at the LB
-//    layer — but DO NOT scale up the collector replicas (concurrent appends
-//    from two processes would interleave at the byte level).
+// EasySave v3 centralized log collector. CdC: "un seul et unique fichier
+// journalier quel que soit le nombre d'utilisateurs". Full design doc:
+// docs/v3-log-centralizer-admin.md. Recap:
+//   - POST /logs enqueues on a Channel, returns 204; HTTP path never
+//     touches disk so a slow filesystem cannot back-pressure clients.
+//   - One BackgroundService writer appends to {dir}/yyyy-MM-dd.jsonl.
+//   - Single replica only — concurrent appends from N processes corrupt.
 
 var builder = WebApplication.CreateBuilder(args);
 
-// .NET 6+ default is BackgroundServiceExceptionBehavior.StopHost — an
-// unhandled exception in DailyFileWriter.ExecuteAsync would tear the whole
-// host down, including /health. On a misconfigured Linux deployment the
-// bind-mounted /var/log/easysave can be owned by a UID the container's
-// `app` user cannot write to, which would otherwise silently kill the
-// service. Keep /health responsive — paired with the writer completing
-// the channel on fault (see DailyFileWriter.ExecuteAsync), subsequent
-// POST /logs trips ChannelClosedException and returns 503 instead of
-// accepting entries we cannot persist. So operators get TWO observable
-// signals when the writer dies: /health-200 + POST-503.
+// Keep /health responsive when the writer faults. Paired with
+// _queue.Writer.TryComplete(ex) in DailyFileWriter, subsequent POSTs
+// trip ChannelClosedException → 503. Operators get two observable
+// signals: /health=200 + POST=503.
 builder.Services.Configure<HostOptions>(opts =>
     opts.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
 
-// JSON serializer for entries that LAND on disk. WhenWritingNull keeps the
-// daily file byte-for-byte compatible with EasyLog's local format: a row
-// without MachineName/UserName looks exactly like a v1.x row.
+// WhenWritingNull keeps daily files byte-for-byte compatible with
+// EasyLog's local format (a row without MachineName/UserName looks like
+// a v1.x row). PropertyNameCaseInsensitive accepts both PascalCase
+// (default S.T.J) and camelCase (HttpClient.PostAsJsonAsync default).
 var serializerOptions = new JsonSerializerOptions
 {
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     Converters = { new JsonStringEnumConverter() },
-    // Accept either PascalCase (EasyLog's local daily files, default
-    // System.Text.Json) or camelCase (HttpClient.PostAsJsonAsync defaults
-    // since .NET 7). Writes stay PascalCase so the central daily file
-    // looks byte-for-byte like a local EasyLog file when fed back into
-    // a downstream reader.
     PropertyNameCaseInsensitive = true,
 };
 
-// Unbounded queue. Backup logs are low-volume (one row per file copy) and
-// dropping entries would defeat the point of central logging. A misbehaving
-// client that posts millions of entries while the disk is slow would grow
-// memory — operators are expected to monitor the host's RSS during cut-over.
+// Unbounded: backup logs are low-volume (one row per file copy) and
+// dropping entries would defeat the point of central logging. A
+// misbehaving client floods RAM — operators monitor host RSS.
 var queue = Channel.CreateUnbounded<LogEntry>(new UnboundedChannelOptions
 {
     SingleReader = true,
@@ -72,20 +42,16 @@ var queue = Channel.CreateUnbounded<LogEntry>(new UnboundedChannelOptions
 
 builder.Services.AddSingleton(queue);
 builder.Services.AddSingleton(serializerOptions);
-// Bind LogCentralizerOptions through the DI container so customizations
-// injected by integration tests (WebApplicationFactory's
-// ConfigureAppConfiguration) win over appsettings.json. Reading the option
-// directly at startup would race the factory and pin /var/log/easysave
-// before the test could override it.
+// IOptions binding so WebApplicationFactory test overrides win over
+// appsettings.json (reading the option at startup races the factory).
 builder.Services.Configure<LogCentralizerOptions>(
     builder.Configuration.GetSection("LogCentralizer"));
 builder.Services.AddHostedService<DailyFileWriter>();
 
 var app = builder.Build();
 
-// Health probe used by Docker / k8s. Cheap on purpose — no disk hit, no
-// channel inspection — so a slow filesystem cannot flap the container as
-// unhealthy and trigger a restart loop.
+// /health cheap by design: no disk hit, no channel inspection — so a
+// slow filesystem cannot flap the container as unhealthy.
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapPost("/logs", async (HttpRequest req, Channel<LogEntry> q, JsonSerializerOptions opts, CancellationToken ct) =>
@@ -163,39 +129,30 @@ internal sealed class DailyFileWriter : BackgroundService
     {
         try
         {
-            // Create the directory here (not at startup) so the value of
-            // LogsDirectory injected by WebApplicationFactory in tests is the
-            // one actually honored. Idempotent — fine to call every time the
-            // service starts.
+            // CreateDirectory here (not at startup) so the LogsDirectory
+            // value injected by WebApplicationFactory in tests is honored.
             Directory.CreateDirectory(_options.LogsDirectory);
 
             await foreach (var entry in _queue.Reader.ReadAllAsync(stoppingToken))
             {
-                // CancellationToken.None on the write: the entry has already
-                // been dequeued and acknowledged with 204. Cancelling the
-                // File.AppendAllTextAsync mid-flight would lose it without
-                // any way for FlushRemainingAsync to recover it (it's no
-                // longer in the channel). The loop itself still exits on
-                // ReadAllAsync(stoppingToken) at the next iteration.
+                // CancellationToken.None on the write: the entry is already
+                // dequeued and acked 204. Cancelling mid-flight would lose
+                // it (FlushRemainingAsync no longer sees it). The loop
+                // itself exits on ReadAllAsync's next iteration.
                 await AppendAsync(entry, CancellationToken.None);
             }
         }
         catch (OperationCanceledException)
         {
-            // Normal shutdown path. The application is exiting; any entries
-            // still in the channel will be drained by the FlushRemaining
-            // call below.
+            // Normal shutdown. Pending entries drained by FlushRemainingAsync.
         }
         catch (Exception ex)
         {
-            // Permanent fault (UnauthorizedAccessException on a bad bind-
-            // mount, disk full, etc.). Complete the channel WITH this
-            // exception so every subsequent POST /logs trips
-            // ChannelClosedException and returns 503 instead of accepting
-            // entries we cannot persist. Without this, BackgroundService-
-            // ExceptionBehavior.Ignore keeps /health green while the
-            // writer is dead — clients see 204s, drop entries from their
-            // retry buffer, and we silently lose data.
+            // Permanent fault (disk full, bind-mount permission denied, …).
+            // Complete the channel WITH the exception so every subsequent
+            // POST /logs trips ChannelClosedException → 503. Without this,
+            // BackgroundServiceExceptionBehavior.Ignore would keep /health
+            // green while the writer is dead → silent data loss.
             _queue.Writer.TryComplete(ex);
             throw;
         }

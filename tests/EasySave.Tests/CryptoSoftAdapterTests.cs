@@ -158,18 +158,9 @@ public class CryptoSoftAdapterTests
         // adapter.Encrypt on the test thread. Named mutexes are
         // recursive per thread — holding from the same thread that
         // later calls Encrypt would let the recursive WaitOne return
-        // immediately and falsely report "no contention". A separate
+        // immediately and falsely report "no contention". A dedicated
         // owner thread makes the contention real.
-        //
-        // The previous version of this test spawned a Task.Run holder
-        // that itself called adapter.Encrypt with a fake Process — it
-        // depended on Thread.Sleep racing the process spawn, which is
-        // flaky under CI load. Holding the OS mutex directly bypasses
-        // both flakiness sources.
-        //
-        // Mutex name re-declared here on purpose: an internal rename
-        // on the adapter side would (correctly) break this test.
-        const string mutexName = @"Global\ProSoft.CryptoSoft.SingleInstance";
+        string mutexName = CryptoSoftAdapter.GlobalMutexName;
         using var acquired = new ManualResetEventSlim(false);
         using var release = new ManualResetEventSlim(false);
 

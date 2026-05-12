@@ -100,45 +100,20 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        // Day file is decided here so an entry produced just before midnight
+        // Day file decided here so an entry produced just before midnight
         // lands in the right file even if the writer task drains it later.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.json");
+        LogEntry normalized = LogRouter.Normalize(entry);
 
-        // Cahier asks for UNC paths in the log. Real UNC only exists for
-        // network shares — for local paths we fall back to the Windows
-        // extended-length prefix (\\?\). Copy the entry so we don't mutate
-        // the caller's object.
-        LogEntry normalized = new()
-        {
-            Timestamp = entry.Timestamp,
-            JobName = entry.JobName,
-            SourceFile = LogPathHelper.ToNormalizedPath(entry.SourceFile),
-            TargetFile = LogPathHelper.ToNormalizedPath(entry.TargetFile),
-            FileSize = entry.FileSize,
-            FileTransferTimeMs = entry.FileTransferTimeMs,
-            EncryptionTimeMs = entry.EncryptionTimeMs,
-            EventType = entry.EventType,
-            // Stamp host/user only when the caller did not supply them.
-            // A central collector relaying entries from remote hosts will
-            // forward the original sender's fields untouched — never the
-            // collector's own machine.
-            MachineName = entry.MachineName ?? Environment.MachineName,
-            UserName = entry.UserName ?? Environment.UserName,
-        };
-
-        // Centralized side first: the shipper is async and non-blocking, so
-        // doing it before the local write does not slow the caller down.
-        // Append on the shipper is a buffered enqueue — never throws on
-        // network failures.
         if (LogRouter.ShouldShip(_mode))
         {
             _shipper!.Append(normalized);
         }
 
-        // Centralized-only skips the daily file entirely. The shipper owns
-        // durability in that case; a host that crashes between Append and
-        // a successful POST loses the entry — operators are expected to
-        // run LogMode.Both during cut-over for that exact reason.
+        // Centralized-only mode: the shipper owns durability, skip the
+        // local file. Operators run LogMode.Both during cut-over so a
+        // host crash between Append and successful POST can fall back
+        // to the local copy.
         if (!LogRouter.ShouldWriteLocal(_mode))
         {
             return;
@@ -179,12 +154,10 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    // Belt-and-braces: FlushBatch is now expected to swallow
-                    // per-group failures itself (issue #155), but any code
-                    // path that ever re-introduces a throw here would kill
-                    // the writer task and hang every future Append on its
-                    // TaskCompletionSource. Catch + surface to surviving
-                    // acks so the writer stays alive.
+                    // Belt-and-braces: FlushBatch swallows per-group failures
+                    // itself, but any future throw escaping it would kill the
+                    // writer and hang every Append on its
+                    // TaskCompletionSource. Surface to surviving acks.
                     foreach (var req in batch)
                     {
                         req.Ack.TrySetException(ex);
@@ -222,11 +195,11 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
         {
             string filePath = group.Key;
 
-            // Wrap the whole per-group body. Pre-fix (issue #155), only the
-            // WriteAtomic try/catch was here, and a throw from ReadExisting
-            // (transient IOException from AV / OneDrive on the first append
-            // of the day) escaped FlushBatch, killed the writer task, and
-            // left every future Append blocked on its TaskCompletionSource.
+            // Wrap the whole per-group body: a throw from ReadExisting
+            // (transient IOException from AV / OneDrive on the first
+            // append of the day) must NOT escape — it would kill the
+            // writer task and hang every future Append on its
+            // TaskCompletionSource.
             int addedThisGroup = 0;
             List<LogEntry>? entries = null;
             try

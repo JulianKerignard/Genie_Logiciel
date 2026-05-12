@@ -71,7 +71,7 @@ public class LogCentralizerTests : IDisposable
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
-        var line = await WaitForLinesAsync(_logsDir, expected: 1);
+        var line = await LogFilePoller.WaitForLinesAsync(_logsDir, expected: 1);
         var persisted = JsonSerializer.Deserialize<LogEntry>(line[0])!;
         Assert.Equal("single-client", persisted.JobName);
         Assert.Equal("WS-01", persisted.MachineName);
@@ -144,7 +144,7 @@ public class LogCentralizerTests : IDisposable
         }
         await Task.WhenAll(tasks);
 
-        var lines = await WaitForLinesAsync(_logsDir, expected: clients * entriesPerClient);
+        var lines = await LogFilePoller.WaitForLinesAsync(_logsDir, expected: clients * entriesPerClient);
 
         Assert.Single(Directory.GetFiles(_logsDir, "*.jsonl"));
         Assert.Equal(clients * entriesPerClient, lines.Length);
@@ -183,7 +183,7 @@ public class LogCentralizerTests : IDisposable
         var response = await client.PostAsJsonAsync("/logs", entry);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
-        var line = (await WaitForLinesAsync(_logsDir, expected: 1))[0];
+        var line = (await LogFilePoller.WaitForLinesAsync(_logsDir, expected: 1))[0];
         Assert.DoesNotContain("MachineName", line);
         Assert.DoesNotContain("UserName", line);
     }
@@ -217,7 +217,7 @@ public class LogCentralizerTests : IDisposable
         };
         shipper.Append(sent);
 
-        var line = (await WaitForLinesAsync(_logsDir, expected: 1))[0];
+        var line = (await LogFilePoller.WaitForLinesAsync(_logsDir, expected: 1))[0];
         var persisted = JsonSerializer.Deserialize<LogEntry>(line)!;
 
         Assert.Equal(sent.JobName, persisted.JobName);
@@ -235,37 +235,6 @@ public class LogCentralizerTests : IDisposable
     // Helpers
     // ──────────────────────────────────────────────────────────────────────
 
-    // Poll the logs directory until the expected number of lines is observed
-    // or the timeout elapses. Mirrors how an external admin would tail the
-    // file — the background writer is async, so an assertion that fires
-    // right after PostAsync can race against the channel drain.
-    private static async Task<string[]> WaitForLinesAsync(string logsDir, int expected, TimeSpan? timeout = null)
-    {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
-        while (DateTime.UtcNow < deadline)
-        {
-            var files = Directory.GetFiles(logsDir, "*.jsonl");
-            if (files.Length > 0)
-            {
-                // Read with FileShare.ReadWrite so we never race the writer's
-                // open file handle while it appends.
-                using var fs = new FileStream(files[0], FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var sr = new StreamReader(fs);
-                var content = await sr.ReadToEndAsync();
-                // Split on both \r and \n so a Windows CI runner (where the
-                // writer emits "\r\n" via Environment.NewLine) does not leave
-                // a trailing '\r' on every token — JsonSerializer.Deserialize
-                // would throw JsonException on the stray byte.
-                var lines = content.Split(
-                    new[] { '\r', '\n' },
-                    StringSplitOptions.RemoveEmptyEntries);
-                if (lines.Length >= expected) return lines;
-            }
-            await Task.Delay(100);
-        }
-        throw new Xunit.Sdk.XunitException(
-            $"Expected {expected} persisted lines under {logsDir} within timeout.");
-    }
 
     private sealed class CustomFactory : WebApplicationFactory<Program>
     {
