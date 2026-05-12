@@ -54,7 +54,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/publish ./
+# --chown=app:app explicitly transfers ownership of the published
+# files to the runtime user. Without this, COPY preserves whatever
+# uid/gid existed in the build stage (root) and some Docker builders
+# (notably BuildKit on Testcontainers) end up producing files the
+# `app` user cannot read — the app then crashes on startup with
+# UnauthorizedAccessException on /app/appsettings.json. Tested fine
+# with `docker compose build` (classic builder) but reproduced
+# reliably on the Testcontainers BuildKit-driven path.
+COPY --from=build --chown=app:app /app/publish ./
 
 # Run as a non-root user. The aspnet:8.0 image ships with the
 # `app` user (UID 1654 on .NET 8). Pre-create the logs dir with the

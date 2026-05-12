@@ -168,20 +168,6 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Skip on CI. GitHub Actions sets CI=true on every runner. Even when
-        // the daemon is technically present, the e2e suite consistently hangs
-        // at "Wait for Docker container to complete readiness checks" — the
-        // Linux bind-mount + UID-1654 interaction is a known footgun that
-        // doesn't reproduce on Docker Desktop (macOS/Windows do transparent
-        // UID translation). The in-process suite covers the same functional
-        // contract for the CI gate; this suite stays valuable on dev
-        // workstations to validate the actual Docker image before tag.
-        if (string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase))
-        {
-            SkipReason = "Skipped on CI runners — run locally with Docker daemon to exercise the real image.";
-            return;
-        }
-
         try
         {
             HostLogsDir = Path.Combine(
@@ -216,15 +202,35 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
                 .WithImage(ImageTag)
                 .WithPortBinding(ContainerLogsPort, assignRandomHostPort: true)
                 .WithBindMount(HostLogsDir, "/var/log/easysave")
-                .WithWaitStrategy(Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(req => req
-                        .ForPath("/health")
-                        .ForPort(ContainerLogsPort)))
+                // Intentionally NO WithWaitStrategy: Testcontainers .NET
+                // issue #1639 — UntilHttpRequestIsSucceeded has a hardcoded
+                // 100 s HttpClient timeout whose TaskCanceledException is
+                // not caught by the wait-strategy retry loop, so the probe
+                // loops silently until the container default start-timeout
+                // fires (60 min). We do the readiness probe ourselves
+                // below with an explicit, bounded poll loop.
                 .Build();
             await _container.StartAsync().ConfigureAwait(false);
 
             int hostPort = _container.GetMappedPublicPort(ContainerLogsPort);
             Http = new HttpClient { BaseAddress = new Uri($"http://localhost:{hostPort}") };
+
+            try
+            {
+                await WaitForHealthAsync(Http, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // Capture the container's stdout / stderr so a failed
+                // readiness probe surfaces what actually happened inside
+                // (app crashed at startup? bound to a different port?
+                // wrote a stack trace?) — without these logs the
+                // SkippableFact reason is useless.
+                (string stdout, string stderr) = await _container.GetLogsAsync().ConfigureAwait(false);
+                throw new TimeoutException(
+                    $"LogCentralizer /health unreachable. Container stdout/stderr:\n" +
+                    $"--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
+            }
         }
         catch (Exception ex)
         {
@@ -283,5 +289,45 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
                 "Could not locate repo root (EasySave.sln) from the test assembly path.");
         }
         return dir.FullName;
+    }
+
+    // Bounded poll loop on /health. Replaces Testcontainers'
+    // UntilHttpRequestIsSucceeded which silently hangs for 60 min on a
+    // probe timeout (Testcontainers .NET issue #1639 — hardcoded 100 s
+    // HttpClient timeout whose TaskCanceledException escapes the
+    // wait-strategy retry catch block). Here we own the timeout and the
+    // exception filter, so a failed probe surfaces as a clean
+    // TimeoutException within 30 s — the InitializeAsync catch then
+    // records the message in SkipReason for the inline-test skip.
+    private static async Task WaitForHealthAsync(HttpClient client, TimeSpan timeout)
+    {
+        // Per-request budget short enough that we can probe multiple times
+        // inside the overall timeout, but long enough to ride out a
+        // momentarily slow Kestrel boot inside the container.
+        using var probeClient = new HttpClient
+        {
+            BaseAddress = client.BaseAddress,
+            Timeout = TimeSpan.FromSeconds(2),
+        };
+
+        var deadline = DateTime.UtcNow + timeout;
+        Exception? lastError = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                using var response = await probeClient.GetAsync("/health").ConfigureAwait(false);
+                if (response.IsSuccessStatusCode) return;
+                lastError = new HttpRequestException($"/health returned {(int)response.StatusCode}");
+            }
+            catch (HttpRequestException ex) { lastError = ex; }
+            catch (TaskCanceledException ex) { lastError = ex; }
+
+            await Task.Delay(250).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException(
+            $"LogCentralizer /health did not become reachable within {timeout.TotalSeconds:F0}s. " +
+            $"Last error: {lastError?.GetType().Name}: {lastError?.Message}");
     }
 }
