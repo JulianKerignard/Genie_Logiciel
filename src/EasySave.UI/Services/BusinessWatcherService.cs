@@ -3,7 +3,7 @@ using EasySave.Services;
 
 namespace EasySave.UI.Services;
 
-public sealed class BusinessWatcherService : IDisposable
+public sealed class BusinessWatcherService : IBusinessSoftwareSignals, IDisposable
 {
     private BusinessSoftwareDetector? _detector;
     private bool _disposed;

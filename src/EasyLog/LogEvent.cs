@@ -37,4 +37,10 @@ public enum LogEvent
 
     /// <summary>A previously paused backup job resumed after its PauseGate was signaled by IJobController.Resume(jobName) or ResumeAll().</summary>
     JobResumed = 9,
+
+    /// <summary>The business-software watcher detected a configured process and triggered IJobController.PauseAll() on every running job. The watched process name is recorded in SourceFile.</summary>
+    BusinessSoftwareAutoPaused = 10,
+
+    /// <summary>The business-software watcher saw the last configured process disappear and triggered IJobController.ResumeAll() on every paused job.</summary>
+    BusinessSoftwareAutoResumed = 11,
 }

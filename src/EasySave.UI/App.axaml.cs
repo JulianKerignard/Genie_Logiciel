@@ -67,6 +67,13 @@ public partial class App : Application
 
         Services.GetRequiredService<SchedulerDispatchService>().Start();
 
+        // V3 business-software auto-pause path. Hook the bridge into the
+        // watcher BEFORE JobsViewModel.ctor calls watcher.Start(), so the
+        // very first appear/gone tick is observed and PauseAll/ResumeAll
+        // get fired on the orchestrator. No-op when no v3 jobs are
+        // running (PauseAll iterates an empty live job map).
+        Services.GetRequiredService<EasySave.Services.BusinessSoftwareControllerBridge>().Start();
+
         // V3 remote console wiring. Gated on appsettings.json so the GUI
         // boot stays minimal for operators who don't need a remote operator
         // station. When enabled:
@@ -149,6 +156,16 @@ public partial class App : Application
         // UI adapter layer
         services.AddSingleton<IBackupManagerAdapter, BackupManagerAdapter>();
         services.AddSingleton<BusinessWatcherService>();
+        // Engine-level bridge that hooks the v3 IJobController surface to
+        // the watcher: when a configured process appears, PauseAll() is
+        // called on every running job, and ResumeAll() runs on the
+        // trailing edge. Subscribes via IBusinessSoftwareSignals so the
+        // bridge stays UI-agnostic (testable with a stub).
+        services.AddSingleton<EasySave.Services.BusinessSoftwareControllerBridge>(sp =>
+            new EasySave.Services.BusinessSoftwareControllerBridge(
+                sp.GetRequiredService<BusinessWatcherService>(),
+                sp.GetRequiredService<IParallelBackupOrchestrator>(),
+                sp.GetRequiredService<IDailyLogger>()));
         services.AddSingleton<IRestoreService>(_ => new RestoreService(JobRepository.Instance));
         services.AddSingleton<ISchedulerService, SchedulerService>();
         services.AddSingleton<SchedulerDispatchService>();
@@ -287,6 +304,7 @@ public partial class App : Application
 
         Services?.GetService<SchedulerDispatchService>()?.Dispose();
         Services?.GetService<IBackupManagerAdapter>()?.Dispose();
+        Services?.GetService<EasySave.Services.BusinessSoftwareControllerBridge>()?.Dispose();
         Services?.GetService<BusinessWatcherService>()?.Dispose();
 
         // V3 orchestrator + gate. Dispose order: orchestrator first so any
