@@ -229,6 +229,7 @@ public sealed class BackupManager
             TotalSize = eligible.Sum(x => x.file.Length),
             FilesRemaining = toCopy.Count,
             SizeRemaining = toCopy.Sum(x => x.file.Length),
+            FailedFiles = 0,
         };
         _stateTracker.Update(state);
 
@@ -300,6 +301,9 @@ public sealed class BackupManager
                 FileHelpers.EnsureDirectoryExists(targetPath);
 
                 var (transferMs, encryptionMs) = ProcessFile(file, targetPath, ct);
+
+                if (transferMs < 0)
+                    state.FailedFiles++;
 
                 _logger.Append(new LogEntry
                 {
