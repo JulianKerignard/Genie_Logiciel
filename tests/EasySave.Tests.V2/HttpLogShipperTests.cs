@@ -300,7 +300,7 @@ public class HttpLogShipperTests : IDisposable
         var receivedJobs = handler.Requests
             .Skip(failuresBeforeRecovery)
             .Select(r => JsonDocument.Parse(r.Body)
-                .RootElement.GetProperty("Entry").GetProperty("JobName").GetString())
+                .RootElement.GetProperty("Entry").GetProperty("JobName").GetString()!)
             .ToHashSet();
         var expectedJobs = Enumerable.Range(0, entryCount)
             .Select(i => $"loss-test-{i:D3}")
