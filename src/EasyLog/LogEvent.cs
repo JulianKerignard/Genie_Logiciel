@@ -31,4 +31,10 @@ public enum LogEvent
 
     /// <summary>A Pause / Play / Stop command arrived from the remote console.</summary>
     CommandReceived = 7,
+
+    /// <summary>A backup job stalled at a file boundary because its PauseGate was reset by IJobController.Pause(jobName) or PauseAll() (business-software watcher included).</summary>
+    JobPaused = 8,
+
+    /// <summary>A previously paused backup job resumed after its PauseGate was signaled by IJobController.Resume(jobName) or ResumeAll().</summary>
+    JobResumed = 9,
 }

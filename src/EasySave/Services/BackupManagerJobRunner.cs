@@ -41,9 +41,14 @@ public sealed class BackupManagerJobRunner : IJobRunner
 
         // ExecuteJob is synchronous; run it on the thread pool with the
         // per-job CTS so Stop()/Cancel() unwind it at the next file
-        // boundary without disturbing sibling jobs.
+        // boundary without disturbing sibling jobs. PauseGate is forwarded
+        // so IJobController.Pause/PauseAll stalls this job between two
+        // files without producing a Cancelled JobOutcome.
         return Task.Run(
-            () => _backupManager.ExecuteJob(context.JobName, ct: context.Cts.Token),
+            () => _backupManager.ExecuteJob(
+                context.JobName,
+                pauseGate: context.PauseGate,
+                ct: context.Cts.Token),
             context.Cts.Token);
     }
 }

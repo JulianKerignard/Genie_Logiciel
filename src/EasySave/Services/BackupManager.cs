@@ -142,7 +142,7 @@ public sealed class BackupManager
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
     /// <exception cref="KeyNotFoundException">Thrown when no job with that name exists.</exception>
     /// <exception cref="DirectoryNotFoundException">Thrown when the source directory does not exist.</exception>
-    public void ExecuteJob(string name, string? resumeAfterPath = null, CancellationToken ct = default)
+    public void ExecuteJob(string name, string? resumeAfterPath = null, ManualResetEventSlim? pauseGate = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -150,7 +150,7 @@ public sealed class BackupManager
         var job = jobs.FirstOrDefault(j => j.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                   ?? throw new KeyNotFoundException(name);
 
-        RunJob(job, resumeAfterPath, ct);
+        RunJob(job, resumeAfterPath, pauseGate, ct);
     }
 
     /// <summary>
@@ -161,7 +161,7 @@ public sealed class BackupManager
     {
         foreach (var job in _jobRepository.Load())
         {
-            try { RunJob(job, resumeAfterPath: null, CancellationToken.None); }
+            try { RunJob(job, resumeAfterPath: null, pauseGate: null, CancellationToken.None); }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
@@ -169,7 +169,7 @@ public sealed class BackupManager
         }
     }
 
-    private void RunJob(BackupJob job, string? resumeAfterPath, CancellationToken ct)
+    private void RunJob(BackupJob job, string? resumeAfterPath, ManualResetEventSlim? pauseGate, CancellationToken ct)
     {
         var sourceDir = new DirectoryInfo(job.SourcePath);
         if (!sourceDir.Exists)
@@ -220,6 +220,46 @@ public sealed class BackupManager
                 // never left in a partial state.
                 ct.ThrowIfCancellationRequested();
 
+                // V3 PauseGate: if a controller (IJobController.Pause /
+                // PauseAll, business-software watcher, remote console) has
+                // reset the gate, stall here until it gets signaled again.
+                // The wait is token-aware so a concurrent Stop unblocks it
+                // with an OperationCanceledException rather than a hung
+                // worker thread. Transitions are logged and reflected in
+                // state.json so the GUI and remote consoles see the pause.
+                if (pauseGate is not null && !pauseGate.IsSet)
+                {
+                    state.State = JobState.Paused;
+                    state.LastActionTime = DateTimeOffset.Now;
+                    _stateTracker.Update(state);
+                    _logger.Append(new LogEntry
+                    {
+                        Timestamp = DateTimeOffset.Now.ToString("o"),
+                        JobName = job.Name,
+                        SourceFile = string.Empty,
+                        TargetFile = string.Empty,
+                        FileSize = 0,
+                        FileTransferTimeMs = 0,
+                        EventType = LogEvent.JobPaused,
+                    });
+
+                    pauseGate.Wait(ct);
+
+                    state.State = JobState.Active;
+                    state.LastActionTime = DateTimeOffset.Now;
+                    _stateTracker.Update(state);
+                    _logger.Append(new LogEntry
+                    {
+                        Timestamp = DateTimeOffset.Now.ToString("o"),
+                        JobName = job.Name,
+                        SourceFile = string.Empty,
+                        TargetFile = string.Empty,
+                        FileSize = 0,
+                        FileTransferTimeMs = 0,
+                        EventType = LogEvent.JobResumed,
+                    });
+                }
+
                 FileHelpers.EnsureDirectoryExists(targetPath);
 
                 var (transferMs, encryptionMs) = ProcessFile(file, targetPath, ct);
@@ -246,7 +286,13 @@ public sealed class BackupManager
         }
         catch (OperationCanceledException)
         {
-            paused = true;
+            // v2 callers cancel the token when they want a Pause (the
+            // adapter then restarts the job from the resume cursor). v3
+            // callers (BackupManagerJobRunner) cancel the token only for
+            // Stop and use the dedicated PauseGate for Pause, so an OCE on
+            // that path means "stop" and must leave the job Inactive, not
+            // Paused. Differentiate on whether a pauseGate was supplied.
+            paused = pauseGate is null;
             throw;
         }
         finally
