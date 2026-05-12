@@ -118,8 +118,12 @@ operators run `Both` during cut-over for that exact reason.
 ## Healthcheck
 
 The container declares a `HEALTHCHECK` that hits `/health` every 30 s
-using `curl`. `docker ps` reports `(healthy)` once three probes have
-succeeded inside the `start_period` window (10 s).
+using `curl`. `docker ps` reports `(healthy)` after the first
+successful probe (typically a few seconds after `docker compose up`).
+The `retries: 3` knob in `docker-compose.yml` is for the failure
+direction: three consecutive failed probes flip the container into
+`(unhealthy)`. During the `start_period` (10 s) failed probes do
+NOT count against that retry budget, so a slow boot is tolerated.
 
 | Probe | Means |
 | --- | --- |
