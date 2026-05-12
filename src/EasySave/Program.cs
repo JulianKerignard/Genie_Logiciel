@@ -14,7 +14,17 @@ catch (IOException ex)
     Environment.Exit(1);
 }
 
-var logger = new JsonDailyLogger(AppConfig.Instance.LogDirectory);
+var (logger, logShipper) = DailyLoggerFactory.Create(
+    AppConfig.Instance.LogDirectory,
+    AppConfig.Instance.Settings.LogFormat,
+    AppConfig.Instance.Settings.LogMode,
+    AppConfig.Instance.Settings.LogCentralizedEndpoint);
+// ProcessExit is sync — an async lambda would be async void and the
+// runtime would not wait for the channel drain, losing buffered entries
+// on shutdown. Block here so DisposeAsync completes before the process
+// exits.
+AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+    logShipper?.DisposeAsync().AsTask().GetAwaiter().GetResult();
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)
     ? new NoOpEncryptionService()
     : new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft);
