@@ -225,6 +225,24 @@ public sealed partial class JobsViewModel : ViewModelBase
             {
                 StatusMessage = ex.Message;
             }
+            finally
+            {
+                // If the orchestrator threw (ObjectDisposedException on
+                // shutdown, ArgumentException on duplicate names) before
+                // the engine could publish its final state, the cards we
+                // promoted to Running above would otherwise stay stuck
+                // there. Reset only the cards we touched and only if they
+                // are still Running — leave cards the engine has already
+                // moved to Paused / Completed alone.
+                foreach (var vm in eligible)
+                {
+                    if (vm.UiState == UiJobState.Running)
+                    {
+                        vm.UiState = UiJobState.Idle;
+                        vm.Progress = 0;
+                    }
+                }
+            }
             return;
         }
 
@@ -236,10 +254,18 @@ public sealed partial class JobsViewModel : ViewModelBase
     private void PauseJob(BackupJobVM vm)
     {
         vm.UiState = UiJobState.Paused;
-        // Pause both the adapter (for single-Run jobs) and the orchestrator
-        // (for Run-All jobs). One has the job, the other is a no-op.
+        // Single-Run jobs (in the adapter): a real pause that stops the
+        // worker at the next file boundary and persists "Paused" in
+        // state.json, ready to be resumed from the same offset.
         _backup.PauseJob(vm.Name);
-        _orchestrator?.Pause(vm.Name);
+        // Run-All jobs (in the orchestrator): the v3 BackupManagerJobRunner
+        // does not honor ctx.PauseGate today, so orchestrator.Pause() would
+        // be a no-op. Use orchestrator.Stop() which cancels the per-job CTS
+        // and stops the worker at the next file boundary. Effective result:
+        // the job halts and shows Inactive — it cannot be resumed from the
+        // same offset on this path (Resume button is a no-op for Run-All
+        // jobs in this iteration). Documented limitation.
+        _orchestrator?.Stop(vm.Name);
     }
 
     [RelayCommand]
@@ -247,8 +273,10 @@ public sealed partial class JobsViewModel : ViewModelBase
     {
         if (IsBusinessSoftwareDetected) return;
         vm.UiState = UiJobState.Running;
+        // Only the adapter knows how to resume from a saved offset. For
+        // Run-All-launched jobs, Pause acted as Stop above; Resume is a
+        // visual no-op until the user clicks Run on the card again.
         _backup.ResumeJob(vm.Name);
-        _orchestrator?.Resume(vm.Name);
     }
 
     // Used by RunAllAsync to run a job without navigating (navigation is done once before the loop).
