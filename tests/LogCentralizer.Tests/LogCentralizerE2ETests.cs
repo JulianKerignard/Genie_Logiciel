@@ -86,9 +86,26 @@ public sealed class LogCentralizerE2ETests : IAsyncLifetime
             // Daemon down, socket unreachable, image build failed — any of
             // those should skip the suite, not fail it. Clean up partial
             // state so DisposeAsync has nothing dangling to release.
-            _http?.Dispose(); _http = null;
-            if (_container is not null) { await _container.DisposeAsync(); _container = null; }
-            if (_image is not null)     { await _image.DisposeAsync();     _image = null; }
+            _http?.Dispose();
+            _http = null;
+            if (_container is not null)
+            {
+                await _container.DisposeAsync();
+                _container = null;
+            }
+            if (_image is not null)
+            {
+                await _image.DisposeAsync();
+                _image = null;
+            }
+            // Delete the temp directory before nulling its reference: the
+            // suite-skipped path otherwise leaks one logcentralizer-e2e-<guid>
+            // directory per test class instance under %TEMP%.
+            if (_hostLogsDir is not null && Directory.Exists(_hostLogsDir))
+            {
+                try { Directory.Delete(_hostLogsDir, recursive: true); }
+                catch (IOException) { /* best-effort cleanup on the skip path */ }
+            }
             _hostLogsDir = null;
 
             // Re-surface the message via Trace so a developer who expected
@@ -178,15 +195,16 @@ public sealed class LogCentralizerE2ETests : IAsyncLifetime
         Assert.Single(Directory.GetFiles(_hostLogsDir!, "*.jsonl"));
         Assert.Equal(clientCount * entriesPerClient, lines.Length);
 
-        var serializerOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        var distinctMachines = lines
-            .Select(l => JsonSerializer.Deserialize<LogEntry>(l, serializerOpts)!.MachineName!)
-            .Distinct()
-            .ToHashSet();
-        var distinctUsers = lines
-            .Select(l => JsonSerializer.Deserialize<LogEntry>(l, serializerOpts)!.UserName!)
-            .Distinct()
-            .ToHashSet();
+        // Default serializer options (no PropertyNameCaseInsensitive) so the
+        // e2e suite enforces the same strict-PascalCase contract as the
+        // in-process suite. A regression that made the container emit
+        // camelCase on disk would fail BOTH suites instead of one quietly
+        // passing while the other broke.
+        var parsed = lines
+            .Select(l => JsonSerializer.Deserialize<LogEntry>(l)!)
+            .ToList();
+        var distinctMachines = parsed.Select(e => e.MachineName!).Distinct().ToHashSet();
+        var distinctUsers = parsed.Select(e => e.UserName!).Distinct().ToHashSet();
 
         Assert.Equal(machines.ToHashSet(), distinctMachines);
         Assert.Equal(users.ToHashSet(), distinctUsers);
