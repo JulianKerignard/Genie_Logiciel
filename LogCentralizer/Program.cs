@@ -32,6 +32,16 @@ using EasyLog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// .NET 6+ default is BackgroundServiceExceptionBehavior.StopHost — an
+// unhandled exception in DailyFileWriter.ExecuteAsync would tear the whole
+// host down, including /health. On a misconfigured Linux deployment the
+// bind-mounted /var/log/easysave can be owned by a UID the container's
+// `app` user cannot write to, which would otherwise silently kill the
+// service. Keep /health responsive so operators see "writer down" via
+// the absence of new entries rather than a black-hole container.
+builder.Services.Configure<HostOptions>(opts =>
+    opts.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
+
 // JSON serializer for entries that LAND on disk. WhenWritingNull keeps the
 // daily file byte-for-byte compatible with EasyLog's local format: a row
 // without MachineName/UserName looks exactly like a v1.x row.

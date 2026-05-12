@@ -175,6 +175,20 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
                 "logcentralizer-e2e-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(HostLogsDir);
 
+            // Linux runners (GitHub Actions, native Linux dev) need 0777 on
+            // the host bind-mount: the container's `app` user (UID 1654)
+            // cannot write to a directory owned by the runner user otherwise,
+            // and the DailyFileWriter background service would silently
+            // fault. Docker Desktop on macOS / Windows translates UIDs
+            // transparently so this call is a no-op there.
+            if (OperatingSystem.IsLinux())
+            {
+                File.SetUnixFileMode(HostLogsDir,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+            }
+
             string repoRoot = LocateRepoRoot();
             _image = new ImageFromDockerfileBuilder()
                 .WithName(ImageTag)
