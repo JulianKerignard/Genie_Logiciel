@@ -20,7 +20,9 @@ public sealed class BackupManager
     private readonly JobRepository _jobRepository;
     private readonly IEncryptionService _encryption;
     private readonly HashSet<string> _encryptedExtensions;
+    private readonly HashSet<string> _priorityExtensions;
     private readonly IBigFileGate? _bigFileGate;
+    private readonly IPriorityGate? _priorityGate;
 
     /// <summary>
     /// Wires the manager with its dependencies. All parameters are required;
@@ -47,7 +49,9 @@ public sealed class BackupManager
         JobRepository jobRepository,
         IEncryptionService encryption,
         IEnumerable<string> encryptedExtensions,
-        IBigFileGate? bigFileGate = null)
+        IBigFileGate? bigFileGate = null,
+        IPriorityGate? priorityGate = null,
+        IEnumerable<string>? priorityExtensions = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(fullStrategy);
@@ -64,7 +68,10 @@ public sealed class BackupManager
         _jobRepository = jobRepository;
         _encryption = encryption;
         _encryptedExtensions = new HashSet<string>(encryptedExtensions, StringComparer.OrdinalIgnoreCase);
+        _priorityExtensions = new HashSet<string>(
+            priorityExtensions ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         _bigFileGate = bigFileGate;
+        _priorityGate = priorityGate;
     }
 
     /// <summary>
@@ -198,6 +205,21 @@ public sealed class BackupManager
             ? eligible.Where(x => StringComparer.Ordinal.Compare(x.file.FullName, resumeAfterPath) > 0).ToList()
             : eligible;
 
+        // CdC V3: priority-extension files copy before non-priority files
+        // inside the SAME job. The cross-job barrier (PriorityGate.Wait)
+        // already prevents non-priority files of any job from starting
+        // while priorities are pending anywhere; this in-job reordering
+        // is a pure optimization that lets the gate clear faster (each
+        // job drains its priorities first instead of interleaving).
+        // When no priority extension is configured, all files are non-
+        // priority and the OrderBy is a stable no-op on the existing
+        // ordinal sort.
+        toCopy = toCopy
+            .OrderByDescending(x => IsPriority(x.file))
+            .ThenBy(x => x.file.FullName, StringComparer.Ordinal)
+            .ToList();
+        var priorityFilesRemaining = toCopy.Count(x => IsPriority(x.file));
+
         var state = new StateEntry
         {
             Name = job.Name,
@@ -210,6 +232,11 @@ public sealed class BackupManager
         };
         _stateTracker.Update(state);
 
+        // Register the job's priority count with the cross-job gate before
+        // the loop starts so a parallel non-priority file from another job
+        // sees the pending priorities and waits.
+        _priorityGate?.RegisterJob(job.Name, priorityFilesRemaining);
+
         bool succeeded = false;
         bool paused = false;
         try
@@ -219,6 +246,16 @@ public sealed class BackupManager
                 // Check at file boundary — never mid-copy — so the target file is
                 // never left in a partial state.
                 ct.ThrowIfCancellationRequested();
+
+                bool isPriority = IsPriority(file);
+
+                // CdC V3 hard rule: « Aucune sauvegarde d'un fichier non
+                // prioritaire ne peut se faire tant qu'il y a des
+                // extensions prioritaires en attente sur au moins un
+                // travail. » The PriorityGate is signaled when every
+                // registered job has zero priority files left.
+                if (!isPriority && _priorityGate is not null)
+                    _priorityGate.WaitForNonPriorityWindow(ct);
 
                 // V3 PauseGate: if a controller (IJobController.Pause /
                 // PauseAll, business-software watcher, remote console) has
@@ -281,6 +318,17 @@ public sealed class BackupManager
                 state.CurrentTarget = targetPath;
                 state.LastActionTime = DateTimeOffset.Now;
                 _stateTracker.Update(state);
+
+                // Tick the cross-job barrier unconditionally after the copy
+                // attempt. A failed transfer is still "this priority file
+                // is no longer pending" — re-trying it later won't help
+                // (ProcessFile signals failure via transferMs < 0 in the
+                // log entry, not by retrying), and leaving the slot
+                // occupied would hold every other job's non-priority
+                // files hostage forever. The CdC rule is "pending", not
+                // "successfully copied".
+                if (isPriority)
+                    _priorityGate?.MarkPriorityFileDone(job.Name);
             }
             succeeded = true;
         }
@@ -297,6 +345,11 @@ public sealed class BackupManager
         }
         finally
         {
+            // Unregister from the priority gate regardless of how the loop
+            // exited: leftover priorities on a stopped / failed job would
+            // otherwise hold every other job's non-priority files hostage.
+            _priorityGate?.UnregisterJob(job.Name);
+
             // Always transition the state. On pause, preserve progress counters
             // so the adapter can compute the resume index from FilesRemaining.
             try
@@ -401,5 +454,16 @@ public sealed class BackupManager
         if (_encryptedExtensions.Count == 0) return false;
         var ext = Path.GetExtension(fileName);
         return !string.IsNullOrEmpty(ext) && _encryptedExtensions.Contains(ext);
+    }
+
+    // True when the file's extension is configured as a CdC V3 priority
+    // extension. Used to order files inside a job (priorities first) and
+    // to count the per-job priority budget registered with the
+    // cross-job PriorityGate.
+    private bool IsPriority(FileInfo file)
+    {
+        if (_priorityExtensions.Count == 0) return false;
+        var ext = file.Extension;
+        return !string.IsNullOrEmpty(ext) && _priorityExtensions.Contains(ext);
     }
 }

@@ -18,6 +18,10 @@ var logger = new JsonDailyLogger(AppConfig.Instance.LogDirectory);
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)
     ? new NoOpEncryptionService()
     : new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft);
+// V3 priority extensions still apply in v1 console mode for the in-job
+// order (priority files copy first within a single job). The cross-job
+// gate is null because the v1 console runs jobs sequentially, never in
+// parallel — no other job can hold the gate.
 var backupManager = new BackupManager(
     logger,
     new FullBackupStrategy(),
@@ -25,7 +29,10 @@ var backupManager = new BackupManager(
     StateTracker.Instance,
     JobRepository.Instance,
     encryption,
-    AppConfig.Instance.Settings.EncryptedExtensions);
+    AppConfig.Instance.Settings.EncryptedExtensions,
+    bigFileGate: null,
+    priorityGate: null,
+    priorityExtensions: AppConfig.Instance.Settings.PriorityExtensions);
 var langService = new LanguageService(AppConfig.Instance.Settings);
 
 if (AppConfig.Instance.Settings.RemoteConsoleEnabled)

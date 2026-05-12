@@ -132,6 +132,14 @@ public partial class App : Application
         services.AddSingleton<IBigFileGate>(_ =>
             new BigFileGate(userSettings.LargeFileThresholdKb * 1024L));
 
+        // V3 priority gate. Cross-job barrier enforcing the CdC rule
+        // « Aucune sauvegarde d'un fichier non prioritaire ne peut se
+        //   faire tant qu'il y a des extensions prioritaires en attente
+        //   sur au moins un travail. »
+        // Shared by every job; non-priority files of any job park here
+        // until every job has finished its priority files.
+        services.AddSingleton<IPriorityGate>(_ => new PriorityGate());
+
         services.AddSingleton<BackupManager>(sp => new BackupManager(
             sp.GetRequiredService<IDailyLogger>(),
             new FullBackupStrategy(),
@@ -140,7 +148,9 @@ public partial class App : Application
             JobRepository.Instance,
             sp.GetRequiredService<IEncryptionService>(),
             userSettings.EncryptedExtensions,
-            sp.GetRequiredService<IBigFileGate>()));
+            sp.GetRequiredService<IBigFileGate>(),
+            sp.GetRequiredService<IPriorityGate>(),
+            userSettings.PriorityExtensions));
 
         // V3 parallel orchestrator + BackupManager-backed job runner.
         // The orchestrator wraps RunAllAsync (see JobsViewModel) so multiple
@@ -313,5 +323,6 @@ public partial class App : Application
         // orchestrator's job runners may still hold transiently.
         Services?.GetService<IParallelBackupOrchestrator>()?.Dispose();
         (Services?.GetService<IBigFileGate>() as IDisposable)?.Dispose();
+        (Services?.GetService<IPriorityGate>() as IDisposable)?.Dispose();
     }
 }
