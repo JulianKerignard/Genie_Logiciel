@@ -34,16 +34,23 @@ le log journalier (`LogEvent.JobPaused`, `LogEvent.JobResumed`).
 | 3 | Variante — Stop pendant un Pause. | Même comportement : le `Wait(ct)` token-aware lance OCE et le job sort Inactive. |
 
 > **Note terminologie** : l'enum `JobState` n'a pas de valeur dédiée
-> `Stopped`. Après un Stop, le job retombe à `Inactive` (`0`) — la même
-> valeur qu'un job complété normalement. Le **signal observable** qui
-> distingue les deux est `FilesRemaining` dans `state.json` :
-> - Stop mid-run → `State = Inactive`, `FilesRemaining > 0`
-> - Run complet → `State = Inactive`, `FilesRemaining = 0`,
->   `Progress = 100`
+> `Stopped`. Après un Stop **comme après un run complet**, le job
+> retombe à `Inactive` (`0`) et `BackupManager.ExecuteJob` reset
+> `FilesRemaining = 0` dans son `finally` (cf. `BackupManager.cs:360`).
+> Les deux états sont **identiques** dans `state.json`.
 >
-> Le log journalier complète l'info : un Stop produit une dernière
-> entrée avec `JobOutcome.Cancelled`, un run complet n'en produit pas
-> (les entrées `FileTransfer` couvrent tout).
+> Le signal observable qui distingue les deux est dans le **log
+> journalier** : comparer le **nombre de lignes `FileTransfer`** du
+> job (entrées avec `EventType = null`, voir
+> `[JsonIgnore(WhenWritingNull)]`) à `TotalFilesEligible` enregistré
+> sur le `StateEntry` au début du run :
+> - Stop mid-run → moins de lignes `FileTransfer` que
+>   `TotalFilesEligible` ;
+> - Run complet → exactement `TotalFilesEligible` lignes.
+>
+> Le log ne contient aucun marqueur "Cancelled" — `JobOutcome` est un
+> type interne renvoyé par `IParallelBackupOrchestrator.RunAsync`,
+> jamais persisté.
 
 ## Procédure — Mix : pause d'un seul job parmi plusieurs actifs
 
@@ -80,9 +87,12 @@ le log journalier (`LogEvent.JobPaused`, `LogEvent.JobResumed`).
 - [ ] **Isolation pause par job** : Pause sur Job A pendant que Job B
       tourne ne ralentit ni n'interrompt Job B. Job B peut même
       terminer avant que A reprenne ; la pause de A reste effective.
-- [ ] **"Stopped" = `Inactive` + `FilesRemaining > 0`**. Pas de valeur
-      d'enum dédiée — distinguer Stop-mid-run d'un run complet via
-      `FilesRemaining` et `JobOutcome.Cancelled` dans le log.
+- [ ] **"Stopped" : pas de valeur d'enum dédiée**. Stop et Complete
+      terminent tous les deux à `State = Inactive` avec
+      `FilesRemaining = 0` (`state.json` identique). Pour les
+      distinguer, compter les lignes `FileTransfer` du job dans le log
+      journalier et comparer à `TotalFilesEligible` capturé au début
+      du run.
 
 ## Couverture automatique
 
