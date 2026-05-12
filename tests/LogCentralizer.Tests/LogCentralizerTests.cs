@@ -198,7 +198,7 @@ public class LogCentralizerTests : IDisposable
         // MachineName, UserName, EncryptionTimeMs. A regression that
         // re-introduces a wrapper envelope (or renames a field) would
         // surface here.
-        var httpClient = _factory.CreateClient();
+        using var httpClient = _factory.CreateClient();
         await using var shipper = new HttpLogShipper(
             new Uri(httpClient.BaseAddress!, "/logs"),
             httpClient);
