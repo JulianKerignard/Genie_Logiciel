@@ -19,7 +19,7 @@ public class CryptoSoftAdapterTests
     [Fact]
     public void Encrypt_EmptyPath_ReturnsFailure()
     {
-        var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = string.Empty });
+        using var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = string.Empty });
 
         var result = adapter.Encrypt("/tmp/src", "/tmp/dst");
 
@@ -30,7 +30,7 @@ public class CryptoSoftAdapterTests
     [Fact]
     public void Encrypt_PathDoesNotExist_ReturnsFailure()
     {
-        var adapter = new CryptoSoftAdapter(new CryptoSoftSettings
+        using var adapter = new CryptoSoftAdapter(new CryptoSoftSettings
         {
             Path = "/this/path/definitely/does/not/exist/cryptosoft.exe",
             TimeoutMs = 1000,
@@ -45,7 +45,7 @@ public class CryptoSoftAdapterTests
     [Fact]
     public void Encrypt_NullSource_Throws()
     {
-        var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = "anything" });
+        using var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = "anything" });
 
         // ArgumentException.ThrowIfNullOrWhiteSpace surfaces ArgumentNullException
         // for null and ArgumentException for whitespace; ThrowsAny accepts both.
@@ -55,7 +55,7 @@ public class CryptoSoftAdapterTests
     [Fact]
     public void Encrypt_NullDest_Throws()
     {
-        var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = "anything" });
+        using var adapter = new CryptoSoftAdapter(new CryptoSoftSettings { Path = "anything" });
 
         Assert.ThrowsAny<ArgumentException>(() => adapter.Encrypt("/tmp/src", null!));
     }
@@ -91,10 +91,16 @@ public class CryptoSoftAdapterTests
         string path = Path.Combine(Path.GetTempPath(),
             "fake-cryptosoft-" + Guid.NewGuid().ToString("N") + ".sh");
         File.WriteAllText(path, "#!/bin/sh\nsleep \"$1\"\n");
-        // Owner-rwx; mode bits not portable to Windows but those tests
-        // are skipped there anyway.
-        try { File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
-        catch (PlatformNotSupportedException) { /* Windows path, irrelevant */ }
+        // Owner-rwx; mode bits only meaningful on Unix. The
+        // OperatingSystem.IsWindows() guard is what CA1416 needs to
+        // statically prove the SetUnixFileMode call is unreachable on
+        // Windows — a try/catch (PlatformNotSupportedException) is not
+        // enough for the platform-compatibility analyzer.
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
         return path;
     }
 
@@ -145,52 +151,83 @@ public class CryptoSoftAdapterTests
         }
     }
 
-    [SkippableFact]
+    [Fact]
     public void Encrypt_LockTimeout_ReturnsFailed()
     {
-        // Hold the gate externally with a 1.5 s fake encryption then
-        // verify that a second caller with a tighter lock-wait budget
-        // bails out as Failed instead of hanging.
-        // Lock wait = 2 × TimeoutMs, so TimeoutMs = 300 → wait = 600 ms.
-        Skip.IfNot(OperatingSystem.IsLinux() || OperatingSystem.IsMacOS(),
-            "Uses a POSIX shell script as the fake CryptoSoft binary.");
+        // Hold the named mutex from a DEDICATED thread, then call
+        // adapter.Encrypt on the test thread. Named mutexes are
+        // recursive per thread — holding from the same thread that
+        // later calls Encrypt would let the recursive WaitOne return
+        // immediately and falsely report "no contention". A separate
+        // owner thread makes the contention real.
+        //
+        // The previous version of this test spawned a Task.Run holder
+        // that itself called adapter.Encrypt with a fake Process — it
+        // depended on Thread.Sleep racing the process spawn, which is
+        // flaky under CI load. Holding the OS mutex directly bypasses
+        // both flakiness sources.
+        //
+        // Mutex name re-declared here on purpose: an internal rename
+        // on the adapter side would (correctly) break this test.
+        const string mutexName = @"Global\ProSoft.CryptoSoft.SingleInstance";
+        using var acquired = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
 
-        string scriptPath = CreateFakeCryptoSoftScript();
+        // Use a dedicated Thread (not Task.Run) because Mutex thread-
+        // affinity is OS-level: ReleaseMutex must run on the same
+        // thread that called WaitOne. Task.Run gives no such guarantee.
+        var holder = new Thread(() =>
+        {
+            using var gate = new Mutex(initiallyOwned: false, name: mutexName);
+            if (!gate.WaitOne(TimeSpan.FromSeconds(2)))
+            {
+                acquired.Set();
+                return;
+            }
+            try
+            {
+                acquired.Set();
+                release.Wait();
+            }
+            finally
+            {
+                gate.ReleaseMutex();
+            }
+        })
+        { IsBackground = true };
+        holder.Start();
+
         try
         {
-            using var hold = new CryptoSoftAdapter(new CryptoSoftSettings
-            {
-                Path = scriptPath,
-                TimeoutMs = 5000,
-            });
+            Assert.True(acquired.Wait(TimeSpan.FromSeconds(2)),
+                "Holder thread never signalled mutex acquisition.");
+
+            // Lock wait = 2 × TimeoutMs, so TimeoutMs = 300 → wait = 600 ms.
             using var waiter = new CryptoSoftAdapter(new CryptoSoftSettings
             {
-                Path = scriptPath,
+                // Path can be anything — the adapter never reaches
+                // Process.Start because the mutex acquisition times out
+                // first.
+                Path = "/dev/null",
                 TimeoutMs = 300,
             });
 
-            var holdTask = Task.Run(() => hold.Encrypt("1.5", "ignored-dest"));
-
-            // Give the holder time to acquire the mutex before the
-            // waiter races in.
-            Thread.Sleep(150);
-
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var waiterResult = waiter.Encrypt("0.1", "ignored-dest");
+            var waiterResult = waiter.Encrypt("ignored-src", "ignored-dest");
             sw.Stop();
 
             Assert.False(waiterResult.Success,
                 "Waiter should have failed on the mono-instance lock timeout.");
-            Assert.True(sw.ElapsedMilliseconds < 1200,
+            Assert.True(sw.ElapsedMilliseconds < 1000,
                 $"Waiter took {sw.ElapsedMilliseconds} ms — should have bailed at ~600 ms.");
-
-            // Let the holder finish so the mutex is released for
-            // subsequent tests in the suite.
-            holdTask.Wait(TimeSpan.FromSeconds(3));
+            Assert.True(sw.ElapsedMilliseconds >= 500,
+                $"Waiter returned in {sw.ElapsedMilliseconds} ms — the lock-wait budget " +
+                "(600 ms) appears to not have been honored.");
         }
         finally
         {
-            try { File.Delete(scriptPath); } catch { /* best effort */ }
+            release.Set();
+            holder.Join(TimeSpan.FromSeconds(2));
         }
     }
 }

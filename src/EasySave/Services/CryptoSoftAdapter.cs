@@ -51,8 +51,14 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
         // If the lock is contended longer, the file is dropped as Failed
         // and logged — operators see the conflict in the daily log
         // instead of an indefinite hang.
+        //
+        // Math.Min on a widened long guards against int overflow when an
+        // operator sets a huge timeout (>1 billion ms ≈ 11 days). Without
+        // the widening, _lockWaitMs would wrap to a negative value and
+        // Mutex.WaitOne would throw ArgumentOutOfRangeException at the
+        // first call.
         int timeoutMs = _settings.TimeoutMs > 0 ? _settings.TimeoutMs : 30_000;
-        _lockWaitMs = timeoutMs * 2;
+        _lockWaitMs = (int)Math.Min((long)timeoutMs * 2, int.MaxValue);
     }
 
     /// <inheritdoc />
@@ -60,6 +66,16 @@ public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(dest);
+
+        // Late-arriving call after Dispose(): the OS mutex handle is
+        // already closed, so AcquireGate would throw ObjectDisposedException
+        // on WaitOne. Convert to a soft Failed instead — same shape as the
+        // empty-path fall-back below, so the caller's fall-back path (plain
+        // copy, no encryption) handles both cases uniformly.
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return EncryptResult.Failed();
+        }
 
         if (string.IsNullOrWhiteSpace(_settings.Path))
         {
