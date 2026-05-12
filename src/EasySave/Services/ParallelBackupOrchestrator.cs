@@ -164,16 +164,27 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
         }
     }
 
+    // Per-job control methods carry the same disposal-race guard as the
+    // "All" variants below: the context can be disposed between the
+    // TryGetValue and the call (ExecuteSingleAsync's `using` fires the
+    // moment the job ends). Swallow ObjectDisposedException — the job is
+    // already in its terminal state, the no-op is semantically correct.
     public void Pause(string jobName)
     {
         if (_running.TryGetValue(jobName, out var ctx))
-            ctx.PauseGate.Reset();
+        {
+            try { ctx.PauseGate.Reset(); }
+            catch (ObjectDisposedException) { /* race with job self-disposal */ }
+        }
     }
 
     public void Resume(string jobName)
     {
         if (_running.TryGetValue(jobName, out var ctx))
-            ctx.PauseGate.Set();
+        {
+            try { ctx.PauseGate.Set(); }
+            catch (ObjectDisposedException) { /* race with job self-disposal */ }
+        }
     }
 
     public void Stop(string jobName)
@@ -187,7 +198,10 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
         // OCE deterministically — that's the standard .NET cancellation
         // pattern and a hard requirement for IJobRunner implementations.
         if (_running.TryGetValue(jobName, out var ctx))
-            ctx.Cts.Cancel();
+        {
+            try { ctx.Cts.Cancel(); }
+            catch (ObjectDisposedException) { /* race with job self-disposal */ }
+        }
     }
 
     // PauseAll / ResumeAll / StopAll iterate the live job map and delegate
