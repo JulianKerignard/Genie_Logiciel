@@ -44,7 +44,9 @@ public sealed class AppSettings
 
     // V3 centralized logging. Default Local keeps v1/v2 deployments
     // untouched. Centralized / Both require LogCentralizedEndpoint to be
-    // set; the LogShipper falls back to Local when the endpoint is empty.
+    // set: the wiring code (Program.cs / App.axaml.cs) is responsible
+    // for skipping HttpLogShipper construction when the endpoint is
+    // empty, in which case the logger constructors fall back to Local.
     [JsonPropertyName("log_mode")]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public EasyLog.LogMode LogMode { get; init; } = EasyLog.LogMode.Local;

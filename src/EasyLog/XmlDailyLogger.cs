@@ -36,7 +36,7 @@ public sealed class XmlDailyLogger : IDailyLogger
         _logDirectory = logDirectory;
         Directory.CreateDirectory(_logDirectory);
         _shipper = shipper;
-        _mode = shipper is null ? LogMode.Local : mode;
+        _mode = LogRouter.Effective(shipper, mode);
     }
 
     /// <summary>Absolute path of the directory where daily log files are written.</summary>
@@ -63,12 +63,12 @@ public sealed class XmlDailyLogger : IDailyLogger
             EventType = entry.EventType,
         };
 
-        if (_mode is LogMode.Centralized or LogMode.Both)
+        if (LogRouter.ShouldShip(_mode))
         {
             _shipper!.Append(normalized);
         }
 
-        if (_mode == LogMode.Centralized)
+        if (!LogRouter.ShouldWriteLocal(_mode))
         {
             return;
         }

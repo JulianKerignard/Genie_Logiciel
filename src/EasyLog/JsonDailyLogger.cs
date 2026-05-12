@@ -79,9 +79,7 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
         _logDirectory = logDirectory;
         Directory.CreateDirectory(_logDirectory);
         _shipper = shipper;
-        // Centralized / Both without a shipper would silently drop entries.
-        // Fall back to Local so the daily file always exists.
-        _mode = shipper is null ? LogMode.Local : mode;
+        _mode = LogRouter.Effective(shipper, mode);
 
         _queue = Channel.CreateUnbounded<WriteRequest>(new UnboundedChannelOptions
         {
@@ -126,7 +124,7 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
         // doing it before the local write does not slow the caller down.
         // Append on the shipper is a buffered enqueue — never throws on
         // network failures.
-        if (_mode is LogMode.Centralized or LogMode.Both)
+        if (LogRouter.ShouldShip(_mode))
         {
             _shipper!.Append(normalized);
         }
@@ -135,7 +133,7 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
         // durability in that case; a host that crashes between Append and
         // a successful POST loses the entry — operators are expected to
         // run LogMode.Both during cut-over for that exact reason.
-        if (_mode == LogMode.Centralized)
+        if (!LogRouter.ShouldWriteLocal(_mode))
         {
             return;
         }

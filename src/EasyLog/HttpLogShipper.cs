@@ -61,7 +61,10 @@ public sealed class HttpLogShipper : ILogShipper
     private readonly Channel<LogEntry> _queue;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _writerLoop;
-    private volatile bool _disposed;
+    // 0 = live, 1 = DisposeAsync entered. Interlocked.CompareExchange makes
+    // the check-then-set atomic so two concurrent DisposeAsync callers cannot
+    // both cancel/dispose the shutdown CTS (would throw ObjectDisposedException).
+    private int _disposed;
 
     /// <summary>
     /// Creates a shipper that POSTs to <paramref name="endpoint"/>. The
@@ -101,7 +104,7 @@ public sealed class HttpLogShipper : ILogShipper
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) == 1)
         {
             // Mirrors JsonDailyLogger: dropping silently post-Dispose is the
             // documented contract on the local writer. Centralized side adopts
@@ -147,8 +150,11 @@ public sealed class HttpLogShipper : ILogShipper
                         catch (OperationCanceledException)
                         {
                             // Shutdown arrived while we were backing off. The
-                            // outer catch handles re-queueing the in-flight
-                            // entry so DisposeAsync gets a chance to drain it.
+                            // in-flight entry is lost by design — the buffer
+                            // is in-memory, so a host crash or a Dispose-while-
+                            // collector-down combo never persists pending
+                            // entries. Operators run LogMode.Both during
+                            // cut-over as the safety net for this exact case.
                             return;
                         }
                     }
@@ -208,8 +214,10 @@ public sealed class HttpLogShipper : ILogShipper
     /// </remarks>
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-        _disposed = true;
+        // Atomic check-then-set so a second concurrent caller bails out
+        // before touching _shutdown — Cancel/Dispose on an already-disposed
+        // CTS would throw ObjectDisposedException.
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
 
         _queue.Writer.TryComplete();
         _shutdown.Cancel();

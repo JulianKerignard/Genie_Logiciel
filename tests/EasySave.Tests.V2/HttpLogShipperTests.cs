@@ -101,10 +101,10 @@ public class HttpLogShipperTests : IDisposable
 
         shipper.Append(new LogEntry { JobName = "retry-me", Timestamp = "t" });
 
-        // First two backoff steps are 1s + 2s = 3s; the shipper should send
-        // successfully on retry #4 around the 4–5s mark. Cap the test at 12s
-        // so a hung loop fails quickly.
-        await handler.WaitForRequestsAsync(4, TimeSpan.FromSeconds(12));
+        // Three failures back off 1s + 2s + 5s = 8s before the 4th attempt
+        // succeeds. Cap the test at 15s so a hung loop fails quickly without
+        // making CI flaky on a slow runner.
+        await handler.WaitForRequestsAsync(4, TimeSpan.FromSeconds(15));
 
         Assert.Equal(4, callCount);
         Assert.Equal("retry-me",
