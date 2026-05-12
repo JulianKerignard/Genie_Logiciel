@@ -130,6 +130,50 @@ public class BusinessSoftwareControllerBridgeTests
     }
 
     [Fact]
+    public void Dispose_WithoutStart_DoesNotThrow_AndStaysIdempotent()
+    {
+        // Bridges may be constructed and never started (e.g. a host that
+        // disabled the feature flag before Start was reached). Dispose
+        // must still be a no-op rather than throwing on the unsubscribe
+        // path, and a second Dispose must stay safe.
+        var signals = new StubSignals();
+        var controller = new RecordingController();
+        var logger = new RecordingLogger();
+        var bridge = new BusinessSoftwareControllerBridge(signals, controller, logger);
+
+        bridge.Dispose();
+        bridge.Dispose();
+
+        // No subscription ever existed, so a subsequent event is also a no-op.
+        signals.RaiseDetected("calc");
+        Assert.Equal(0, controller.PauseAllCalls);
+    }
+
+    [Fact]
+    public void Start_AfterDispose_IsNoOp_DoesNotResurrectTheBridge()
+    {
+        // A disposed bridge that gets Start()'d again must not re-subscribe.
+        // Otherwise the host could end up holding a strong reference to a
+        // bridge that should have been collected, and subsequent events
+        // would leak into the disposed controller / logger.
+        var signals = new StubSignals();
+        var controller = new RecordingController();
+        var logger = new RecordingLogger();
+        var bridge = new BusinessSoftwareControllerBridge(signals, controller, logger);
+
+        bridge.Start();
+        bridge.Dispose();
+        bridge.Start();
+
+        signals.RaiseDetected("calc");
+        signals.RaiseGone();
+
+        Assert.Equal(0, controller.PauseAllCalls);
+        Assert.Equal(0, controller.ResumeAllCalls);
+        Assert.Empty(logger.Entries);
+    }
+
+    [Fact]
     public void Constructor_NullArguments_Throw()
     {
         var signals = new StubSignals();
