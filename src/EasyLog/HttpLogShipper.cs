@@ -13,25 +13,15 @@ namespace EasyLog;
 /// an unbounded in-memory <see cref="Channel{T}"/> and a single background
 /// task drains the queue. Network failures trigger an exponential backoff
 /// (1s, 2s, 5s, 10s, capped at 30s) and entries stay in the buffer until
-/// the POST succeeds — no entry is dropped on transient outage. The
-/// machine name and current user are attached to every payload so the
-/// collector can demultiplex across hosts and operators.
+/// the POST succeeds — no entry is dropped on transient outage.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The buffer is intentionally unbounded: backup logs are low-volume
-/// (one row per file copy) and dropping an entry would defeat the point
-/// of central logging. A misconfigured collector that stays down for
-/// weeks would leak memory; operators are expected to keep an eye on
-/// the host process via the daily file (LogMode.Both) until they trust
-/// the collector path.
-/// </para>
-/// <para>
-/// Order is preserved: the channel has SingleReader=true and the writer
-/// task processes one entry at a time. Inter-thread interleaving on the
-/// producer side mirrors the channel arrival order (no producer-side
-/// reordering).
-/// </para>
+/// Each <see cref="LogEntry"/> already carries <see cref="LogEntry.MachineName"/>
+/// and <see cref="LogEntry.UserName"/> when it reaches the shipper (Json /
+/// XmlDailyLogger.Append stamps them from <see cref="Environment"/> before
+/// enqueueing). The shipper posts the entry verbatim so the collector
+/// receives the exact JSON shape it would read from a local daily file —
+/// no wrapper, no field renames, no special demux envelope.
 /// </remarks>
 public sealed class HttpLogShipper : ILogShipper
 {
@@ -41,9 +31,8 @@ public sealed class HttpLogShipper : ILogShipper
         Converters = { new JsonStringEnumConverter() },
     };
 
-    // Exponential backoff sequence requested by the CdC: 1s, 2s, 5s, 10s,
-    // then the cap (30s) for every subsequent failure until the collector
-    // comes back. Reset to index 0 after any successful POST.
+    // CdC v3 backoff schedule: 1s, 2s, 5s, 10s, then 30s cap on every
+    // subsequent failure. Reset to index 0 after any successful POST.
     private static readonly TimeSpan[] BackoffSchedule =
     {
         TimeSpan.FromSeconds(1),
@@ -56,26 +45,17 @@ public sealed class HttpLogShipper : ILogShipper
     private readonly HttpClient _http;
     private readonly bool _ownsHttpClient;
     private readonly Uri _endpoint;
-    private readonly string _machineName;
-    private readonly string _userName;
     private readonly Channel<LogEntry> _queue;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _writerLoop;
-    // 0 = live, 1 = DisposeAsync entered. Interlocked.CompareExchange makes
-    // the check-then-set atomic so two concurrent DisposeAsync callers cannot
-    // both cancel/dispose the shutdown CTS (would throw ObjectDisposedException).
+
+    // 0 = live, 1 = DisposeAsync entered. Interlocked.CompareExchange so
+    // two concurrent DisposeAsync callers cannot both cancel the shutdown
+    // CTS (would throw ObjectDisposedException on the second).
     private int _disposed;
 
-    /// <summary>
-    /// Creates a shipper that POSTs to <paramref name="endpoint"/>. The
-    /// supplied <paramref name="http"/> is used as-is; the shipper takes
-    /// ownership only when the parameter is null (it then creates and
-    /// disposes its own client).
-    /// </summary>
     /// <param name="endpoint">Absolute HTTP URI of the centralized collector (e.g. http://logs.local:9100/logs).</param>
     /// <param name="http">Optional pre-configured client (test seam). Disposed only when null was passed.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="endpoint"/> is null.</exception>
-    /// <exception cref="ArgumentException">Thrown when the endpoint is not an absolute HTTP/HTTPS URI.</exception>
     public HttpLogShipper(Uri endpoint, HttpClient? http = null)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
@@ -87,8 +67,6 @@ public sealed class HttpLogShipper : ILogShipper
         _endpoint = endpoint;
         _http = http ?? new HttpClient();
         _ownsHttpClient = http is null;
-        _machineName = Environment.MachineName;
-        _userName = Environment.UserName;
 
         _queue = Channel.CreateUnbounded<LogEntry>(new UnboundedChannelOptions
         {
@@ -106,9 +84,8 @@ public sealed class HttpLogShipper : ILogShipper
 
         if (Volatile.Read(ref _disposed) == 1)
         {
-            // Mirrors JsonDailyLogger: dropping silently post-Dispose is the
-            // documented contract on the local writer. Centralized side adopts
-            // the same convention so host-shutdown code paths never throw.
+            // Mirrors JsonDailyLogger: silent drop post-Dispose so a
+            // host-shutdown code path never throws into the caller.
             return;
         }
 
@@ -117,64 +94,56 @@ public sealed class HttpLogShipper : ILogShipper
 
     private async Task WriterLoopAsync(CancellationToken ct)
     {
-        int backoffIndex = 0;
-        LogEntry? inflight = null;
-
         try
         {
             while (await _queue.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
             {
                 while (_queue.Reader.TryRead(out var entry))
                 {
-                    inflight = entry;
-
-                    // Retry loop: this entry stays "in flight" until the POST
-                    // succeeds or shutdown is requested. Order is preserved —
-                    // we never advance to the next queued entry while the
-                    // current one is still pending.
-                    while (!ct.IsCancellationRequested)
-                    {
-                        if (await TrySendAsync(entry, ct).ConfigureAwait(false))
-                        {
-                            backoffIndex = 0;
-                            inflight = null;
-                            break;
-                        }
-
-                        TimeSpan delay = BackoffSchedule[Math.Min(backoffIndex, BackoffSchedule.Length - 1)];
-                        backoffIndex++;
-                        try
-                        {
-                            await Task.Delay(delay, ct).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Shutdown arrived while we were backing off. The
-                            // in-flight entry is lost by design — the buffer
-                            // is in-memory, so a host crash or a Dispose-while-
-                            // collector-down combo never persists pending
-                            // entries. Operators run LogMode.Both during
-                            // cut-over as the safety net for this exact case.
-                            return;
-                        }
-                    }
+                    await ProcessSingleEntryAsync(entry, ct).ConfigureAwait(false);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            // Normal shutdown path — the entry currently in flight (if any)
-            // never made it across the wire. We deliberately do nothing here:
-            // the buffer is in-memory, so a host restart loses unsent entries
-            // by design. Local file logging (LogMode.Both) is the operator's
-            // safety net during cut-over.
+            // Normal shutdown. The in-flight entry (if any) is lost by
+            // design — the buffer is in-memory, so a host crash or a
+            // Dispose-while-collector-down never persists pending
+            // entries. Operators run LogMode.Both during cut-over for
+            // exactly this case.
         }
         catch (Exception ex)
         {
-            // Belt-and-braces: any unexpected throw in the loop would kill
-            // the writer and silently strand the queue. Trace + exit so the
+            // Belt-and-braces: any unexpected throw kills the writer
+            // and silently strands the queue. Trace + exit so the
             // host's diagnostic infra sees the regression.
             Trace.TraceError($"[EasyLog] HttpLogShipper writer task crashed: {ex}");
+        }
+    }
+
+    // Retries a single entry with exponential backoff until POST succeeds
+    // or shutdown is requested. Order is preserved — we never advance to
+    // the next queued entry while the current one is still pending.
+    private async Task ProcessSingleEntryAsync(LogEntry entry, CancellationToken ct)
+    {
+        int backoffIndex = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            if (await TrySendAsync(entry, ct).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            TimeSpan delay = BackoffSchedule[Math.Min(backoffIndex, BackoffSchedule.Length - 1)];
+            backoffIndex++;
+            try
+            {
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
     }
 
@@ -182,41 +151,29 @@ public sealed class HttpLogShipper : ILogShipper
     {
         try
         {
-            var payload = new CentralizedLogPayload(_machineName, _userName, entry);
-            using var content = JsonContent.Create(payload, options: PayloadOptions);
+            using var content = JsonContent.Create(entry, options: PayloadOptions);
             using var response = await _http.PostAsync(_endpoint, content, ct).ConfigureAwait(false);
             return response.IsSuccessStatusCode;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Shutdown — surface as "not sent" so the caller decides to stop.
             return false;
         }
         catch (HttpRequestException)
         {
-            // Network unreachable, DNS failure, TLS handshake refused — keep
-            // the entry buffered and let the backoff loop retry.
             return false;
         }
         catch (TaskCanceledException)
         {
-            // Per-request timeout from HttpClient.Timeout — same handling as
-            // a network failure.
+            // Per-request timeout from HttpClient.Timeout — same handling
+            // as a network failure.
             return false;
         }
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Drains any in-flight buffer up to the per-request HTTP timeout times
-    /// the queue depth. Callers that want a hard ceiling should wrap the
-    /// returned task in their own <see cref="Task.WaitAsync(TimeSpan)"/>.
-    /// </remarks>
     public async ValueTask DisposeAsync()
     {
-        // Atomic check-then-set so a second concurrent caller bails out
-        // before touching _shutdown — Cancel/Dispose on an already-disposed
-        // CTS would throw ObjectDisposedException.
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
 
         _queue.Writer.TryComplete();
@@ -232,12 +189,4 @@ public sealed class HttpLogShipper : ILogShipper
         _shutdown.Dispose();
         if (_ownsHttpClient) _http.Dispose();
     }
-
-    // JSON envelope sent to the collector. Wraps the v1 LogEntry verbatim
-    // so the central side can persist the exact same shape it would read
-    // from a local daily file, with two extra demux fields.
-    private sealed record CentralizedLogPayload(
-        string MachineName,
-        string UserName,
-        LogEntry Entry);
 }

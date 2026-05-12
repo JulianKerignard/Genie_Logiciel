@@ -43,6 +43,8 @@ public class HttpLogShipperTests : IDisposable
             TargetFile = @"C:\dst\file.txt",
             FileSize = 42,
             FileTransferTimeMs = 3,
+            MachineName = "WS-01",
+            UserName = "alice",
         });
 
         // Single drain — the background task is fire-and-forget so we wait
@@ -53,11 +55,14 @@ public class HttpLogShipperTests : IDisposable
         Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
         Assert.Equal("http://collector.local/logs", handler.Requests[0].Uri);
 
+        // The shipper posts the LogEntry verbatim — host fields at the
+        // root of the JSON, no wrapper envelope. The collector reads the
+        // same shape it would read from a local daily file.
         using var doc = JsonDocument.Parse(handler.Requests[0].Body);
         var root = doc.RootElement;
-        Assert.True(root.TryGetProperty("MachineName", out _));
-        Assert.True(root.TryGetProperty("UserName", out _));
-        Assert.Equal("demo", root.GetProperty("Entry").GetProperty("JobName").GetString());
+        Assert.Equal("demo", root.GetProperty("JobName").GetString());
+        Assert.Equal("WS-01", root.GetProperty("MachineName").GetString());
+        Assert.Equal("alice", root.GetProperty("UserName").GetString());
     }
 
     [Fact]
@@ -109,8 +114,7 @@ public class HttpLogShipperTests : IDisposable
         Assert.Equal(4, callCount);
         Assert.Equal("retry-me",
             JsonDocument.Parse(handler.Requests[3].Body)
-                .RootElement.GetProperty("Entry")
-                .GetProperty("JobName").GetString());
+                .RootElement.GetProperty("JobName").GetString());
     }
 
     [Fact]
@@ -249,7 +253,7 @@ public class HttpLogShipperTests : IDisposable
             .Skip(failuresBeforeRecovery)
             .Take(totalEntries)
             .Select(r => JsonDocument.Parse(r.Body)
-                .RootElement.GetProperty("Entry").GetProperty("JobName").GetString())
+                .RootElement.GetProperty("JobName").GetString())
             .ToArray();
 
         var expected = Enumerable.Range(0, totalEntries)
@@ -300,7 +304,7 @@ public class HttpLogShipperTests : IDisposable
         var receivedJobs = handler.Requests
             .Skip(failuresBeforeRecovery)
             .Select(r => JsonDocument.Parse(r.Body)
-                .RootElement.GetProperty("Entry").GetProperty("JobName").GetString()!)
+                .RootElement.GetProperty("JobName").GetString()!)
             .ToHashSet();
         var expectedJobs = Enumerable.Range(0, entryCount)
             .Select(i => $"loss-test-{i:D3}")
