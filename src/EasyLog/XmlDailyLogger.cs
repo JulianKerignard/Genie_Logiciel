@@ -61,6 +61,9 @@ public sealed class XmlDailyLogger : IDailyLogger
             FileTransferTimeMs = entry.FileTransferTimeMs,
             EncryptionTimeMs = entry.EncryptionTimeMs,
             EventType = entry.EventType,
+            // See JsonDailyLogger.Append for the host/user stamping contract.
+            MachineName = entry.MachineName ?? Environment.MachineName,
+            UserName = entry.UserName ?? Environment.UserName,
         };
 
         if (LogRouter.ShouldShip(_mode))

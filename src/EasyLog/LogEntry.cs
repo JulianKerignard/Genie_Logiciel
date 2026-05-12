@@ -61,4 +61,22 @@ public sealed class LogEntry
     [JsonConverter(typeof(JsonStringEnumConverter))]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LogEvent? EventType { get; set; }
+
+    /// <summary>
+    /// Host that produced the entry (EasyLog v1.2+). Lets a centralized
+    /// collector demultiplex entries coming from multiple workstations into
+    /// a single daily file. Null on v1 / v2 logs and on v3+ entries that
+    /// the producer chose not to stamp — the daily-file readers must treat
+    /// the field as optional.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MachineName { get; set; }
+
+    /// <summary>
+    /// User account that produced the entry (EasyLog v1.2+). Same retro-
+    /// compat contract as <see cref="MachineName"/>: optional, null on
+    /// pre-v3 logs, never required by readers.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UserName { get; set; }
 }

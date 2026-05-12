@@ -5,6 +5,12 @@
     <AssemblyName>EasyLog</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Description>Daily JSON and XML logger reusable across ProSoft applications.</Description>
+    <!-- 1.2.0: adds optional MachineName / UserName on LogEntry. v1.0 and
+         v1.1 consumers stay compatible — new fields are nullable and
+         omitted from the JSON / XML output when null. -->
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

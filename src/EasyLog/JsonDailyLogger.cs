@@ -118,6 +118,12 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
             FileTransferTimeMs = entry.FileTransferTimeMs,
             EncryptionTimeMs = entry.EncryptionTimeMs,
             EventType = entry.EventType,
+            // Stamp host/user only when the caller did not supply them.
+            // A central collector relaying entries from remote hosts will
+            // forward the original sender's fields untouched — never the
+            // collector's own machine.
+            MachineName = entry.MachineName ?? Environment.MachineName,
+            UserName = entry.UserName ?? Environment.UserName,
         };
 
         // Centralized side first: the shipper is async and non-blocking, so
