@@ -56,15 +56,22 @@ RUN apt-get update \
 
 COPY --from=build /app/publish ./
 
-# The single daily file lives here. Operators bind-mount the host
-# directory (./logs/) onto this path via docker-compose.
-VOLUME ["/var/log/easysave"]
-
 # Run as a non-root user. The aspnet:8.0 image ships with the
 # `app` user (UID 1654 on .NET 8). Pre-create the logs dir with the
 # right owner so the writer task can append on first request without
 # needing to chown at runtime.
+#
+# IMPORTANT: this RUN MUST come BEFORE the VOLUME instruction. Docker
+# silently discards filesystem changes made on a path after it has
+# been declared as a volume — so moving these two lines would leave
+# /var/log/easysave owned by root and break writes when no host bind
+# mount is provided (anonymous-volume case).
 RUN install -d -o app -g app /var/log/easysave
+
+# The single daily file lives here. Operators bind-mount the host
+# directory (./logs/) onto this path via docker-compose.
+VOLUME ["/var/log/easysave"]
+
 USER app
 
 # Listen on every interface inside the container, port 8080. The host
