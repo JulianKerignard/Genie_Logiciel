@@ -11,7 +11,12 @@ namespace EasySave.Services;
 public sealed class PriorityGate : IPriorityGate, IDisposable
 {
     private readonly object _lock = new();
-    private readonly Dictionary<string, int> _remaining = new(StringComparer.Ordinal);
+    // Job names canonicalised by JobRepository are case-stable, but the
+    // rest of the system compares them with OrdinalIgnoreCase (see
+    // BackupManager.ExecuteJob's job lookup); aligning the gate's lookup
+    // removes a future footgun if a caller ever supplies a different-
+    // case variant of the same job name.
+    private readonly Dictionary<string, int> _remaining = new(StringComparer.OrdinalIgnoreCase);
     private readonly ManualResetEventSlim _cleared = new(initialState: true);
 
     public void RegisterJob(string jobName, int priorityFileCount)

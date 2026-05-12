@@ -319,8 +319,14 @@ public sealed class BackupManager
                 state.LastActionTime = DateTimeOffset.Now;
                 _stateTracker.Update(state);
 
-                // Tick the cross-job barrier AFTER the copy succeeds so a
-                // failed transfer doesn't prematurely unblock waiters.
+                // Tick the cross-job barrier unconditionally after the copy
+                // attempt. A failed transfer is still "this priority file
+                // is no longer pending" — re-trying it later won't help
+                // (ProcessFile signals failure via transferMs < 0 in the
+                // log entry, not by retrying), and leaving the slot
+                // occupied would hold every other job's non-priority
+                // files hostage forever. The CdC rule is "pending", not
+                // "successfully copied".
                 if (isPriority)
                     _priorityGate?.MarkPriorityFileDone(job.Name);
             }
