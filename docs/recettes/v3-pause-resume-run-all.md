@@ -30,7 +30,7 @@ le log journalier (`LogEvent.JobPaused`, `LogEvent.JobResumed`).
 | # | Action | Résultat attendu |
 |---|---|---|
 | 1 | Relancer un job. | `state.json` : Active. |
-| 2 | Cliquer **Stop** sur la ligne. | Sous **1 seconde**, le job se termine. `JobOutcome.Cancelled` côté orchestrateur, `state.json` : `"State": 0` (Inactive). La cible contient les fichiers déjà copiés (pas de rollback). |
+| 2 | Cliquer **Stop** sur la ligne. | Sous **1 seconde**, le job se termine. `state.json` : `"State": 0` (Inactive), `FilesRemaining = 0`. La cible contient les fichiers déjà copiés (pas de rollback). Distinction Stop vs Complete : voir la note terminologie ci-dessous (compter les lignes `FileTransfer` du log). |
 | 3 | Variante — Stop pendant un Pause. | Même comportement : le `Wait(ct)` token-aware lance OCE et le job sort Inactive. |
 
 > **Note terminologie** : l'enum `JobState` n'a pas de valeur dédiée
