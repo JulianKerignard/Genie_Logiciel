@@ -358,6 +358,102 @@ public class ParallelBackupOrchestratorTests
         }
     }
 
+    // ---- IJobController "All" methods (business-software watcher path) ----
+
+    [Fact]
+    public async Task PauseAll_ResetsEveryRunningJobsGate()
+    {
+        var startedA = new TaskCompletionSource();
+        var startedB = new TaskCompletionSource();
+        var inspect = new TaskCompletionSource();
+        var observedA = false;
+        var observedB = false;
+
+        using var orch = Make(async (ctx, _) =>
+        {
+            if (ctx.JobName == "A") startedA.SetResult();
+            else startedB.SetResult();
+            await inspect.Task;
+            if (ctx.JobName == "A") observedA = ctx.PauseGate.IsSet;
+            else observedB = ctx.PauseGate.IsSet;
+        }, maxParallelJobs: 2);
+
+        var task = orch.RunAsync(new[] { "A", "B" }, CancellationToken.None);
+        await Task.WhenAll(startedA.Task, startedB.Task);
+
+        orch.PauseAll();
+        inspect.SetResult();
+
+        await task;
+        Assert.False(observedA);
+        Assert.False(observedB);
+    }
+
+    [Fact]
+    public async Task ResumeAll_SetsEveryPausedJobsGate()
+    {
+        var startedA = new TaskCompletionSource();
+        var startedB = new TaskCompletionSource();
+        var inspect = new TaskCompletionSource();
+        var gateA = false;
+        var gateB = false;
+
+        using var orch = Make(async (ctx, _) =>
+        {
+            if (ctx.JobName == "A") startedA.SetResult();
+            else startedB.SetResult();
+            await inspect.Task;
+            if (ctx.JobName == "A") gateA = ctx.PauseGate.IsSet;
+            else gateB = ctx.PauseGate.IsSet;
+        }, maxParallelJobs: 2);
+
+        var task = orch.RunAsync(new[] { "A", "B" }, CancellationToken.None);
+        await Task.WhenAll(startedA.Task, startedB.Task);
+
+        orch.PauseAll();
+        orch.ResumeAll();
+        inspect.SetResult();
+
+        await task;
+        Assert.True(gateA);
+        Assert.True(gateB);
+    }
+
+    [Fact]
+    public async Task StopAll_CancelsEveryJob_AllResultsAreCancelled()
+    {
+        var startedA = new TaskCompletionSource();
+        var startedB = new TaskCompletionSource();
+
+        using var orch = Make(async (ctx, _) =>
+        {
+            if (ctx.JobName == "A") startedA.SetResult();
+            else startedB.SetResult();
+            await Task.Delay(Timeout.Infinite, ctx.Cts.Token);
+        }, maxParallelJobs: 2);
+
+        var task = orch.RunAsync(new[] { "A", "B" }, CancellationToken.None);
+        await Task.WhenAll(startedA.Task, startedB.Task);
+
+        orch.StopAll();
+
+        var results = await task;
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal(JobOutcome.Cancelled, r.Outcome));
+        Assert.All(results, r => Assert.Equal("stopped via Stop()", r.Message));
+    }
+
+    [Fact]
+    public void PauseResumeStopAll_OnEmptyOrchestrator_AreNoOps()
+    {
+        // No job ever registered — the iteration sees an empty snapshot and
+        // every call returns without throwing.
+        using var orch = Make((_, _) => Task.CompletedTask);
+        orch.PauseAll();
+        orch.ResumeAll();
+        orch.StopAll();
+    }
+
     // ---- progress fan-out ----
 
     [Fact]

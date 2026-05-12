@@ -190,6 +190,32 @@ public sealed class ParallelBackupOrchestrator : IParallelBackupOrchestrator
             ctx.Cts.Cancel();
     }
 
+    // PauseAll / ResumeAll / StopAll iterate the live job map and delegate
+    // to the per-job operations. _running is a ConcurrentDictionary so the
+    // snapshot enumerator is safe even if a job finishes and removes its
+    // entry mid-iteration; the per-job Pause / Resume / Stop are no-ops
+    // when the context has already been removed.
+    public void PauseAll()
+    {
+        foreach (var ctx in _running.Values)
+            ctx.PauseGate.Reset();
+    }
+
+    public void ResumeAll()
+    {
+        foreach (var ctx in _running.Values)
+            ctx.PauseGate.Set();
+    }
+
+    public void StopAll()
+    {
+        foreach (var ctx in _running.Values)
+        {
+            try { ctx.Cts.Cancel(); }
+            catch (ObjectDisposedException) { /* race with self-disposal */ }
+        }
+    }
+
     // Dispose initiates shutdown by cancelling every in-flight job's CTS
     // (so token-aware runners exit promptly with Cancelled) and disposes the
     // parallelism semaphore. Callers should still await every outstanding

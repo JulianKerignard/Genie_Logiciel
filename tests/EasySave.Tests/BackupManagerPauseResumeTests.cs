@@ -105,7 +105,7 @@ public class BackupManagerPauseResumeTests : IDisposable
         var manager = CreateManager(logger);
 
         Assert.Throws<OperationCanceledException>(
-            () => manager.ExecuteJob("pause-mid", resumeAfterPath: null, cts.Token));
+            () => manager.ExecuteJob("pause-mid", resumeAfterPath: null, ct: cts.Token));
 
         // Two files copied, three remain.
         var copied = Directory.GetFiles(_targetDir).Length;
@@ -151,7 +151,7 @@ public class BackupManagerPauseResumeTests : IDisposable
             var logger = new CancelAfterNthFileLogger(cts, afterCount: 2);
             var manager = CreateManager(logger);
             Assert.Throws<OperationCanceledException>(
-                () => manager.ExecuteJob("pause-resume", resumeAfterPath: null, cts.Token));
+                () => manager.ExecuteJob("pause-resume", resumeAfterPath: null, ct: cts.Token));
         }
 
         var afterPause = ReadStateEntry(Path.Combine(_dataDir, "state.json"), "pause-resume");
@@ -193,7 +193,7 @@ public class BackupManagerPauseResumeTests : IDisposable
             var logger = new CancelAfterNthFileLogger(cts, afterCount: 2);
             var manager = CreateManager(logger);
             Assert.Throws<OperationCanceledException>(
-                () => manager.ExecuteJob("source-shrunk", resumeAfterPath: null, cts.Token));
+                () => manager.ExecuteJob("source-shrunk", resumeAfterPath: null, ct: cts.Token));
         }
         Assert.Equal(2, Directory.GetFiles(_targetDir).Length);
 
@@ -212,5 +212,92 @@ public class BackupManagerPauseResumeTests : IDisposable
         Assert.Contains("file-3.txt", copiedNames);
         Assert.Contains("file-4.txt", copiedNames);
         Assert.Contains("file-5.txt", copiedNames);
+    }
+
+    // Signals a TaskCompletionSource the first time a JobPaused log entry
+    // arrives, so the test knows BackupManager is parked on its pause gate
+    // without resorting to Thread.Sleep / Task.Delay timing probes.
+    private sealed class JobPausedSignalLogger : IDailyLogger
+    {
+        private readonly TaskCompletionSource _onJobPaused = new();
+        public Task Paused => _onJobPaused.Task;
+
+        public void Append(LogEntry entry)
+        {
+            if (entry.EventType == LogEvent.JobPaused)
+                _onJobPaused.TrySetResult();
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteJob_PauseGateReset_StateBecomesPausedThenResumes()
+    {
+        // V3 path: ExecuteJob receives a ManualResetEventSlim that the
+        // orchestrator's IJobController.Pause / PauseAll reset. The runner
+        // must transition state.json to Paused at the next file boundary,
+        // wait until the gate is signaled, then continue and finish
+        // Inactive.
+        for (int i = 1; i <= 4; i++)
+            File.WriteAllText(Path.Combine(_sourceDir, $"file-{i}.txt"), $"content-{i}");
+        SeedJob("gated", BackupType.Full);
+
+        var logger = new JobPausedSignalLogger();
+        var manager = CreateManager(logger);
+
+        // Gate starts CLOSED so the first file boundary already stalls.
+        using var pauseGate = new ManualResetEventSlim(initialState: false);
+
+        var execution = Task.Run(() => manager.ExecuteJob(
+            "gated", resumeAfterPath: null, pauseGate: pauseGate));
+
+        // Wait for the JobPaused log entry — proves the runner is parked
+        // on the gate at the file boundary.
+        await logger.Paused.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var paused = ReadStateEntry(Path.Combine(_dataDir, "state.json"), "gated");
+        Assert.Equal(JobState.Paused, paused.State);
+        // Counters are preserved while paused (job has not progressed yet).
+        Assert.Equal(4, paused.FilesRemaining);
+
+        // Release the gate and let the job complete normally.
+        pauseGate.Set();
+        await execution;
+
+        var finished = ReadStateEntry(Path.Combine(_dataDir, "state.json"), "gated");
+        Assert.Equal(JobState.Inactive, finished.State);
+        Assert.Equal(0, finished.FilesRemaining);
+        Assert.Equal(4, Directory.GetFiles(_targetDir).Length);
+    }
+
+    [Fact]
+    public async Task ExecuteJob_PauseGateAndStopTogether_StateBecomesInactive()
+    {
+        // V3 semantics: with a pauseGate supplied, an OperationCanceledException
+        // means Stop (not Pause). The job ends Inactive, not Paused — that's
+        // the contract IParallelBackupOrchestrator.Stop relies on so the v2
+        // pause-as-cancel behaviour stays intact for the adapter callers.
+        for (int i = 1; i <= 4; i++)
+            File.WriteAllText(Path.Combine(_sourceDir, $"file-{i}.txt"), $"content-{i}");
+        SeedJob("gated-stop", BackupType.Full);
+
+        var logger = new JobPausedSignalLogger();
+        var manager = CreateManager(logger);
+
+        using var pauseGate = new ManualResetEventSlim(initialState: false);
+        using var cts = new CancellationTokenSource();
+
+        var execution = Task.Run(() =>
+            Assert.Throws<OperationCanceledException>(() => manager.ExecuteJob(
+                "gated-stop", resumeAfterPath: null, pauseGate: pauseGate, ct: cts.Token)));
+
+        await logger.Paused.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // Stop while paused. The token-aware Wait inside BackupManager
+        // throws OCE and the catch must land Inactive, not Paused.
+        cts.Cancel();
+        await execution;
+
+        var stopped = ReadStateEntry(Path.Combine(_dataDir, "state.json"), "gated-stop");
+        Assert.Equal(JobState.Inactive, stopped.State);
     }
 }

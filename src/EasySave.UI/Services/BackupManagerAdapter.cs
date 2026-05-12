@@ -67,7 +67,7 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         {
             // ExecuteJob is synchronous; run on thread pool and pass the linked token
             // so cancel requests stop the job at the next file boundary.
-            await Task.Run(() => _manager.ExecuteJob(jobName, resumeAfterPath, cts.Token), cts.Token)
+            await Task.Run(() => _manager.ExecuteJob(jobName, resumeAfterPath, ct: cts.Token), cts.Token)
                       .ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }

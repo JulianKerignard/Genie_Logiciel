@@ -16,5 +16,8 @@ public sealed class ParallelBackupOrchestratorStub : IParallelBackupOrchestrator
     public void Pause(string jobName) { }
     public void Resume(string jobName) { }
     public void Stop(string jobName) { }
+    public void PauseAll() { }
+    public void ResumeAll() { }
+    public void StopAll() { }
     public void Dispose() { }
 }
