@@ -25,11 +25,14 @@ des prio restants est non nulle.
     `a1.txt`, `a2.txt`, `a3.txt`.
   - **Job B** : `Demo\B\` contenant `b1.docx`, `b2.docx`, `b3.docx`,
     `b1.txt`, `b2.txt`, `b3.txt`.
-- Garder une console ouverte sur `tail -F %AppData%\ProSoft\EasySave\state.json`
-  (Windows) ou `~/.config/ProSoft/EasySave/state.json` (Linux/macOS)
-  pour suivre l'évolution en temps réel. `-F` (follow by name) plutôt
-  que `-f` (follow by descriptor) parce que `state.json` est réécrit via
-  rename atomique : `tail -f` raterait les updates sur macOS et Git Bash.
+- Garder une console ouverte sur `tail -F "$APPDATA/ProSoft/EasySave/state.json"`
+  (Git Bash / WSL sur Windows) ou `tail -F ~/.config/ProSoft/EasySave/state.json`
+  (Linux/macOS) pour suivre l'évolution en temps réel. `-F` (follow by
+  name) plutôt que `-f` (follow by descriptor) parce que `state.json` est
+  réécrit via rename atomique : `tail -f` raterait les updates sur macOS
+  et Git Bash. `$APPDATA` au lieu de `%AppData%` parce que la version
+  cmd.exe de `tail` ne suit pas le file, on a besoin de l'environnement
+  POSIX où `$APPDATA` est exposé par Git Bash.
 
 ## Configuration
 
@@ -105,7 +108,7 @@ avec les **mêmes** dossiers Job A / Job B.
 | # | Action | Résultat attendu |
 |---|---|---|
 | 1 | `priority_extensions: []`, **Run All**. | Les 2 jobs passent à `Active`. |
-| 2 | Inspecter le log journalier. | Pour chaque job, l'ordre suit le **tri lexicographique ordinal** que `BackupManager` applique systématiquement à la liste des fichiers (`Path.GetFileName` comparé en `StringComparer.Ordinal`). Avec les noms `a1.docx, a1.txt, a2.docx, ...`, le résultat est un **mélange** `.docx` / `.txt` — preuve qu'aucun tri prio-d'abord ne s'applique. |
+| 2 | Inspecter le log journalier. | Pour chaque job, l'ordre suit le **tri lexicographique ordinal** que `BackupManager` applique systématiquement à la liste des fichiers (sur `file.FullName`, comparé en `StringComparer.Ordinal`). Avec les noms `a1.docx, a1.txt, a2.docx, ...` dans un dossier source unique, le résultat est un **mélange** `.docx` / `.txt` — preuve qu'aucun tri prio-d'abord ne s'applique. |
 | 3 | Comparer avec la course précédente. | La différence prouve que le tri prio-d'abord venait bien du gate, pas d'un effet de bord du système de fichiers. |
 
 ## Critères d'acceptation
