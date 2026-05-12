@@ -44,15 +44,57 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
         _port = port;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _stateSubject.OnNext(RemoteConnectionState.Connecting);
-        _tcp = new TcpClient();
-        await _tcp.ConnectAsync(_host, _port, _cts.Token);
+        try
+        {
+            _tcp = new TcpClient();
+            await _tcp.ConnectAsync(_host, _port, _cts.Token);
 
-        Stream stream = await UpgradeStreamAsync(_tcp.GetStream(), _cts.Token);
+            Stream stream = await UpgradeStreamAsync(_tcp.GetStream(), _cts.Token);
 
-        _writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 4096, leaveOpen: true)
-        { AutoFlush = false };
-        _stateSubject.OnNext(RemoteConnectionState.Connected);
-        _ = ReadLoopAsync(_cts.Token);
+            _writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 4096, leaveOpen: true)
+            { AutoFlush = false };
+            _stateSubject.OnNext(RemoteConnectionState.Connected);
+            _ = ReadLoopAsync(_cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // The caller (or DisposeAsync) cancelled the initial attempt —
+            // surface Disconnected, not Error, so the UI stays neutral.
+            _stateSubject.OnNext(RemoteConnectionState.Disconnected);
+            await CleanupAfterFailedConnectAsync();
+            throw;
+        }
+        catch
+        {
+            // TCP connect refused / unreachable, TLS handshake failure,
+            // TOFU thumbprint mismatch — same Error state as the reconnect
+            // loop. Without this catch the state subject would sit on
+            // Connecting forever and the UI label would freeze.
+            _stateSubject.OnNext(RemoteConnectionState.Error);
+            await CleanupAfterFailedConnectAsync();
+            throw;
+        }
+    }
+
+    // Releases the half-built TCP / TLS / writer state after a failed
+    // ConnectAsync so the next attempt starts from a clean baseline and the
+    // disposed _tcp does not leak its socket handle until the next call.
+    // _writer is disposed under _writeLock to match DisconnectAsync — a
+    // failed initial connect with an in-flight SendCommandAsync would
+    // otherwise race the dispose against the write, even if narrow.
+    private async Task CleanupAfterFailedConnectAsync()
+    {
+        await _writeLock.WaitAsync();
+        try
+        {
+            try { _writer?.Dispose(); } catch { }
+            _writer = null;
+            try { _sslStream?.Dispose(); } catch { }
+            _sslStream = null;
+        }
+        finally { _writeLock.Release(); }
+        try { _tcp?.Close(); } catch { }
+        _tcp = null;
     }
 
     // Upgrades the raw network stream to TLS when UseTls is set, applying
