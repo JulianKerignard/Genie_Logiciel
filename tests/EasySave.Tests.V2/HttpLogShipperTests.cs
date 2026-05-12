@@ -207,6 +207,143 @@ public class HttpLogShipperTests : IDisposable
             $"DisposeAsync took {sw.ElapsedMilliseconds}ms with a downed collector.");
     }
 
+    [Fact]
+    public async Task Append_FlushesBufferedEntries_InProducerOrder_AfterReconnect()
+    {
+        // Producer enqueues N entries while the collector is down. Once the
+        // collector recovers, every entry must arrive in the exact order
+        // the producer called Append. Contract from the CdC requirement:
+        // a re-connection replays the buffer in FIFO order so the central
+        // file mirrors the producer's local timeline.
+        //
+        // Use 3 failures only (backoff 1+2+5 = 8 s before the 4th attempt
+        // succeeds) — 4+ failures push the backoff past 30 s cap which
+        // would make the test take ~60 s on a passing run.
+        const int failuresBeforeRecovery = 3;
+        int attempt = 0;
+        var handler = new RecordingHandler(_ =>
+        {
+            int current = Interlocked.Increment(ref attempt);
+            if (current <= failuresBeforeRecovery)
+                throw new HttpRequestException("network down");
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+        await using var shipper = new HttpLogShipper(
+            new Uri("http://collector.local/logs"),
+            new HttpClient(handler));
+
+        const int totalEntries = 10;
+        for (int i = 0; i < totalEntries; i++)
+        {
+            shipper.Append(new LogEntry { JobName = $"entry-{i:D2}", Timestamp = "t" });
+        }
+
+        // Total expected handler calls = failuresBeforeRecovery (all on
+        // entry 0) + totalEntries (all successful). Backoff tops out at
+        // ~8 s before the recovery; cap the wait at 20 s for CI jitter.
+        int expectedHandlerCalls = failuresBeforeRecovery + totalEntries;
+        await handler.WaitForRequestsAsync(expectedHandlerCalls, TimeSpan.FromSeconds(20));
+
+        // Successful POSTs come after the failures, in FIFO order.
+        var successfulBodies = handler.Requests
+            .Skip(failuresBeforeRecovery)
+            .Take(totalEntries)
+            .Select(r => JsonDocument.Parse(r.Body)
+                .RootElement.GetProperty("Entry").GetProperty("JobName").GetString())
+            .ToArray();
+
+        var expected = Enumerable.Range(0, totalEntries)
+            .Select(i => $"entry-{i:D2}").ToArray();
+        Assert.Equal(expected, successfulBodies);
+    }
+
+    [Fact]
+    public async Task Append_LosesNoEntries_DuringExtendedOutage_AndRecovery()
+    {
+        // Explicit zero-loss assertion: 100 entries enqueued during an
+        // outage, collector recovers, every single one must be POSTed.
+        // count_expected == count_received.
+        //
+        // 3 failures keeps backoff under the 30 s cap (1+2+5 = 8 s) — see
+        // the order-preservation test above for the rationale.
+        const int entryCount = 100;
+        const int failuresBeforeRecovery = 3;
+
+        int attempt = 0;
+        var handler = new RecordingHandler(_ =>
+        {
+            int current = Interlocked.Increment(ref attempt);
+            if (current <= failuresBeforeRecovery)
+                throw new HttpRequestException("transient outage");
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+
+        await using var shipper = new HttpLogShipper(
+            new Uri("http://collector.local/logs"),
+            new HttpClient(handler));
+
+        for (int i = 0; i < entryCount; i++)
+        {
+            shipper.Append(new LogEntry { JobName = $"loss-test-{i:D3}", Timestamp = "t" });
+        }
+
+        // Total attempts = failuresBeforeRecovery (retries on entry 0)
+        // + entryCount (successful POSTs for entries 0..N-1).
+        await handler.WaitForRequestsAsync(
+            failuresBeforeRecovery + entryCount,
+            TimeSpan.FromSeconds(20));
+
+        int successful = handler.Requests.Skip(failuresBeforeRecovery).Count();
+        Assert.Equal(entryCount, successful);
+
+        // Defense in depth: verify every JobName landed exactly once.
+        var receivedJobs = handler.Requests
+            .Skip(failuresBeforeRecovery)
+            .Select(r => JsonDocument.Parse(r.Body)
+                .RootElement.GetProperty("Entry").GetProperty("JobName").GetString()!)
+            .ToHashSet();
+        var expectedJobs = Enumerable.Range(0, entryCount)
+            .Select(i => $"loss-test-{i:D3}")
+            .ToHashSet();
+        Assert.Equal(expectedJobs, receivedJobs);
+    }
+
+    [Fact]
+    public async Task Append_SustainsOneThousandEntriesPerSecond_OnCaller()
+    {
+        // Throughput contract: a backup job posting at 1000 entries / s
+        // must not block its caller. Backups in v3 can fire entries from
+        // multiple worker threads in parallel; if Append took even a few
+        // hundred microseconds per call, the worker pool would spend more
+        // time queueing logs than copying files. Note we measure the
+        // CALLER side (Append) — the network drain is async and its rate
+        // is bounded by the collector, not by us.
+        var handler = new RecordingHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.NoContent));
+        await using var shipper = new HttpLogShipper(
+            new Uri("http://collector.local/logs"),
+            new HttpClient(handler));
+
+        const int entriesPerSecond = 1000;
+        const int seconds = 1;
+        const int totalEntries = entriesPerSecond * seconds;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (int i = 0; i < totalEntries; i++)
+        {
+            shipper.Append(new LogEntry { JobName = $"perf-{i}", Timestamp = "t" });
+        }
+        sw.Stop();
+
+        // Append must keep up with 1000/s, so 1000 entries should finish in
+        // well under 1 s. 500 ms gives 5× headroom against CI jitter — if a
+        // future refactor adds disk I/O or contention on the Append path
+        // this test fails sharply.
+        Assert.True(sw.ElapsedMilliseconds < 500,
+            $"Append blocked at {totalEntries / Math.Max(sw.ElapsedMilliseconds / 1000.0, 0.001):F0} entries/s " +
+            $"(observed {sw.ElapsedMilliseconds} ms for {totalEntries} calls; target >= 1000/s).");
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Recording handler — captures outgoing requests so tests can assert
     // method, URI and JSON body without spinning a real HTTP listener.
