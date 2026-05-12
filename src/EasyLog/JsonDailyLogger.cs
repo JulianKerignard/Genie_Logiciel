@@ -39,6 +39,8 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
     private readonly string _logDirectory;
     private readonly Channel<WriteRequest> _queue;
     private readonly Task _writerLoop;
+    private readonly ILogShipper? _shipper;
+    private readonly LogMode _mode;
 
     // Per-day cache so a busy day's append loop does not re-read the file
     // from disk on every flush. The writer task is the only thread that
@@ -52,8 +54,22 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
     /// The directory is created if it does not exist.
     /// </summary>
     /// <param name="logDirectory">Absolute or UNC path where daily files are stored.</param>
+    /// <param name="shipper">
+    /// Optional V3 centralized shipper. When <paramref name="mode"/> is
+    /// <see cref="LogMode.Centralized"/> or <see cref="LogMode.Both"/>, every
+    /// <see cref="Append"/> also enqueues the entry on this shipper. Null
+    /// (default) keeps the v1/v2 local-only behaviour.
+    /// </param>
+    /// <param name="mode">
+    /// Routing for <see cref="Append"/> calls. <see cref="LogMode.Local"/>
+    /// (default) writes the daily file only; <see cref="LogMode.Centralized"/>
+    /// skips the local file and only ships; <see cref="LogMode.Both"/> does both.
+    /// When <paramref name="shipper"/> is null, the mode is forced back to
+    /// <see cref="LogMode.Local"/> so a misconfigured centralized setup
+    /// never causes silent log loss.
+    /// </param>
     /// <exception cref="ArgumentException">Thrown when the path is null or empty.</exception>
-    public JsonDailyLogger(string logDirectory)
+    public JsonDailyLogger(string logDirectory, ILogShipper? shipper = null, LogMode mode = LogMode.Local)
     {
         if (string.IsNullOrWhiteSpace(logDirectory))
         {
@@ -62,6 +78,10 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
 
         _logDirectory = logDirectory;
         Directory.CreateDirectory(_logDirectory);
+        _shipper = shipper;
+        // Centralized / Both without a shipper would silently drop entries.
+        // Fall back to Local so the daily file always exists.
+        _mode = shipper is null ? LogMode.Local : mode;
 
         _queue = Channel.CreateUnbounded<WriteRequest>(new UnboundedChannelOptions
         {
@@ -101,6 +121,24 @@ public sealed class JsonDailyLogger : IDailyLogger, IDisposable
             EncryptionTimeMs = entry.EncryptionTimeMs,
             EventType = entry.EventType,
         };
+
+        // Centralized side first: the shipper is async and non-blocking, so
+        // doing it before the local write does not slow the caller down.
+        // Append on the shipper is a buffered enqueue — never throws on
+        // network failures.
+        if (_mode is LogMode.Centralized or LogMode.Both)
+        {
+            _shipper!.Append(normalized);
+        }
+
+        // Centralized-only skips the daily file entirely. The shipper owns
+        // durability in that case; a host that crashes between Append and
+        // a successful POST loses the entry — operators are expected to
+        // run LogMode.Both during cut-over for that exact reason.
+        if (_mode == LogMode.Centralized)
+        {
+            return;
+        }
 
         var ack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_queue.Writer.TryWrite(new WriteRequest(filePath, normalized, ack)))

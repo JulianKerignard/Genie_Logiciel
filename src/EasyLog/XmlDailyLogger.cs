@@ -18,19 +18,25 @@ public sealed class XmlDailyLogger : IDailyLogger
     private readonly string _logDirectory;
     private readonly XmlFormatter _formatter = new();
     private readonly object _writeLock = new();
+    private readonly ILogShipper? _shipper;
+    private readonly LogMode _mode;
 
     /// <summary>
     /// Initializes a new logger writing to <paramref name="logDirectory"/>.
     /// The directory is created if it does not exist.
     /// </summary>
     /// <param name="logDirectory">Absolute or UNC path where daily XML files are stored.</param>
+    /// <param name="shipper">Optional V3 centralized shipper. See <see cref="JsonDailyLogger"/> for the contract.</param>
+    /// <param name="mode">Routing for <see cref="Append"/> calls. See <see cref="JsonDailyLogger"/> for the contract.</param>
     /// <exception cref="ArgumentException">Thrown when the path is null or empty.</exception>
-    public XmlDailyLogger(string logDirectory)
+    public XmlDailyLogger(string logDirectory, ILogShipper? shipper = null, LogMode mode = LogMode.Local)
     {
         if (string.IsNullOrWhiteSpace(logDirectory))
             throw new ArgumentException("Log directory must be provided.", nameof(logDirectory));
         _logDirectory = logDirectory;
         Directory.CreateDirectory(_logDirectory);
+        _shipper = shipper;
+        _mode = shipper is null ? LogMode.Local : mode;
     }
 
     /// <summary>Absolute path of the directory where daily log files are written.</summary>
@@ -54,7 +60,18 @@ public sealed class XmlDailyLogger : IDailyLogger
             FileSize = entry.FileSize,
             FileTransferTimeMs = entry.FileTransferTimeMs,
             EncryptionTimeMs = entry.EncryptionTimeMs,
+            EventType = entry.EventType,
         };
+
+        if (_mode is LogMode.Centralized or LogMode.Both)
+        {
+            _shipper!.Append(normalized);
+        }
+
+        if (_mode == LogMode.Centralized)
+        {
+            return;
+        }
 
         lock (_writeLock)
         {
