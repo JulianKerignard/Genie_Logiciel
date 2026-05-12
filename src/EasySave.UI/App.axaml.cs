@@ -112,10 +112,13 @@ public partial class App : Application
         // Backend services
         services.AddSingleton<IDailyLogger>(_ =>
         {
-            var logFormat = SettingsRepository.Instance.Load().LogFormat;
-            return logFormat.Equals("xml", StringComparison.OrdinalIgnoreCase)
-                ? (IDailyLogger)new XmlDailyLogger(AppConfig.Instance.LogDirectory)
-                : new JsonDailyLogger(AppConfig.Instance.LogDirectory);
+            var settings = SettingsRepository.Instance.Load();
+            var (logger, _) = DailyLoggerFactory.Create(
+                AppConfig.Instance.LogDirectory,
+                settings.LogFormat,
+                settings.LogMode,
+                settings.LogCentralizedEndpoint);
+            return logger;
         });
 
         services.AddSingleton<IEncryptionService>(_ =>

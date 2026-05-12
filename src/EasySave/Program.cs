@@ -14,7 +14,16 @@ catch (IOException ex)
     Environment.Exit(1);
 }
 
-var logger = new JsonDailyLogger(AppConfig.Instance.LogDirectory);
+var (logger, logShipper) = DailyLoggerFactory.Create(
+    AppConfig.Instance.LogDirectory,
+    AppConfig.Instance.Settings.LogFormat,
+    AppConfig.Instance.Settings.LogMode,
+    AppConfig.Instance.Settings.LogCentralizedEndpoint);
+AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
+{
+    if (logShipper is not null)
+        await logShipper.DisposeAsync();
+};
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)
     ? new NoOpEncryptionService()
     : new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft);
