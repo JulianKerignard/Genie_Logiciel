@@ -13,6 +13,15 @@ namespace EasySave.Tests.V2;
 /// </summary>
 public class HttpLogShipperTests : IDisposable
 {
+    // Named time budgets used across the assertions in this file. Centralising
+    // them clarifies what each timeout is bounding (caller-side throughput,
+    // shipper-side drain, retry replay).
+    private const int AppendNonBlockingBudgetMs = 500;
+    private const int DisposeNonBlockingBudgetMs = 2_000;
+    private const int LocalShipperDrainGraceMs = 200;
+    private static readonly TimeSpan BackoffReplayDeadline = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ZeroLossReplayDeadline = TimeSpan.FromSeconds(20);
+
     private readonly string _tempDir;
 
     public HttpLogShipperTests()
@@ -83,7 +92,7 @@ public class HttpLogShipperTests : IDisposable
         }
         sw.Stop();
 
-        Assert.True(sw.ElapsedMilliseconds < 500,
+        Assert.True(sw.ElapsedMilliseconds < AppendNonBlockingBudgetMs,
             $"Append blocked on a downed collector ({sw.ElapsedMilliseconds}ms for 50 calls).");
     }
 
@@ -109,7 +118,7 @@ public class HttpLogShipperTests : IDisposable
         // Three failures back off 1s + 2s + 5s = 8s before the 4th attempt
         // succeeds. Cap the test at 15s so a hung loop fails quickly without
         // making CI flaky on a slow runner.
-        await handler.WaitForRequestsAsync(4, TimeSpan.FromSeconds(15));
+        await handler.WaitForRequestsAsync(4, BackoffReplayDeadline);
 
         Assert.Equal(4, callCount);
         Assert.Equal("retry-me",
@@ -137,7 +146,7 @@ public class HttpLogShipperTests : IDisposable
         }
 
         // Local mode must never reach the shipper, even when one is wired.
-        await Task.Delay(200);
+        await Task.Delay(LocalShipperDrainGraceMs);
         Assert.Empty(handler.Requests);
         Assert.Single(Directory.GetFiles(_tempDir, "*.json"));
     }
@@ -200,14 +209,14 @@ public class HttpLogShipperTests : IDisposable
         shipper.Append(new LogEntry { JobName = "stuck", Timestamp = "t" });
 
         // Give the writer task a moment to start its first attempt.
-        await Task.Delay(200);
+        await Task.Delay(LocalShipperDrainGraceMs);
 
         // DisposeAsync must cancel the in-flight backoff and complete quickly.
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await shipper.DisposeAsync();
         sw.Stop();
 
-        Assert.True(sw.ElapsedMilliseconds < 2000,
+        Assert.True(sw.ElapsedMilliseconds < DisposeNonBlockingBudgetMs,
             $"DisposeAsync took {sw.ElapsedMilliseconds}ms with a downed collector.");
     }
 
@@ -246,7 +255,7 @@ public class HttpLogShipperTests : IDisposable
         // entry 0) + totalEntries (all successful). Backoff tops out at
         // ~8 s before the recovery; cap the wait at 20 s for CI jitter.
         int expectedHandlerCalls = failuresBeforeRecovery + totalEntries;
-        await handler.WaitForRequestsAsync(expectedHandlerCalls, TimeSpan.FromSeconds(20));
+        await handler.WaitForRequestsAsync(expectedHandlerCalls, ZeroLossReplayDeadline);
 
         // Successful POSTs come after the failures, in FIFO order.
         var successfulBodies = handler.Requests
@@ -295,7 +304,7 @@ public class HttpLogShipperTests : IDisposable
         // + entryCount (successful POSTs for entries 0..N-1).
         await handler.WaitForRequestsAsync(
             failuresBeforeRecovery + entryCount,
-            TimeSpan.FromSeconds(20));
+            ZeroLossReplayDeadline);
 
         int successful = handler.Requests.Skip(failuresBeforeRecovery).Count();
         Assert.Equal(entryCount, successful);
@@ -343,7 +352,7 @@ public class HttpLogShipperTests : IDisposable
         // well under 1 s. 500 ms gives 5× headroom against CI jitter — if a
         // future refactor adds disk I/O or contention on the Append path
         // this test fails sharply.
-        Assert.True(sw.ElapsedMilliseconds < 500,
+        Assert.True(sw.ElapsedMilliseconds < AppendNonBlockingBudgetMs,
             $"Append blocked at {totalEntries / Math.Max(sw.ElapsedMilliseconds / 1000.0, 0.001):F0} entries/s " +
             $"(observed {sw.ElapsedMilliseconds} ms for {totalEntries} calls; target >= 1000/s).");
     }

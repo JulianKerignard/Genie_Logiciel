@@ -95,7 +95,7 @@ public sealed class LogCentralizerE2ETests : IClassFixture<LogCentralizerE2EFixt
         var lines = await LogFilePoller.WaitForLinesAsync(
             _fx.HostLogsDir!,
             expected: clientCount * entriesPerClient,
-            timeout: TimeSpan.FromSeconds(20));
+            timeout: TestTimeouts.ContainerFlushTimeout);
 
         Assert.Single(Directory.GetFiles(_fx.HostLogsDir!, "*.jsonl"));
         Assert.Equal(clientCount * entriesPerClient, lines.Length);
@@ -192,7 +192,7 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
 
             try
             {
-                await WaitForHealthAsync(Http, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+                await WaitForHealthAsync(Http, TestTimeouts.HealthProbeDeadline).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -282,7 +282,7 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
         using var probeClient = new HttpClient
         {
             BaseAddress = client.BaseAddress,
-            Timeout = TimeSpan.FromSeconds(2),
+            Timeout = TestTimeouts.HealthProbeRequestTimeout,
         };
 
         var deadline = DateTime.UtcNow + timeout;
@@ -298,7 +298,7 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
             catch (HttpRequestException ex) { lastError = ex; }
             catch (TaskCanceledException ex) { lastError = ex; }
 
-            await Task.Delay(250).ConfigureAwait(false);
+            await Task.Delay(TestTimeouts.HealthProbePollInterval).ConfigureAwait(false);
         }
 
         throw new TimeoutException(

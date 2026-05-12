@@ -16,7 +16,7 @@ internal static class LogFilePoller
     public static async Task<string[]> WaitForLinesAsync(
         string logsDir, int expected, TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
+        var deadline = DateTime.UtcNow + (timeout ?? TestTimeouts.FilePollDefault);
         while (DateTime.UtcNow < deadline)
         {
             var files = Directory.GetFiles(logsDir, "*.jsonl");
