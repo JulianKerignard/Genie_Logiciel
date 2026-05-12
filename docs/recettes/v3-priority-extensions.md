@@ -25,9 +25,11 @@ des prio restants est non nulle.
     `a1.txt`, `a2.txt`, `a3.txt`.
   - **Job B** : `Demo\B\` contenant `b1.docx`, `b2.docx`, `b3.docx`,
     `b1.txt`, `b2.txt`, `b3.txt`.
-- Garder une console ouverte sur `tail -f %AppData%\ProSoft\EasySave\state.json`
+- Garder une console ouverte sur `tail -F %AppData%\ProSoft\EasySave\state.json`
   (Windows) ou `~/.config/ProSoft/EasySave/state.json` (Linux/macOS)
-  pour suivre l'évolution en temps réel.
+  pour suivre l'évolution en temps réel. `-F` (follow by name) plutôt
+  que `-f` (follow by descriptor) parce que `state.json` est réécrit via
+  rename atomique : `tail -f` raterait les updates sur macOS et Git Bash.
 
 ## Configuration
 
@@ -67,8 +69,12 @@ le BackupManager prenne en compte la nouvelle liste.
 Une fois la course terminée :
 
 ```bash
-# Linux/macOS — extraire l'ordre des fichiers copiés depuis le log
-jq -r '.[] | select(.EventType==null or .EventType=="FileTransfer") | .SourceFile' \
+# Linux/macOS — extraire l'ordre des fichiers copiés depuis le log.
+# Les lignes de copie de fichier ont EventType = null (omis du JSON via
+# JsonIgnore(WhenWritingNull)) ; les lignes V3 d'évènement non-fichier
+# (BigFileEnqueued, RemoteConsoleConnected, …) ont la propriété
+# explicitement présente.
+jq -r '.[] | select(.EventType==null) | .SourceFile' \
     "$HOME/.config/ProSoft/EasySave/Logs/$(date +%Y-%m-%d).json" \
     | awk -F'/' '{print $NF}'
 ```
@@ -99,7 +105,7 @@ avec les **mêmes** dossiers Job A / Job B.
 | # | Action | Résultat attendu |
 |---|---|---|
 | 1 | `priority_extensions: []`, **Run All**. | Les 2 jobs passent à `Active`. |
-| 2 | Inspecter le log journalier. | Pour chaque job, l'**ordre FIFO du système de fichiers** est respecté (les fichiers sortent dans l'ordre que `Directory.EnumerateFiles` renvoie, typiquement alphabétique sur ext4 / NTFS — mais aucun tri prio-d'abord). Les `.docx` et `.txt` sont **mélangés** dans la sortie. |
+| 2 | Inspecter le log journalier. | Pour chaque job, l'ordre suit le **tri lexicographique ordinal** que `BackupManager` applique systématiquement à la liste des fichiers (`Path.GetFileName` comparé en `StringComparer.Ordinal`). Avec les noms `a1.docx, a1.txt, a2.docx, ...`, le résultat est un **mélange** `.docx` / `.txt` — preuve qu'aucun tri prio-d'abord ne s'applique. |
 | 3 | Comparer avec la course précédente. | La différence prouve que le tri prio-d'abord venait bien du gate, pas d'un effet de bord du système de fichiers. |
 
 ## Critères d'acceptation
@@ -120,9 +126,13 @@ avec les **mêmes** dossiers Job A / Job B.
       dans la séquence du log). Confirme que le tri vient bien du gate.
 - [ ] **state.json** reflète l'état attendu pendant l'exécution : les
       deux jobs `Active` simultanément, `FilesRemaining` décroît au fur
-      et à mesure des copies (la phase "parqué sur le gate" est observable
-      par un job dont `CurrentSource` reste vide en attendant que l'autre
-      job finisse ses prio).
+      et à mesure des copies. La phase "parqué sur le gate" est
+      observable par un job dont `FilesRemaining > 0` ET `CurrentSource`
+      reste **figé** (= chemin du dernier `.docx` copié) sur plusieurs
+      cycles de polling, en attendant que l'autre job finisse ses prio.
+      `CurrentSource` n'est jamais réécrit à vide pendant l'attente —
+      il garde la dernière valeur posée par `BackupManager` après
+      copie.
 
 ## Cas limites
 
