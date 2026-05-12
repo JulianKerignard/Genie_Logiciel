@@ -117,10 +117,12 @@ internal sealed class LogCentralizerOptions
 {
     /// <summary>
     /// Directory where the collector writes its single daily file. Mounted
-    /// from the host as a Docker volume (`./logs/` by convention).
+    /// from the host as a Docker volume (<c>./logs/</c> by convention).
+    /// Override via <c>appsettings.json</c> (<c>LogCentralizer:LogsDirectory</c>)
+    /// or the standard ASP.NET Core environment-variable form
+    /// <c>LogCentralizer__LogsDirectory</c> — see the admin doc for details.
     /// </summary>
-    public string LogsDirectory { get; set; } =
-        Environment.GetEnvironmentVariable("LOGCENTRALIZER_LOGS_DIR") ?? "/var/log/easysave";
+    public string LogsDirectory { get; set; } = "/var/log/easysave";
 }
 
 // Single background task draining the channel. SingleReader=true means
@@ -156,7 +158,13 @@ internal sealed class DailyFileWriter : BackgroundService
         {
             await foreach (var entry in _queue.Reader.ReadAllAsync(stoppingToken))
             {
-                await AppendAsync(entry, stoppingToken);
+                // CancellationToken.None on the write: the entry has already
+                // been dequeued and acknowledged with 204. Cancelling the
+                // File.AppendAllTextAsync mid-flight would lose it without
+                // any way for FlushRemainingAsync to recover it (it's no
+                // longer in the channel). The loop itself still exits on
+                // ReadAllAsync(stoppingToken) at the next iteration.
+                await AppendAsync(entry, CancellationToken.None);
             }
         }
         catch (OperationCanceledException)
@@ -195,11 +203,13 @@ internal sealed class DailyFileWriter : BackgroundService
             }
             catch (Exception)
             {
-                // Shutdown drain is best-effort: a failure here means the
-                // host is going down hard and we cannot do better than
-                // skip the entry. The shipper's retry/buffer on the client
-                // side keeps it alive on the next reconnect.
-                break;
+                // Shutdown drain is best-effort and PER-ENTRY: one transient
+                // I/O failure must not strand every entry still in the queue.
+                // Each of them was already acked with a 204 — the client
+                // dropped it from its retry buffer, so silently abandoning
+                // siblings here would lose them for good. Continue draining;
+                // anything that ultimately fails is a hard shutdown casualty.
+                continue;
             }
         }
     }

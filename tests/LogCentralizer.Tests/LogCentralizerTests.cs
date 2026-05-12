@@ -209,7 +209,13 @@ public class LogCentralizerTests : IDisposable
                 using var fs = new FileStream(files[0], FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var sr = new StreamReader(fs);
                 var content = await sr.ReadToEndAsync();
-                var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                // Split on both \r and \n so a Windows CI runner (where the
+                // writer emits "\r\n" via Environment.NewLine) does not leave
+                // a trailing '\r' on every token — JsonSerializer.Deserialize
+                // would throw JsonException on the stray byte.
+                var lines = content.Split(
+                    new[] { '\r', '\n' },
+                    StringSplitOptions.RemoveEmptyEntries);
                 if (lines.Length >= expected) return lines;
             }
             await Task.Delay(100);
