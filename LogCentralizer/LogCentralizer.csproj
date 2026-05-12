@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>LogCentralizer</RootNamespace>
+    <AssemblyName>LogCentralizer</AssemblyName>
+    <Description>EasySave v3 centralized log collector — ASP.NET Core minimal API that ingests LogEntry JSON over HTTP and persists one daily JSON Lines file regardless of the number of source workstations.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\EasyLog\EasyLog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LogCentralizer.Tests" />
+  </ItemGroup>
+
+</Project>
