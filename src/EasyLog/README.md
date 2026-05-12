@@ -132,6 +132,10 @@ The POCO that describes a single logged operation. Fields:
 | `TargetFile` | `string` | Full target path (UNC recommended) |
 | `FileSize` | `long` | Source size in bytes |
 | `FileTransferTimeMs` | `long` | Transfer duration; `< 0` on error |
+| `EncryptionTimeMs` | `long?` | v1.1+ — encryption duration; `< 0` on encryption error, `null` when no encryption was performed |
+| `EventType` | `LogEvent?` | v1.1+ — V3 event category (`null` on v1/v2 file-transfer rows) |
+| `MachineName` | `string?` | v1.2+ — host that produced the entry (`null` on v1/v2 rows; auto-stamped by the daily loggers when the caller leaves it null) |
+| `UserName` | `string?` | v1.2+ — user account that produced the entry (same retro-compat contract as `MachineName`) |
 
 ### `JsonDailyLogger`
 
