@@ -53,6 +53,15 @@ public sealed class AppSettings
 
     [JsonPropertyName("log_centralized_endpoint")]
     public string LogCentralizedEndpoint { get; init; } = string.Empty;
+
+    // CdC V3: extensions listées ici ont priorité de sauvegarde.
+    // « Aucune sauvegarde d'un fichier non prioritaire ne peut se faire
+    //   tant qu'il y a des extensions prioritaires en attente sur au
+    //   moins un travail. »
+    // Forme attendue : [".docx", ".xlsx"]. Matching case-insensitive
+    // (Path.GetExtension renvoie déjà avec le leading dot).
+    [JsonPropertyName("priority_extensions")]
+    public IReadOnlyList<string> PriorityExtensions { get; init; } = Array.Empty<string>();
 }
 
 public sealed class CryptoSoftSettings
