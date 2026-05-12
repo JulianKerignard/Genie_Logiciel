@@ -1,0 +1,52 @@
+# EasySave v3 — centralized logging stack.
+#
+# Run with:   docker compose up -d
+# Stop with:  docker compose down
+# Tail logs:  docker compose logs -f log-centralizer
+#
+# Only one service for now: the LogCentralizer minimal API. EasySave clients
+# (console, GUI) keep running natively on each operator workstation and push
+# LogEntry POSTs to this container over HTTP.
+#
+# Single-replica by design — see the CdC note in LogCentralizer/Dockerfile.
+
+services:
+  log-centralizer:
+    container_name: log-centralizer
+    image: easysave/log-centralizer:v3
+    build:
+      # Context = repo root so the Dockerfile can grab EasyLog alongside
+      # LogCentralizer (and the embedded XSD under docs/schemas/).
+      context: .
+      dockerfile: LogCentralizer/Dockerfile
+    ports:
+      # host:container — switch the left side if the host already uses 8080.
+      - "8080:8080"
+    volumes:
+      # Single daily file lives here. The host directory is created on
+      # `docker compose up` if missing; ownership inside the container is
+      # the non-root `app` user (UID 1654).
+      # On Linux hosts the host directory must be writable by that UID —
+      # either `chown 1654:1654 ./logs` (recommended) or `chmod 0777 ./logs`
+      # (looser but works without knowing the in-image UID). Docker
+      # Desktop on macOS / Windows handles the UID translation transparently,
+      # so neither command is required there.
+      - ./logs:/var/log/easysave
+    environment:
+      # Override the in-image default. Standard ASP.NET Core env-var form
+      # (double underscore), NOT a custom variable — Configuration.Bind
+      # picks it up automatically.
+      - LogCentralizer__LogsDirectory=/var/log/easysave
+      - DOTNET_RUNNING_IN_CONTAINER=true
+    healthcheck:
+      # Hit /health every 30 s. After three consecutive failures the
+      # container is reported unhealthy and Docker / orchestrators can act
+      # on it (we do NOT auto-restart on unhealthy — see restart policy
+      # below). curl is installed in the Dockerfile (the aspnet:8.0 base
+      # image is Debian slim and ships with neither curl nor wget).
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

@@ -1,0 +1,34 @@
+# Build artifacts
+**/bin/
+**/obj/
+**/[Dd]ebug/
+**/[Rr]elease/
+**/TestResults/
+**/*.user
+**/*.suo
+
+# IDE
+.vs/
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Docs & test artifacts not needed inside the image. docs/schemas/ stays
+# in because EasyLog embeds easysave-log.xsd as a resource at build time.
+docs/
+!docs/schemas/
+!docs/schemas/**
+tests/
+*.md
+
+# GUI projects — not built inside the container
+src/EasySave.UI/
+EasySave.RemoteConsole/
