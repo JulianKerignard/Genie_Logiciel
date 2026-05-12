@@ -246,9 +246,12 @@ public class BackupManagerPauseResumeTests : IDisposable
 
         // Gate starts CLOSED so the first file boundary already stalls.
         using var pauseGate = new ManualResetEventSlim(initialState: false);
+        // Hard ceiling so a regression that leaves the runner parked
+        // forever fails the test instead of hanging the suite.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         var execution = Task.Run(() => manager.ExecuteJob(
-            "gated", resumeAfterPath: null, pauseGate: pauseGate));
+            "gated", resumeAfterPath: null, pauseGate: pauseGate, ct: cts.Token));
 
         // Wait for the JobPaused log entry — proves the runner is parked
         // on the gate at the file boundary.
