@@ -257,8 +257,13 @@ public sealed class LogCentralizerE2EFixture : IAsyncLifetime
         }
         if (HostLogsDir is not null && Directory.Exists(HostLogsDir))
         {
+            // Widen the catch beyond IOException: a stale Docker-owned file
+            // inside the bind-mount can surface as UnauthorizedAccessException
+            // on the host when the container has been torn down hard. Best-
+            // effort cleanup either way.
             try { Directory.Delete(HostLogsDir, recursive: true); }
-            catch (IOException) { /* best-effort */ }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
         HostLogsDir = null;
     }

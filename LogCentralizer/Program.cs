@@ -37,8 +37,11 @@ var builder = WebApplication.CreateBuilder(args);
 // host down, including /health. On a misconfigured Linux deployment the
 // bind-mounted /var/log/easysave can be owned by a UID the container's
 // `app` user cannot write to, which would otherwise silently kill the
-// service. Keep /health responsive so operators see "writer down" via
-// the absence of new entries rather than a black-hole container.
+// service. Keep /health responsive — paired with the writer completing
+// the channel on fault (see DailyFileWriter.ExecuteAsync), subsequent
+// POST /logs trips ChannelClosedException and returns 503 instead of
+// accepting entries we cannot persist. So operators get TWO observable
+// signals when the writer dies: /health-200 + POST-503.
 builder.Services.Configure<HostOptions>(opts =>
     opts.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
 
@@ -158,14 +161,14 @@ internal sealed class DailyFileWriter : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Create the directory here (not at startup) so the value of
-        // LogsDirectory injected by WebApplicationFactory in tests is the
-        // one actually honored. Idempotent — fine to call every time the
-        // service starts.
-        Directory.CreateDirectory(_options.LogsDirectory);
-
         try
         {
+            // Create the directory here (not at startup) so the value of
+            // LogsDirectory injected by WebApplicationFactory in tests is the
+            // one actually honored. Idempotent — fine to call every time the
+            // service starts.
+            Directory.CreateDirectory(_options.LogsDirectory);
+
             await foreach (var entry in _queue.Reader.ReadAllAsync(stoppingToken))
             {
                 // CancellationToken.None on the write: the entry has already
@@ -182,6 +185,19 @@ internal sealed class DailyFileWriter : BackgroundService
             // Normal shutdown path. The application is exiting; any entries
             // still in the channel will be drained by the FlushRemaining
             // call below.
+        }
+        catch (Exception ex)
+        {
+            // Permanent fault (UnauthorizedAccessException on a bad bind-
+            // mount, disk full, etc.). Complete the channel WITH this
+            // exception so every subsequent POST /logs trips
+            // ChannelClosedException and returns 503 instead of accepting
+            // entries we cannot persist. Without this, BackgroundService-
+            // ExceptionBehavior.Ignore keeps /health green while the
+            // writer is dead — clients see 204s, drop entries from their
+            // retry buffer, and we silently lose data.
+            _queue.Writer.TryComplete(ex);
+            throw;
         }
         finally
         {
