@@ -60,7 +60,19 @@ public sealed class BigFileGate : IBigFileGate, IDisposable
         public void Dispose()
         {
             var sem = Interlocked.Exchange(ref _semaphore, null);
-            sem?.Release();
+            if (sem is null) return;
+            try
+            {
+                sem.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The gate was disposed while this copy was in flight (host
+                // shutdown race). Releasing a disposed semaphore would
+                // otherwise fault the worker task and report the job as
+                // Failed even though the copy succeeded. Swallow — the gate
+                // is gone for good, no other waiter is parked on it.
+            }
         }
     }
 }
