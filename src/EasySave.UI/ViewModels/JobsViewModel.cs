@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EasySave;
 using EasySave.Models;
+using EasySave.Services;
 using EasySave.UI.Services;
 
 namespace EasySave.UI.ViewModels;
@@ -12,6 +13,11 @@ public sealed partial class JobsViewModel : ViewModelBase
 {
     private readonly IBackupManagerAdapter _backup;
     private readonly BusinessWatcherService _watcher;
+    // V3 parallel orchestrator. Used by RunAllAsync to launch jobs in
+    // parallel bounded by max_parallel_jobs. Single-job Run/Pause/Resume
+    // still goes through _backup (the adapter) — Pause/Resume routes to
+    // both so a job started by RunAll can still be paused via its card.
+    private readonly IParallelBackupOrchestrator? _orchestrator;
     // Tracks jobs paused by the watcher (distinct from user-initiated pauses).
     private readonly HashSet<string> _watcherPausedJobs = new();
 
@@ -27,10 +33,14 @@ public sealed partial class JobsViewModel : ViewModelBase
 
     public bool IsEmpty => Jobs.Count == 0;
 
-    public JobsViewModel(IBackupManagerAdapter backup, BusinessWatcherService watcher)
+    public JobsViewModel(
+        IBackupManagerAdapter backup,
+        BusinessWatcherService watcher,
+        IParallelBackupOrchestrator? orchestrator = null)
     {
         _backup = backup;
         _watcher = watcher;
+        _orchestrator = orchestrator;
         Jobs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
         LoadJobs();
         _backup.StateUpdated += OnStateUpdated;
@@ -186,13 +196,39 @@ public sealed partial class JobsViewModel : ViewModelBase
     {
         if (IsBusinessSoftwareDetected) return;
         RequestShowProgress?.Invoke();
+
         // Include Completed jobs so a second click after a successful run
         // re-launches every job; only Running and Paused are skipped to avoid
         // double-starting an active or user-paused backup.
-        var tasks = Jobs
+        var eligible = Jobs
             .Where(j => j.UiState is UiJobState.Idle or UiJobState.Completed)
-            .Select(RunJobInternal)
             .ToList();
+        if (eligible.Count == 0) return;
+
+        foreach (var vm in eligible) vm.UiState = UiJobState.Running;
+
+        // V3 path: when the parallel orchestrator is wired (GUI host), run
+        // every eligible job concurrently bounded by max_parallel_jobs.
+        // Progress updates still flow through StateTracker → adapter
+        // .StateUpdated → OnStateUpdated, so the cards refresh as usual.
+        // Fallback (no orchestrator injected — e.g. unit tests of this
+        // ViewModel) keeps the original Task.WhenAll loop via the adapter.
+        if (_orchestrator is not null)
+        {
+            try
+            {
+                await _orchestrator.RunAsync(
+                    eligible.Select(j => j.Name),
+                    CancellationToken.None).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = ex.Message;
+            }
+            return;
+        }
+
+        var tasks = eligible.Select(RunJobInternal).ToList();
         await Task.WhenAll(tasks).ConfigureAwait(true);
     }
 
@@ -200,7 +236,10 @@ public sealed partial class JobsViewModel : ViewModelBase
     private void PauseJob(BackupJobVM vm)
     {
         vm.UiState = UiJobState.Paused;
+        // Pause both the adapter (for single-Run jobs) and the orchestrator
+        // (for Run-All jobs). One has the job, the other is a no-op.
         _backup.PauseJob(vm.Name);
+        _orchestrator?.Pause(vm.Name);
     }
 
     [RelayCommand]
@@ -209,6 +248,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         if (IsBusinessSoftwareDetected) return;
         vm.UiState = UiJobState.Running;
         _backup.ResumeJob(vm.Name);
+        _orchestrator?.Resume(vm.Name);
     }
 
     // Used by RunAllAsync to run a job without navigating (navigation is done once before the loop).

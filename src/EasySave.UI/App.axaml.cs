@@ -119,6 +119,12 @@ public partial class App : Application
                 : (IEncryptionService)new CryptoSoftAdapter(cryptoSettings);
         });
 
+        // V3 big-file gate. SemaphoreSlim(N=1) shared across the engine —
+        // when parallel jobs each try to copy a file >= threshold, the gate
+        // serializes them so disk/network bandwidth is not saturated.
+        services.AddSingleton<IBigFileGate>(_ =>
+            new BigFileGate(userSettings.LargeFileThresholdKb * 1024L));
+
         services.AddSingleton<BackupManager>(sp => new BackupManager(
             sp.GetRequiredService<IDailyLogger>(),
             new FullBackupStrategy(),
@@ -126,7 +132,19 @@ public partial class App : Application
             StateTracker.Instance,
             JobRepository.Instance,
             sp.GetRequiredService<IEncryptionService>(),
-            userSettings.EncryptedExtensions));
+            userSettings.EncryptedExtensions,
+            sp.GetRequiredService<IBigFileGate>()));
+
+        // V3 parallel orchestrator + BackupManager-backed job runner.
+        // The orchestrator wraps RunAllAsync (see JobsViewModel) so multiple
+        // jobs run concurrently bounded by max_parallel_jobs.
+        services.AddSingleton<IJobRunner>(sp =>
+            new BackupManagerJobRunner(sp.GetRequiredService<BackupManager>()));
+        services.AddSingleton<IParallelBackupOrchestrator>(sp =>
+            new ParallelBackupOrchestrator(
+                sp.GetRequiredService<IJobRunner>(),
+                _ => sp.GetRequiredService<IDailyLogger>(),
+                Math.Max(1, userSettings.MaxParallelJobs)));
 
         // UI adapter layer
         services.AddSingleton<IBackupManagerAdapter, BackupManagerAdapter>();
@@ -270,5 +288,12 @@ public partial class App : Application
         Services?.GetService<SchedulerDispatchService>()?.Dispose();
         Services?.GetService<IBackupManagerAdapter>()?.Dispose();
         Services?.GetService<BusinessWatcherService>()?.Dispose();
+
+        // V3 orchestrator + gate. Dispose order: orchestrator first so any
+        // in-flight slot wait surfaces as ObjectDisposedException (handled
+        // inside the orchestrator as Cancelled), then the gate which the
+        // orchestrator's job runners may still hold transiently.
+        Services?.GetService<IParallelBackupOrchestrator>()?.Dispose();
+        (Services?.GetService<IBigFileGate>() as IDisposable)?.Dispose();
     }
 }

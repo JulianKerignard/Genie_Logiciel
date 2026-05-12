@@ -20,6 +20,7 @@ public sealed class BackupManager
     private readonly JobRepository _jobRepository;
     private readonly IEncryptionService _encryption;
     private readonly HashSet<string> _encryptedExtensions;
+    private readonly IBigFileGate? _bigFileGate;
 
     /// <summary>
     /// Wires the manager with its dependencies. All parameters are required;
@@ -32,6 +33,12 @@ public sealed class BackupManager
     /// <param name="jobRepository">Singleton repository persisting to <c>jobs.json</c>.</param>
     /// <param name="encryption">Encryption side-channel; pass a <see cref="NoOpEncryptionService"/> to disable encryption.</param>
     /// <param name="encryptedExtensions">File extensions (lowercase, leading dot) that must go through <paramref name="encryption"/> instead of a plain copy. Pass an empty list to disable.</param>
+    /// <param name="bigFileGate">
+    /// V3 gate that serializes the transfer of files >= its threshold across
+    /// every job running in parallel. Pass <c>null</c> in tests or v1/v2
+    /// hosts that do not run jobs in parallel — every file is then copied
+    /// without any cross-job coordination.
+    /// </param>
     public BackupManager(
         IDailyLogger logger,
         IBackupStrategy fullStrategy,
@@ -39,7 +46,8 @@ public sealed class BackupManager
         StateTracker stateTracker,
         JobRepository jobRepository,
         IEncryptionService encryption,
-        IEnumerable<string> encryptedExtensions)
+        IEnumerable<string> encryptedExtensions,
+        IBigFileGate? bigFileGate = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(fullStrategy);
@@ -56,6 +64,7 @@ public sealed class BackupManager
         _jobRepository = jobRepository;
         _encryption = encryption;
         _encryptedExtensions = new HashSet<string>(encryptedExtensions, StringComparer.OrdinalIgnoreCase);
+        _bigFileGate = bigFileGate;
     }
 
     /// <summary>
@@ -213,7 +222,7 @@ public sealed class BackupManager
 
                 FileHelpers.EnsureDirectoryExists(targetPath);
 
-                var (transferMs, encryptionMs) = ProcessFile(file, targetPath);
+                var (transferMs, encryptionMs) = ProcessFile(file, targetPath, ct);
 
                 _logger.Append(new LogEntry
                 {
@@ -275,8 +284,22 @@ public sealed class BackupManager
     // extension is in the configured list) or through a plain File.Copy.
     // Returns the two times to log: file transfer (always set, negative on
     // failure) and encryption (null when no encryption was attempted).
-    private (long transferMs, long? encryptionMs) ProcessFile(FileInfo file, string targetPath)
+    //
+    // The big-file gate (v3, optional) serializes the transfer of files >=
+    // its threshold across every job running in parallel — prevents two
+    // multi-GB copies from saturating disk/network simultaneously. Below
+    // the threshold the gate hands back a no-op handle so small files copy
+    // freely with zero overhead.
+    private (long transferMs, long? encryptionMs) ProcessFile(FileInfo file, string targetPath, CancellationToken ct)
     {
+        // Acquire synchronously: ProcessFile is sync and called from a
+        // worker thread (Task.Run inside BackupManagerAdapter), so
+        // GetAwaiter().GetResult() does not risk a UI-thread deadlock.
+        // The gate is null in v1/v2 hosts where there is no parallelism.
+        using var gateHandle = _bigFileGate is null
+            ? null
+            : _bigFileGate.AcquireAsync(file.Length, ct).GetAwaiter().GetResult();
+
         if (ShouldEncrypt(file.Name))
         {
             var sw = Stopwatch.StartNew();
