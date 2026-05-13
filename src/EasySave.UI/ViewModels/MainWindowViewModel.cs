@@ -117,6 +117,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _jobsVm = new JobsViewModel(_backup, _watcher, _orchestrator);
         _jobsVm.RequestOpenJobEdit = job => ShowJobEdit(job);
         _jobsVm.RequestShowProgress = () => ShowRunProgress();
+        _watcher.Start();
         return _jobsVm;
     }
 }

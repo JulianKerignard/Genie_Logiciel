@@ -12,7 +12,7 @@ namespace EasySave.UI.ViewModels;
 public sealed partial class JobsViewModel : ViewModelBase
 {
     private readonly IBackupManagerAdapter _backup;
-    private readonly BusinessWatcherService _watcher;
+    private readonly IBusinessSoftwareSignals _watcher;
     // V3 parallel orchestrator. Used by RunAllAsync to launch jobs in
     // parallel bounded by max_parallel_jobs. Single-job Run/Pause/Resume
     // still goes through _backup (the adapter) — Pause/Resume routes to
@@ -20,6 +20,15 @@ public sealed partial class JobsViewModel : ViewModelBase
     private readonly IParallelBackupOrchestrator? _orchestrator;
     // Tracks jobs paused by the watcher (distinct from user-initiated pauses).
     private readonly HashSet<string> _watcherPausedJobs = new();
+    // Subset of _watcherPausedJobs: jobs stopped via the orchestrator (Run All
+    // path). Needed to route the resume back through orchestrator.RunAsync
+    // instead of _backup.ResumeJob, which is a no-op for orchestrator-tracked jobs.
+    private readonly HashSet<string> _watcherOrchestratorStoppedJobs = new();
+    // Names currently executing inside the orchestrator (added at RunAllAsync start,
+    // removed in its finally). Used by OnBusinessSoftwareDetected to distinguish
+    // orchestrator-tracked from adapter-tracked jobs — only the former must be
+    // recorded in _watcherOrchestratorStoppedJobs to avoid double-starting.
+    private readonly HashSet<string> _orchestratorTrackedJobs = new();
 
     // Set by MainWindowViewModel after construction.
     public Action<BackupJob?>? RequestOpenJobEdit { get; set; }
@@ -35,7 +44,7 @@ public sealed partial class JobsViewModel : ViewModelBase
 
     public JobsViewModel(
         IBackupManagerAdapter backup,
-        BusinessWatcherService watcher,
+        IBusinessSoftwareSignals watcher,
         IParallelBackupOrchestrator? orchestrator = null)
     {
         _backup = backup;
@@ -46,7 +55,6 @@ public sealed partial class JobsViewModel : ViewModelBase
         _backup.StateUpdated += OnStateUpdated;
         _watcher.BusinessSoftwareDetected += OnBusinessSoftwareDetected;
         _watcher.BusinessSoftwareGone += OnBusinessSoftwareGone;
-        _watcher.Start();
     }
 
     private void LoadJobs()
@@ -101,6 +109,7 @@ public sealed partial class JobsViewModel : ViewModelBase
                     ? UiJobState.Completed
                     : UiJobState.Idle;
                 _watcherPausedJobs.Remove(vm.Name);
+                _watcherOrchestratorStoppedJobs.Remove(vm.Name);
             }
         });
     }
@@ -116,6 +125,16 @@ public sealed partial class JobsViewModel : ViewModelBase
             _watcherPausedJobs.Add(job.Name);
             job.UiState = UiJobState.Paused;
             _backup.PauseJob(job.Name, $"BusinessSoftwareDetected: {name}");
+            // Mirror the wiring already in place for the manual Pause button:
+            // jobs launched by Run All are tracked in the orchestrator, not in
+            // the adapter, so PauseJob above is a no-op for them. Stop() cancels
+            // the per-job CTS and halts the worker at the next file boundary.
+            if (_orchestrator is not null)
+            {
+                _orchestrator.Stop(job.Name);
+                if (_orchestratorTrackedJobs.Contains(job.Name))
+                    _watcherOrchestratorStoppedJobs.Add(job.Name);
+            }
         }
     }
 
@@ -124,12 +143,52 @@ public sealed partial class JobsViewModel : ViewModelBase
         IsBusinessSoftwareDetected = false;
         DetectedSoftwareName = string.Empty;
         // Only resume jobs that the watcher itself paused; leave user-paused jobs alone.
-        foreach (var job in Jobs.Where(j => j.UiState == UiJobState.Paused
-                                         && _watcherPausedJobs.Contains(j.Name)).ToList())
+        var toResume = Jobs
+            .Where(j => j.UiState == UiJobState.Paused && _watcherPausedJobs.Contains(j.Name))
+            .ToList();
+        var orchestratorRestart = toResume
+            .Where(j => _watcherOrchestratorStoppedJobs.Contains(j.Name))
+            .Select(j => j.Name)
+            .ToList();
+        foreach (var job in toResume)
         {
             _watcherPausedJobs.Remove(job.Name);
+            _watcherOrchestratorStoppedJobs.Remove(job.Name);
             job.UiState = UiJobState.Running;
+            // Resumes adapter-tracked jobs (single-run path); no-op for orchestrator-tracked.
             _backup.ResumeJob(job.Name);
+        }
+        // Orchestrator-tracked jobs were stopped (one-way). Restart them.
+        // Limitation: restarts from the beginning of the job (resumeAfterPath is
+        // not propagated by BackupManagerJobRunner in this iteration — see PR #180).
+        // CS4014: intentional fire-and-forget; errors surface via StatusMessage.
+        if (orchestratorRestart.Count > 0)
+#pragma warning disable CS4014
+            RunWatcherOrchestratorJobsAsync(orchestratorRestart);
+#pragma warning restore CS4014
+    }
+
+    private async Task RunWatcherOrchestratorJobsAsync(IReadOnlyList<string> jobNames)
+    {
+        try
+        {
+            await _orchestrator!.RunAsync(jobNames, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            foreach (var name in jobNames)
+            {
+                var vm = Jobs.FirstOrDefault(j => j.Name == name);
+                if (vm?.UiState == UiJobState.Running)
+                {
+                    vm.UiState = UiJobState.Idle;
+                    vm.Progress = 0;
+                }
+            }
         }
     }
 
@@ -215,6 +274,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         // ViewModel) keeps the original Task.WhenAll loop via the adapter.
         if (_orchestrator is not null)
         {
+            foreach (var vm in eligible) _orchestratorTrackedJobs.Add(vm.Name);
             try
             {
                 await _orchestrator.RunAsync(
@@ -236,6 +296,7 @@ public sealed partial class JobsViewModel : ViewModelBase
                 // moved to Paused / Completed alone.
                 foreach (var vm in eligible)
                 {
+                    _orchestratorTrackedJobs.Remove(vm.Name);
                     if (vm.UiState == UiJobState.Running)
                     {
                         vm.UiState = UiJobState.Idle;
