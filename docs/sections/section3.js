@@ -4,23 +4,17 @@ const { h1, body, bullet } = require("../helpers");
 
 module.exports = function section3() {
   return [
-    h1("3. Gestion des jobs"),
-    body("Maximum 5 jobs. Types : Full (copie totale récursive) · Differential (nouveaux fichiers ou modifiés uniquement)."),
-    body("Menu interactif :"),
-    bullet("1 — Créer un job : nom (unique, insensible à la casse), source, destination, type"),
-    bullet("2 — Supprimer un job"),
-    bullet("3 — Lister les jobs"),
-    bullet("4 — Exécuter un ou plusieurs jobs"),
-    bullet("5 — Changer la langue (en / fr)"),
+    h1("3. Sauvegardes"),
     body(
-      "Parallélisme : les jobs sélectionnés s'exécutent en parallèle dans la limite de " +
-      "max_parallel_jobs (défaut 4). Une erreur dans un job n'interrompt pas les autres."
+      "Onglet Jobs : créer / éditer / supprimer un job (nom unique, source, destination, " +
+      "type Complète ou Différentielle). Boutons Run par job ou Run All en masse. Chaque " +
+      "card affiche un badge d'état (Idle / Running / Paused / Done), une barre de " +
+      "progression et le fichier en cours."
     ),
-    body(
-      "BigFileGate : les fichiers dont la taille est >= large_file_threshold_kb " +
-      "(défaut 4 096 Ko) sont soumis à un sémaphore N=1 — un seul gros fichier est " +
-      "transféré à la fois sur l'ensemble des jobs. Les petits fichiers sont traités " +
-      "en parallèle sans restriction."
-    ),
+    bullet("Parallélisme : max_parallel_jobs (défaut 4) ; une erreur n'interrompt pas les autres."),
+    bullet("Prioritaires : tant qu'une extension de priority_extensions reste à copier sur un job, les fichiers non prioritaires des autres jobs attendent."),
+    bullet("Gros fichiers : les fichiers >= large_file_threshold_kb traversent un sémaphore N=1 commun à tous les jobs ; les petits fichiers passent en parallèle sans restriction."),
+    bullet("Pause (au prochain fichier) · Play (reprise depuis l'offset courant) · Stop (annulation immédiate) sur chaque card et globalement."),
+    bullet("Logiciel métier : si business_software est détecté, tous les jobs en cours passent automatiquement en pause ; reprise auto dès qu'il est fermé. L'événement est consigné dans le journal."),
   ];
 };
