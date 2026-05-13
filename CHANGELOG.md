@@ -6,6 +6,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-05-13
+
+Major release introducing parallel execution, real-time remote control, and
+centralized log collection. The single-machine sequential engine of v2 is
+replaced by a parallel orchestrator with cross-job coordination
+(priority extensions, large-file gate) and a TCP control plane that a
+standalone Avalonia console can drive from another workstation.
+`EasyLog.dll` stays additive (no member removed); the v3 wire format
+(`CommandDto` / `EventDto` / `JobProgressDto` / `JobStateEnum`) is the new
+public surface for the protocol and is frozen for the v3.x line.
+
+### Added
+
+- **Parallel backup orchestrator** — `ParallelBackupOrchestrator` runs up
+  to `max_parallel_jobs` jobs concurrently (default 4, configurable in
+  `appsettings.json`). Replaces the v1/v2 sequential loop.
+- **Priority extensions gate** — `IPriorityGate` blocks non-priority files
+  on any job as long as at least one job has priority-extension files
+  pending. Extensions configured via `priority_extensions` in settings.
+- **Big-file gate** — `IBigFileGate` (`SemaphoreSlim(1)`) serializes the
+  transfer of files at or above `large_file_threshold_kb` across every
+  job in flight. Below the threshold, files copy with zero gate overhead.
+- **Per-job and global Play / Pause / Stop** — `IJobController` exposes
+  `Pause`, `Resume`, `Stop`, `PauseAll`, `ResumeAll`, `StopAll`. Pause
+  halts at the next file boundary and preserves the resume cursor; Stop
+  cancels the per-job CTS and transitions the job to `Inactive`.
+- **Real-time progress** — `JobProgressDto` (state, files left, total
+  files, bytes left, total bytes) published on `IEventBus` and broadcast
+  to all connected remote consoles.
+- **Auto-pause on business-software detection (v3 contract)** —
+  `BusinessSoftwareControllerBridge` calls `PauseAll()` when a configured
+  process appears and `ResumeAll()` when it disappears. Replaces the v2
+  refuse-to-start contract.
+- **TCP remote console server** — `TcpRemoteConsoleServer` accepts
+  multiple concurrent clients over newline-delimited JSON; broadcasts
+  events to every connected client with per-client write locks for
+  ordering. Configurable via `remote_console_enabled` and
+  `remote_console_port`.
+- **Standalone Avalonia remote console** — `EasySave.RemoteConsole`
+  project ships as a separate desktop app that connects over the TCP
+  protocol and pilots the engine from another workstation. TOFU
+  validation of the server thumbprint via a local `known_hosts` file.
+- **Optional TLS on the remote console** — `SelfSignedCertProvider`
+  generates a self-signed RSA-2048 PFX on first run; server wraps the
+  socket in `SslStream` (TLS 1.2 / 1.3) when `remote_console_tls_enabled`
+  is set. See `docs/v3-remote-console-tls.md`.
+- **CryptoSoft mono-instance enforcement** — `CryptoSoftAdapter` acquires
+  a named system mutex (`Global\ProSoft.CryptoSoft.SingleInstance`) before
+  every encryption call so two EasySave instances on the same machine
+  cannot run CryptoSoft concurrently. Handles `AbandonedMutexException`.
+- **HTTP log shipper** — `HttpLogShipper` (in `EasyLog`) POSTs each
+  `LogEntry` to a centralized HTTP endpoint with an exponential backoff
+  schedule (1 s, 2 s, 5 s, 10 s, 30 s) and zero-loss replay: entries stay
+  in the in-memory buffer until the POST succeeds.
+- **`LogMode` selector** — `Local` (default, v1/v2 behaviour),
+  `Centralized` (skip local file, ship only), or `Both`. Configured via
+  `log_mode` and `log_centralized_endpoint` in `appsettings.json` and
+  wired in both the CLI (`Program.cs`) and the GUI
+  (`App.axaml.cs`) entry points via `DailyLoggerFactory`.
+- **LogCentralizer service** — ASP.NET Core minimal-API container
+  (`LogCentralizer/Dockerfile`) that receives shipped log entries,
+  drains them through a single `Channel<T>` writer, and persists one
+  `yyyy-MM-dd.jsonl` per day under `/var/log/easysave`. Compose file +
+  admin manual in `docs/v3-log-centralizer-admin.md`.
+- **`MachineName` and `UserName` on `LogEntry`** (additive, optional) —
+  stamped by `Json` / `XmlDailyLogger.Append` from `Environment` so a
+  single centralized daily file can distinguish entries by their origin.
+  `EasyLog.dll` minor bump (v1.2.0): existing v1.0 / v1.1 consumers
+  remain compatible (fields are nullable, `[JsonIgnore(WhenWritingNull)]`).
+- **`FailedFiles` counter on `StateEntry`** — incremented per file when
+  `ProcessFile` returns `FileTransferTimeMs < 0`. Lets an operator spot
+  a partially-failed run from `state.json` without parsing the daily log.
+- **`IStateRepository`** abstraction over `state.json` persistence in
+  `StateTracker` (thread-safe in-memory cache with a 200 ms throttled
+  disk flush). Decouples the writer from the file format and unblocks
+  future alternative backends.
+- **`IEventBus`** (`ChannelEventBus`) — single bus that the engine
+  publishes to and bridges (`StateTrackerEventBridge`,
+  `RemoteConsoleBroadcastBridge`) subscribe to. Replaces the v2 direct
+  coupling between `StateTracker` and consumers.
+- **Testcontainers e2e suite** for `LogCentralizer` — spins a real Docker
+  container, posts entries through the shipper, and asserts the daily
+  file shape and content match the wire format.
+- **V3 UML diagrams** — class diagram + sequence diagrams for
+  Play / Pause / Stop / PauseAll under `docs/diagrams/`.
+- **V3 manual-acceptance recettes** under `docs/recettes/` — remote
+  console, parallel orchestrator, priority extensions, business-software
+  auto-pause, backward-compat with v1/v2, mix-pause scenarios.
+
+### Changed
+
+- `JsonDailyLogger` and `XmlDailyLogger` accept an optional `ILogShipper`
+  and a `LogMode` (default `Local`). When the shipper is `null`, the
+  effective mode is forced back to `Local` so a misconfigured central
+  setup never silently drops entries.
+- `JsonDailyLogger` writer task is channel-based (`Channel<WriteRequest>`,
+  `SingleReader = true`) so concurrent `Append` calls from multiple jobs
+  do not serialize on a file-rewrite lock. The v1 `Append` durability
+  contract is preserved: the method does not return until the entry is
+  flushed.
+- `BackupManager.ExecuteJob` honors `PauseGate` and `CancellationToken`
+  at every file boundary so per-job Pause / Resume / Stop commands take
+  effect promptly without leaving partial files on disk.
+- `StateTracker` is now thread-safe (read/write cache) with a throttled
+  disk flush; the v2 lock-per-update pattern was rewritten on top of the
+  new `IStateRepository` abstraction.
+- `TcpRemoteConsoleServer.ReadLineAsync` is capped at 64 KB per line to
+  prevent an OOM if a misbehaving client never sends `\n`.
+
+### Fixed
+
+- `HttpLogShipper.Dispose` is idempotent (`Interlocked.CompareExchange`)
+  so a double dispose during shutdown does not throw
+  `ObjectDisposedException` after the CTS has already fired.
+- `Program.cs` `ProcessExit` handler disposes the logger before the
+  shipper so the logger's writer loop can flush any pending forward
+  without hitting a disposed `HttpClient`.
+- `App.axaml.cs` `DisposeServices` keeps the `HttpLogShipper` alive on a
+  static field and drains it as the last step so an in-flight POST is
+  not abandoned when the window closes.
+- `LogCentralizer` Docker image now runs as a non-root user that can
+  write to the bind-mounted log directory; previous builds wrote as
+  root and crashed when the host mount was owned by the runtime user.
+- `TcpRemoteConsoleServer` brutal-disconnect cleanup race fixed: the
+  per-client `WriteLock` and `Writer` are disposed only after the
+  client entry is removed from the `ConcurrentDictionary`, so
+  `BroadcastAsync` cannot acquire a freshly disposed lock.
+
+### Limitations / known gaps
+
+- The CLI `RemoteConsoleEnabled = true` path still wires
+  `ParallelBackupOrchestratorStub` instead of the real orchestrator —
+  commands routed via the CLI remote console are no-ops. The GUI path
+  (`App.axaml.cs`) wires the real orchestrator. Tracked for v3.1.
+- `Avalonia` package reference is pinned to `12.0.1` in the UI projects;
+  the public stable line is 11.x. Build is reproducible locally but the
+  pin needs to be re-aligned with the official feed before the next
+  minor release.
+
 ## [2.1.0] — 2026-05-05
 
 Maintenance release on `release/v2.x` rolling up the fixes and small UX

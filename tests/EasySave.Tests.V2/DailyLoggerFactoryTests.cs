@@ -91,8 +91,9 @@ public class DailyLoggerFactoryTests : IDisposable
 
         Assert.NotNull(logger);
         Assert.NotNull(shipper);
-        await shipper!.DisposeAsync();
+        // Same dispose order as Centralized + production: logger first.
         if (logger is IDisposable d) d.Dispose();
+        await shipper!.DisposeAsync();
     }
 
     [Fact]
