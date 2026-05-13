@@ -20,10 +20,12 @@ namespace EasySave.Services;
 /// </remarks>
 public sealed class CryptoSoftAdapter : IEncryptionService, IDisposable
 {
-    // Global\ scopes the mutex across user sessions on Windows. On Linux /
-    // macOS .NET maps it to a per-runtime POSIX semaphore (prefix ignored
-    // but name still gives cross-process isolation).
-    internal const string GlobalMutexName = @"Global\ProSoft.CryptoSoft.SingleInstance";
+    // Defensive serialization at the EasySave layer — prevents two parallel
+    // backup jobs in the same process from spawning CryptoSoft concurrently.
+    // CryptoSoft itself owns the cahier V3 mono-instance gate on its own
+    // mutex name (Global\ProSoft.CryptoSoft.SingleInstance) so the two
+    // layers must NOT share a mutex name — that would deadlock the spawn.
+    internal const string GlobalMutexName = @"Global\EasySave.CryptoSoftSpawnGate";
 
     private readonly CryptoSoftSettings _settings;
     private readonly Mutex _gate;

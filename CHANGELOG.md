@@ -6,6 +6,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] — 2026-05-13
+
+Patch release shipped a few hours after `v3.0.0`. EasySave's
+`encrypted_extensions` flow was fully wired in v3.0 but the companion
+binary it depends on was never bundled — operators had to install
+`CryptoSoft.exe` manually, and a missing path left flagged files with
+`EncryptionTimeMs = -1`. This release adds the companion binary as a
+first-class project of the solution.
+
+### Added
+
+- **`CryptoSoft/` project** — minimal .NET 8 console binary that fulfils
+  the integration contract documented in
+  `docs/cryptosoft-integration.md`. SOLID structure mirrors the rest of
+  the solution:
+  - `Program.cs` wires the dependency graph in three lines.
+  - `CryptoSoftRunner` orchestrates *acquire gate → read → encrypt →
+    write → return elapsed ms*.
+  - `ICryptoAlgorithm` + `XorCryptoAlgorithm` — Strategy pattern. XOR is
+    demo-grade; an AES implementation can land without touching the
+    orchestrator.
+  - `IMonoInstanceGate` + `SystemMutexGate` — cross-process gate
+    backed by a named system `Mutex`. CryptoSoft itself owns the
+    cahier-V3 mono-instance constraint
+    (`Global\ProSoft.CryptoSoft.SingleInstance`); a second launch
+    returns exit code `-2` without touching the target file.
+  - `ExitCodes` — named negative-exit-code constants.
+- **`tests/CryptoSoft.Tests/`** — 14 xUnit tests covering the XOR
+  round-trip, runner happy/error/gate paths with test-double gates, and
+  smoke acquire/release/dispose cycles on the production gate (each
+  test isolates itself with a per-run Guid-suffixed mutex name to avoid
+  CI flake).
+
+### Changed
+
+- **`CryptoSoftAdapter` mutex renamed** from
+  `Global\ProSoft.CryptoSoft.SingleInstance` to
+  `Global\EasySave.CryptoSoftSpawnGate`. The adapter's mutex is the
+  EasySave-side defensive serialization layer; CryptoSoft itself owns
+  the cahier-aligned mono-instance gate on the original name. The two
+  layers must use distinct names so both can fire independently
+  without dead-locking each other. `docs/cryptosoft-integration.md`
+  documents the two-layer design.
+
+### Documentation
+
+- `docs/cryptosoft-integration.md` updated with the two-layer mono-
+  instance design and the new adapter mutex name.
+- `CryptoSoft/README.md` added — architecture overview, build / run
+  instructions, encryption details.
+
+### Tests
+
+- 14 / 14 CryptoSoft tests passing.
+- Existing 8 / 8 `CryptoSoftAdapterTests` still passing after the
+  adapter mutex rename.
+
 ## [3.0.0] — 2026-05-13
 
 Major release. EasySave moves from sequential to parallel backups, introduces a
@@ -282,7 +339,8 @@ the v1.x console and `EasyLog.dll` contracts fully intact.
   as paused — the job now stops at the next file boundary (no partial writes).
 - Resuming a paused Full-backup job no longer re-copies already-transferred files.
 
-[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...v2.0.0

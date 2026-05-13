@@ -94,23 +94,21 @@ EasySave logs **two distinct durations per file** in v2.0:
 ## Single-instance constraint (v3+)
 
 The CdC v3 mandates that CryptoSoft be **Mono-Instance** — no two CryptoSoft
-processes may run simultaneously on the same workstation. EasySave enforces this
-on the **caller side** via a named system Mutex inside `CryptoSoftAdapter`:
+processes may run simultaneously on the same workstation. The enforcement lives
+on **two layers** that intentionally use **different mutex names** so they can
+fire independently without dead-locking each other:
 
-```
-Mutex name: Global\ProSoft.CryptoSoft.SingleInstance
-```
+| Layer | Mutex name | Role |
+|---|---|---|
+| CryptoSoft binary (`CryptoSoft/SystemMutexGate.cs`) | `Global\ProSoft.CryptoSoft.SingleInstance` | Cahier-aligned cross-process gate. A second CryptoSoft launch (from any EasySave instance or a manual command line) exits immediately with code `-2` (`AlreadyRunning`). |
+| EasySave adapter (`CryptoSoftAdapter`) | `Global\EasySave.CryptoSoftSpawnGate` | Defensive in-process serialization. Prevents two parallel jobs in the same EasySave process from spawning CryptoSoft at the same time — even though CryptoSoft's own gate would refuse the second spawn, the adapter still serializes so the second job's file isn't dropped. |
 
-The adapter acquires this mutex before launching the CryptoSoft process and
-releases it once the child exits. Every concurrent caller — parallel jobs inside
-the same EasySave process, or a second EasySave instance running on the same
-machine — serializes on this gate. On Windows the `Global\` prefix scopes the
-mutex across user sessions; on Linux / macOS .NET maps the named mutex to a
-per-runtime POSIX semaphore, which still gives cross-process isolation within
-the ProSoft installation.
+On Windows the `Global\` prefix scopes both mutexes across user sessions; on
+Linux / macOS .NET maps the named mutex to a per-runtime POSIX semaphore, which
+still gives cross-process isolation within the ProSoft installation.
 
-If the gate is contended for longer than `2 × crypto_soft.timeout_ms` (e.g.
-60 s with the default 30 s per-file budget), the queued caller bails out with
+If the adapter's gate is contended for longer than `2 × crypto_soft.timeout_ms`
+(60 s with the default 30 s budget), the queued caller bails out with
 `EncryptResult.Failed()` and writes a `Trace.TraceWarning` line. Operators see
 the conflict in the host trace log and can either raise `crypto_soft.timeout_ms`
 or investigate why an earlier invocation is stuck.
