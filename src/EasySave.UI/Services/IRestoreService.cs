@@ -17,9 +17,11 @@ public interface IRestoreService
     /// <summary>
     /// Restores a snapshot to <paramref name="destination"/> (or the job's
     /// original source when null). Reports progress via <paramref name="onProgress"/>
-    /// (0–100) on the caller's thread.
+    /// (0–100) on the caller's thread. Returns the resolved destination path
+    /// so callers can surface it in the UI — operators kept reporting the
+    /// restore as "did nothing" when the fallback was silent.
     /// </summary>
-    Task RestoreAsync(
+    Task<string> RestoreAsync(
         RestorePoint point,
         string? destination,
         IProgress<int>? onProgress,

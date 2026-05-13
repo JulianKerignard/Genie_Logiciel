@@ -249,8 +249,26 @@ public sealed class TcpRemoteConsoleClient : IRemoteConsoleClient, IAsyncDisposa
         try
         {
             if (_writer is null) return;
-            await _writer.WriteLineAsync(json);
-            await _writer.FlushAsync();
+            // The non-null _writer can still wrap a stream the server
+            // closed (we're mid-reconnect, the read loop set state to
+            // Reconnecting / Error but DisconnectAsync hasn't nulled
+            // _writer yet). Swallow the I/O failure and flip state to
+            // Error so the next reconnect attempt restores the writer.
+            // A button press during this window must never bubble an
+            // unhandled exception out of the [RelayCommand] handler.
+            try
+            {
+                await _writer.WriteLineAsync(json);
+                await _writer.FlushAsync();
+            }
+            catch (IOException)
+            {
+                _stateSubject.OnNext(RemoteConnectionState.Error);
+            }
+            catch (ObjectDisposedException)
+            {
+                _stateSubject.OnNext(RemoteConnectionState.Error);
+            }
         }
         finally { _writeLock.Release(); }
     }

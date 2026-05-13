@@ -66,7 +66,7 @@
   "restore.browse": "Browse...",
   "restore.browse_title": "Select restore destination folder",
   "restore.restore": "Restore",
-  "restore.success": "Restore completed successfully.",
+  "restore.success": "Restore completed successfully — files restored to: {0}",
   "schedule.title": "Automatic Schedule",
   "schedule.save": "Save",
   "schedule.saved": "Schedule saved.",

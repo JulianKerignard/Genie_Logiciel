@@ -95,13 +95,18 @@ await app.RunAsync();
 internal sealed class LogCentralizerOptions
 {
     /// <summary>
-    /// Directory where the collector writes its single daily file. Mounted
-    /// from the host as a Docker volume (<c>./logs/</c> by convention).
-    /// Override via <c>appsettings.json</c> (<c>LogCentralizer:LogsDirectory</c>)
-    /// or the standard ASP.NET Core environment-variable form
-    /// <c>LogCentralizer__LogsDirectory</c> — see the admin doc for details.
+    /// Directory where the collector writes its single daily file. The
+    /// default is a <c>logs</c> folder beside the binary so a non-Docker
+    /// Windows / macOS deployment (operator running the published binary
+    /// directly) does not crash on the Linux-only <c>/var/log</c> path.
+    /// Docker deployments override this to <c>/var/log/easysave</c> via
+    /// <c>appsettings.json</c> (the volume mount target). Override via
+    /// <c>LogCentralizer:LogsDirectory</c> in <c>appsettings.json</c> or
+    /// the env-var form <c>LogCentralizer__LogsDirectory</c> — see the
+    /// admin doc.
     /// </summary>
-    public string LogsDirectory { get; set; } = "/var/log/easysave";
+    public string LogsDirectory { get; set; } =
+        Path.Combine(AppContext.BaseDirectory, "logs");
 }
 
 // Single background task draining the channel. SingleReader=true means
