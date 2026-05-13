@@ -28,6 +28,7 @@ EasySave.sln
 │   ├── EasySave.Shared/      # v3 wire-format DTOs (CommandDto, EventDto, …) and IEventBus
 │   └── EasyLog/              # Reusable daily logger library (JSON + XML)
 ├── EasySave.RemoteConsole/   # v3 standalone Avalonia client (NDJSON-over-TCP)
+├── LogCentralizer/           # v3 Docker-hosted log collector (HTTP endpoint)
 ├── tests/
 │   ├── EasySave.Tests/       # v1 unit and integration tests (xUnit)
 │   └── EasySave.Tests.V2/    # v2 + v3 unit and integration tests (xUnit)
@@ -199,7 +200,7 @@ preserved (frozen public API), so v2 reuses the library additively.
   additive (forward-compatible with v1.x consumers that ignore unknown
   fields).
 - **Job count limit removed** — v2.0 accepts more than 5 jobs.
-- **Settings UI** — edit `encrypted_extensions`, `business_software_list`
+- **Settings UI** — edit `encrypted_extensions`, `business_software`
   and language from the GUI without manually touching `appsettings.json`.
 - **Pause / resume on business software detection** — running jobs
   auto-pause when a configured business application starts, resume when
