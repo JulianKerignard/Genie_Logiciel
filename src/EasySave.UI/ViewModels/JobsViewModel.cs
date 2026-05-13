@@ -29,18 +29,12 @@ public sealed partial class JobsViewModel : ViewModelBase
     // orchestrator-tracked from adapter-tracked jobs — only the former must be
     // recorded in _watcherOrchestratorStoppedJobs to avoid double-starting.
     private readonly HashSet<string> _orchestratorTrackedJobs = new();
-    // Jobs paused by the user while running under the orchestrator. Resume on
-    // these must restart via orchestrator.RunAsync because _backup.ResumeJob
-    // is a no-op for orchestrator-tracked jobs (the adapter never tracked them).
-    // Limitation: orchestrator restart is from the beginning of the job until
-    // BackupManagerJobRunner honours resumeAfterPath (tracked in PR #180).
+    // User-paused jobs from the orchestrator path. Resume restarts them via
+    // orchestrator.RunAsync (the adapter doesn't know them). Restart is from
+    // file 0 until PR #180 wires resumeAfterPath into BackupManagerJobRunner.
     private readonly HashSet<string> _orchestratorPausedJobs = new();
-    // Progress floor per job currently catching up after a resume-from-pause
-    // restart. The engine re-walks the whole file list (no resumeAfterPath
-    // support yet), so its early Active snapshots report a Progress lower
-    // than what the user saw at pause time. Without a floor the bar would
-    // snap back to 0 % and crawl up, which the user reads as a regression.
-    // The entry is dropped from the dict once the engine catches up.
+    // Resume catch-up floor: holds the bar at the paused value while the
+    // engine re-walks the file list; cleared once entry.Progress >= floor.
     private readonly Dictionary<string, int> _orchestratorResumeProgressFloor = new();
 
     // Set by MainWindowViewModel after construction.
@@ -104,14 +98,12 @@ public sealed partial class JobsViewModel : ViewModelBase
         {
             var vm = Jobs.FirstOrDefault(j => j.Name == entry.Name);
             if (vm is null) return;
-            // When the user has paused a Run-All job, the backend's final
-            // Inactive snapshot zeroes FilesRemaining/SizeRemaining (the
-            // BackupManager finally branch treats orchestrator.Stop as a
-            // normal end), which makes the derived Progress jump to 100.
-            // Freeze the progress fields so the bar stays where the user
-            // paused — Resume will reset them to 0 (the orchestrator restart
-            // path) or keep them (adapter resume from offset).
-            if (vm.UiState != UiJobState.Paused)
+            // orchestrator.Stop flushes an Inactive snapshot with
+            // FilesRemaining=0 → Progress=100; without this guard the bar
+            // would jump to 100 % under a Paused badge. Same race for Failed:
+            // the queued snapshot arrives after the run-loop finally has
+            // stamped Failed + Progress=0.
+            if (vm.UiState is not (UiJobState.Paused or UiJobState.Failed))
             {
                 int reported = (int)entry.Progress;
                 if (_orchestratorResumeProgressFloor.TryGetValue(entry.Name, out var floor))
@@ -158,13 +150,9 @@ public sealed partial class JobsViewModel : ViewModelBase
                 }
                 _watcherPausedJobs.Remove(vm.Name);
                 _watcherOrchestratorStoppedJobs.Remove(vm.Name);
-                // _orchestratorPausedJobs is owned by Pause/Resume and must
-                // NOT be cleared here — the backend's Inactive snapshot fires
-                // immediately after orchestrator.Stop(), while the user is
-                // still in the Paused state waiting to click Resume. Clearing
-                // it here would make the subsequent Resume route to the
-                // adapter's no-op ResumeJob path and the job would never
-                // restart.
+                // _orchestratorPausedJobs is owned by Pause/Resume — clearing
+                // it here would happen on the post-Stop Inactive snapshot and
+                // break the next Resume.
             }
         });
     }
@@ -247,6 +235,10 @@ public sealed partial class JobsViewModel : ViewModelBase
                 var vm = Jobs.FirstOrDefault(j => j.Name == name);
                 if (vm?.UiState == UiJobState.Running)
                 {
+                    // If we end up here while still Running, the orchestrator
+                    // threw before publishing the final state. Drop the floor
+                    // so a future fresh Run is not clamped by it.
+                    _orchestratorResumeProgressFloor.Remove(name);
                     vm.UiState = UiJobState.Idle;
                     vm.Progress = 0;
                 }
@@ -371,6 +363,7 @@ public sealed partial class JobsViewModel : ViewModelBase
                     {
                         if (!string.IsNullOrEmpty(result.Message))
                             vm.LastError = result.Message;
+                        _orchestratorResumeProgressFloor.Remove(vm.Name);
                         vm.UiState = UiJobState.Failed;
                         vm.Progress = 0;
                     }
