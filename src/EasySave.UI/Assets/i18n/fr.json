@@ -31,7 +31,7 @@
   "settings.saved": "Paramètres enregistrés.",
   "settings.save_failed": "Impossible d'enregistrer les paramètres. Vérifiez l'accès au disque et réessayez.",
   "about.title": "À propos",
-  "about.version": "Version 2.0.0",
+  "about.version": "Version 3.0.0",
   "about.authors": "Auteurs : Équipe EasySave — CESI PGE A3 FISE INFO",
   "about.description": "Logiciel de sauvegarde développé dans le cadre du projet de génie logiciel.",
   "edit.title_create": "Nouvelle sauvegarde",
