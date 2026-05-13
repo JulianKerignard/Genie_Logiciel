@@ -13,6 +13,7 @@ public sealed class StateToColorConverter : IValueConverter
             UiJobState.Running => new SolidColorBrush(Color.Parse("#3B82F6")),    // blue
             UiJobState.Paused => new SolidColorBrush(Color.Parse("#FF6B35")),     // orange
             UiJobState.Completed => new SolidColorBrush(Color.Parse("#22C55E")),  // green
+            UiJobState.Failed => new SolidColorBrush(Color.Parse("#EF4444")),     // red
             _ => new SolidColorBrush(Color.Parse("#6B7280")),                     // gray (idle)
         };
 

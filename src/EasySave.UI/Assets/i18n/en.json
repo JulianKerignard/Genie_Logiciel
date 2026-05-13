@@ -19,6 +19,7 @@
   "jobs.state.paused": "Paused",
   "jobs.state.idle": "Idle",
   "jobs.state.done": "Done",
+  "jobs.state.failed": "Failed",
   "settings.title": "Settings",
   "settings.save": "Save",
   "settings.log_format": "Log Format",

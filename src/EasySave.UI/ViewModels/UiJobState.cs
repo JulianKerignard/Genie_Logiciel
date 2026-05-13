@@ -1,3 +1,3 @@
 namespace EasySave.UI.ViewModels;
 
-public enum UiJobState { Idle, Running, Paused, Completed }
+public enum UiJobState { Idle, Running, Paused, Completed, Failed }

@@ -176,6 +176,17 @@
                                                Foreground="{StaticResource MutedTextBrush}"
                                                IsVisible="{Binding IsRunning}" />
 
+                                    <!-- Per-card error pill -->
+                                    <Border IsVisible="{Binding HasError}"
+                                            Background="#FEE2E2"
+                                            CornerRadius="4"
+                                            Padding="8,4">
+                                        <TextBlock Text="{Binding LastError}"
+                                                   Foreground="#B91C1C"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap" />
+                                    </Border>
+
                                 </StackPanel>
                             </Border>
                         </DataTemplate>

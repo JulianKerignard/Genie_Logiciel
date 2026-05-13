@@ -11,8 +11,13 @@ public sealed partial class RunProgressViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<BackupJobVM> Jobs => _jobsVm.Jobs;
 
+    // Exposed so the progress view's per-card buttons can bind directly to
+    // JobsViewModel's Pause/Resume commands without duplicating them here.
+    public JobsViewModel JobsVm => _jobsVm;
+
     public bool IsBusinessSoftwareDetected => _jobsVm.IsBusinessSoftwareDetected;
     public string DetectedSoftwareName => _jobsVm.DetectedSoftwareName;
+    public string StatusMessage => _jobsVm.StatusMessage;
 
     // Set by MainWindowViewModel so this VM can trigger navigation back.
     public Action? CloseRequested { get; set; }
@@ -29,6 +34,8 @@ public sealed partial class RunProgressViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsBusinessSoftwareDetected));
         if (e.PropertyName is nameof(JobsViewModel.DetectedSoftwareName))
             OnPropertyChanged(nameof(DetectedSoftwareName));
+        if (e.PropertyName is nameof(JobsViewModel.StatusMessage))
+            OnPropertyChanged(nameof(StatusMessage));
     }
 
     [RelayCommand]
