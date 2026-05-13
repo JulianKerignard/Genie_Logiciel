@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EasyLog\EasyLog.csproj" />
+    <ProjectReference Include="..\EasySave.Shared\EasySave.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

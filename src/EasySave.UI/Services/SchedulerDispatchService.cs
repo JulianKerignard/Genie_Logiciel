@@ -1,3 +1,5 @@
+using EasySave.UI.Models;
+
 namespace EasySave.UI.Services;
 
 /// <summary>
@@ -9,15 +11,21 @@ public sealed class SchedulerDispatchService : IDisposable
 {
     private readonly ISchedulerService _scheduler;
     private readonly IBackupManagerAdapter _backup;
+    private readonly BusinessWatcherService _watcher;
     private System.Threading.Timer? _timer;
     private bool _disposed;
 
-    public SchedulerDispatchService(ISchedulerService scheduler, IBackupManagerAdapter backup)
+    public SchedulerDispatchService(
+        ISchedulerService scheduler,
+        IBackupManagerAdapter backup,
+        BusinessWatcherService watcher)
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         ArgumentNullException.ThrowIfNull(backup);
+        ArgumentNullException.ThrowIfNull(watcher);
         _scheduler = scheduler;
         _backup = backup;
+        _watcher = watcher;
     }
 
     /// <summary>
@@ -35,8 +43,24 @@ public sealed class SchedulerDispatchService : IDisposable
 
     private void Tick(object? _)
     {
+        // Cahier v2.0: a backup must not run while a watched business software
+        // is open. Skip the whole tick — LastRunTime stays untouched so the
+        // schedule fires on the next clear minute, not after a full interval.
+        if (_watcher.IsBusinessSoftwareRunning) return;
+
         var now = DateTimeOffset.Now;
-        var schedules = _scheduler.GetAll().ToList();
+
+        List<ScheduledJob> schedules;
+        try
+        {
+            schedules = _scheduler.GetAll().ToList();
+        }
+        catch (IOException)
+        {
+            // Transient lock on schedules.json — skip this minute, the next tick will retry.
+            return;
+        }
+
         bool anyDispatched = false;
 
         foreach (var schedule in schedules.Where(s => s.IsEnabled))

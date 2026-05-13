@@ -26,6 +26,13 @@ public sealed class StateEntry
     // Remaining size in bytes to transfer.
     public long SizeRemaining { get; set; }
 
+    // Number of files whose transfer failed during the current (or last) run.
+    // Set to 0 on every new run start; incremented per file when ProcessFile
+    // returns FileTransferTimeMs < 0 (the v1.0 error signal). Persisted so
+    // operators can spot "this job finished but lost N files" without parsing
+    // the daily log — the JobState enum stays additive-free (v3 wire format).
+    public int FailedFiles { get; set; }
+
     // Progress between 0 and 100, derived from file counters to stay consistent.
     public double Progress =>
         TotalFilesEligible == 0

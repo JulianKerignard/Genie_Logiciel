@@ -91,18 +91,44 @@ EasySave logs **two distinct durations per file** in v2.0:
 > The new field must be additive (default `0`) so v1.0 consumers keep parsing the
 > log files unchanged.
 
-## Single-instance constraint
+## Single-instance constraint (v3+)
 
-CryptoSoft v1 enforces a single running instance per machine (mutex). If a second
-job tries to invoke it concurrently, the second invocation exits immediately with
-a negative code.
+The CdC v3 mandates that CryptoSoft be **Mono-Instance** — no two CryptoSoft
+processes may run simultaneously on the same workstation. EasySave enforces this
+on the **caller side** via a named system Mutex inside `CryptoSoftAdapter`:
 
-EasySave must therefore **serialize encryption calls** within a single job. Parallel
-jobs across multiple `BackupManager` instances must either coordinate or expect
-encryption failures on the loser.
+```
+Mutex name: Global\ProSoft.CryptoSoft.SingleInstance
+```
 
-> **Open point**: confirm with the tutor whether the v2.0 mutex is per-machine or
-> per-process. The current assumption is per-machine.
+The adapter acquires this mutex before launching the CryptoSoft process and
+releases it once the child exits. Every concurrent caller — parallel jobs inside
+the same EasySave process, or a second EasySave instance running on the same
+machine — serializes on this gate. On Windows the `Global\` prefix scopes the
+mutex across user sessions; on Linux / macOS .NET maps the named mutex to a
+per-runtime POSIX semaphore, which still gives cross-process isolation within
+the ProSoft installation.
+
+If the gate is contended for longer than `2 × crypto_soft.timeout_ms` (e.g.
+60 s with the default 30 s per-file budget), the queued caller bails out with
+`EncryptResult.Failed()` and writes a `Trace.TraceWarning` line. Operators see
+the conflict in the host trace log and can either raise `crypto_soft.timeout_ms`
+or investigate why an earlier invocation is stuck.
+
+### Robustness
+
+- `AbandonedMutexException`: if a previous holder process died without releasing
+  the mutex, the OS grants the gate to the next waiter. The adapter treats this
+  as a normal acquisition — CryptoSoft itself is responsible for cleaning up any
+  partial output on the next launch.
+- `CryptoSoftAdapter` implements `IDisposable` so the host can release the gate
+  handle deterministically on shutdown.
+
+> **Note on the legacy CryptoSoft v1 behaviour**: pre-v3 docs claimed CryptoSoft
+> itself owned a mutex and rejected the second invocation with a negative exit
+> code. EasySave's caller-side mutex is the canonical enforcement point in v3.
+> Even if a future CryptoSoft binary adds its own internal mutex, the caller-side
+> gate guarantees the constraint regardless of the binary's behaviour.
 
 ## Performance expectations
 

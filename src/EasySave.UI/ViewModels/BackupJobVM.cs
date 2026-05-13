@@ -20,6 +20,7 @@ public sealed partial class BackupJobVM : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning))]
     [NotifyPropertyChangedFor(nameof(IsPaused))]
+    [NotifyPropertyChangedFor(nameof(IsBusy))]
     [NotifyPropertyChangedFor(nameof(StateDisplayName))]
     private UiJobState _uiState = UiJobState.Idle;
 
@@ -27,14 +28,27 @@ public sealed partial class BackupJobVM : ObservableObject, IDisposable
     [ObservableProperty] private string _currentFile = string.Empty;
     [ObservableProperty] private int _filesRemaining;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasError))]
+    private string _lastError = string.Empty;
+
+    public bool HasError => !string.IsNullOrEmpty(LastError);
+
     public bool IsRunning => UiState == UiJobState.Running;
     public bool IsPaused => UiState == UiJobState.Paused;
+
+    // Edit / Delete must stay disabled while the worker thread is touching the
+    // job — otherwise BackupManager.RemoveJob wipes the live state entry and
+    // the running task re-creates an orphan, re-introducing the regression
+    // that #68 closed for the v1 console.
+    public bool IsBusy => IsRunning || IsPaused;
 
     public string StateDisplayName => UiState switch
     {
         UiJobState.Running => TranslationSource.Instance["jobs.state.active"],
         UiJobState.Paused => TranslationSource.Instance["jobs.state.paused"],
         UiJobState.Completed => TranslationSource.Instance["jobs.state.done"],
+        UiJobState.Failed => TranslationSource.Instance["jobs.state.failed"],
         _ => TranslationSource.Instance["jobs.state.idle"],
     };
 

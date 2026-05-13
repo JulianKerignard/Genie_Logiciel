@@ -7,6 +7,7 @@ namespace EasySave.Tests.V2;
 // Smoke tests confirming the V2 test project is wired up against EasyLog and EasySave.
 // Real V2 test classes (V2 logger formatters, encryption time, restore, scheduler...) will
 // land here once the corresponding features are implemented.
+[Collection("AppConfigMutation")]
 public class SmokeTests
 {
     [Fact]

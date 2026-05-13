@@ -1,17 +1,25 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EasySave.Services;
+using EasySave.UI.Services;
 
 namespace EasySave.UI.ViewModels;
 
 /// <summary>
 /// View model for the logs viewer screen. Lists daily log files written by
-/// EasyLog (JSON or XML) and shows the raw content of the selected file in
-/// a read-only panel.
+/// EasyLog (JSON or XML) and shows a bounded preview of the selected file
+/// so a huge daily log does not block the UI thread or balloon memory.
 /// </summary>
-public sealed partial class LogsViewModel : ViewModelBase
+public sealed partial class LogsViewModel : ViewModelBase, IDisposable
 {
+    // Hard cap on lines streamed into SelectedContent. A pretty-printed JSON
+    // backup-row entry is ~11 lines, so 150 lines is ~13 entries — enough to
+    // see the latest activity. Files like the 18 MB XML log we hit in
+    // testing would otherwise lock the UI for several seconds.
+    private const int MaxPreviewLines = 150;
+
     public ObservableCollection<LogFileItem> Files { get; } = new();
 
     [ObservableProperty]
@@ -25,13 +33,27 @@ public sealed partial class LogsViewModel : ViewModelBase
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    [ObservableProperty]
+    private bool _isTruncated;
+
     public bool HasSelection => SelectedFile is not null;
     public bool IsEmpty => Files.Count == 0;
 
+    public string TruncatedBadge => string.Format(
+        TranslationSource.Instance["logs.truncated_badge"], MaxPreviewLines);
+
     public LogsViewModel()
     {
+        // Re-render the truncation badge when the user flips FR↔EN.
+        TranslationSource.Instance.PropertyChanged += OnLocaleChanged;
         Refresh();
     }
+
+    private void OnLocaleChanged(object? sender, PropertyChangedEventArgs e)
+        => OnPropertyChanged(nameof(TruncatedBadge));
+
+    public void Dispose()
+        => TranslationSource.Instance.PropertyChanged -= OnLocaleChanged;
 
     [RelayCommand]
     private void Refresh()
@@ -66,6 +88,7 @@ public sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnSelectedFileChanged(LogFileItem? value)
     {
+        IsTruncated = false;
         if (value is null)
         {
             SelectedContent = string.Empty;
@@ -74,7 +97,18 @@ public sealed partial class LogsViewModel : ViewModelBase
 
         try
         {
-            SelectedContent = File.ReadAllText(value.FullPath);
+            // ReadLines streams instead of loading the whole file at once.
+            // We take MaxPreviewLines+1 to detect whether the file extends
+            // beyond the cap without materialising the rest.
+            var lines = File.ReadLines(value.FullPath)
+                            .Take(MaxPreviewLines + 1)
+                            .ToList();
+            if (lines.Count > MaxPreviewLines)
+            {
+                IsTruncated = true;
+                lines.RemoveAt(MaxPreviewLines);
+            }
+            SelectedContent = string.Join('\n', lines);
         }
         catch (IOException ex)
         {
@@ -83,4 +117,3 @@ public sealed partial class LogsViewModel : ViewModelBase
         }
     }
 }
-

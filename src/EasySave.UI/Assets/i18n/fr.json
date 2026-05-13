@@ -19,6 +19,7 @@
   "jobs.state.paused": "En pause",
   "jobs.state.idle": "Prêt",
   "jobs.state.done": "Fait",
+  "jobs.state.failed": "Erreur",
   "settings.title": "Paramètres",
   "settings.save": "Enregistrer",
   "settings.log_format": "Format des logs",
@@ -31,7 +32,7 @@
   "settings.saved": "Paramètres enregistrés.",
   "settings.save_failed": "Impossible d'enregistrer les paramètres. Vérifiez l'accès au disque et réessayez.",
   "about.title": "À propos",
-  "about.version": "Version 2.0.0",
+  "about.version": "Version 3.0.0",
   "about.authors": "Auteurs : Équipe EasySave — CESI PGE A3 FISE INFO",
   "about.description": "Logiciel de sauvegarde développé dans le cadre du projet de génie logiciel.",
   "edit.title_create": "Nouvelle sauvegarde",
@@ -49,6 +50,7 @@
   "logs.title": "Journaux",
   "logs.empty": "Aucun fichier de journal pour le moment.",
   "logs.refresh": "Actualiser",
+  "logs.truncated_badge": "Aperçu · {0} premières lignes · ouvrez le fichier directement pour tout consulter",
   "progress.title": "Progression des sauvegardes",
   "progress.files_remaining": "Fichiers restants :",
   "progress.business_pause": "Jobs en pause — logiciel métier détecté :",
@@ -64,7 +66,7 @@
   "restore.browse": "Parcourir...",
   "restore.browse_title": "Sélectionner le dossier de destination",
   "restore.restore": "Restaurer",
-  "restore.success": "Restauration terminée avec succès.",
+  "restore.success": "Restauration terminée avec succès — fichiers restaurés vers : {0}",
   "schedule.title": "Planification automatique",
   "schedule.save": "Enregistrer",
   "schedule.saved": "Planification enregistrée.",
@@ -73,5 +75,6 @@
   "schedule.col_interval": "Intervalle",
   "schedule.col_next": "Prochaine exécution",
   "schedule.minutes": "min",
-  "common.ok": "OK"
+  "common.ok": "OK",
+  "error.persistence_unavailable": "Impossible de lire le fichier de planification. L'enregistrement est désactivé jusqu'à ce que le fichier soit accessible."
 }

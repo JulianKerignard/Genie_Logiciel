@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EasySave.Models;
+using EasySave.Services;
 using EasySave.UI.Services;
 
 namespace EasySave.UI.ViewModels;
@@ -11,6 +12,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly BusinessWatcherService _watcher;
     private readonly IRestoreService _restoreService;
     private readonly ISchedulerService _scheduler;
+    private readonly IParallelBackupOrchestrator? _orchestrator;
 
     private JobsViewModel? _jobsVm;
     private RunProgressViewModel? _progressVm;
@@ -41,12 +43,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         IBackupManagerAdapter backup,
         BusinessWatcherService watcher,
         IRestoreService restoreService,
-        ISchedulerService scheduler)
+        ISchedulerService scheduler,
+        IParallelBackupOrchestrator? orchestrator = null)
     {
         _backup = backup;
         _watcher = watcher;
         _restoreService = restoreService;
         _scheduler = scheduler;
+        _orchestrator = orchestrator;
         NavigateToJobs();
     }
 
@@ -110,9 +114,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private JobsViewModel GetOrCreateJobsVm()
     {
         if (_jobsVm is not null) return _jobsVm;
-        _jobsVm = new JobsViewModel(_backup, _watcher);
+        _jobsVm = new JobsViewModel(_backup, _watcher, _orchestrator);
         _jobsVm.RequestOpenJobEdit = job => ShowJobEdit(job);
         _jobsVm.RequestShowProgress = () => ShowRunProgress();
+        _watcher.Start();
         return _jobsVm;
     }
 }

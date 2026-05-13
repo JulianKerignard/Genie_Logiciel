@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace EasyLog;
@@ -17,19 +18,25 @@ public sealed class XmlDailyLogger : IDailyLogger
     private readonly string _logDirectory;
     private readonly XmlFormatter _formatter = new();
     private readonly object _writeLock = new();
+    private readonly ILogShipper? _shipper;
+    private readonly LogMode _mode;
 
     /// <summary>
     /// Initializes a new logger writing to <paramref name="logDirectory"/>.
     /// The directory is created if it does not exist.
     /// </summary>
     /// <param name="logDirectory">Absolute or UNC path where daily XML files are stored.</param>
+    /// <param name="shipper">Optional V3 centralized shipper. See <see cref="JsonDailyLogger"/> for the contract.</param>
+    /// <param name="mode">Routing for <see cref="Append"/> calls. See <see cref="JsonDailyLogger"/> for the contract.</param>
     /// <exception cref="ArgumentException">Thrown when the path is null or empty.</exception>
-    public XmlDailyLogger(string logDirectory)
+    public XmlDailyLogger(string logDirectory, ILogShipper? shipper = null, LogMode mode = LogMode.Local)
     {
         if (string.IsNullOrWhiteSpace(logDirectory))
             throw new ArgumentException("Log directory must be provided.", nameof(logDirectory));
         _logDirectory = logDirectory;
         Directory.CreateDirectory(_logDirectory);
+        _shipper = shipper;
+        _mode = LogRouter.Effective(shipper, mode);
     }
 
     /// <summary>Absolute path of the directory where daily log files are written.</summary>
@@ -40,20 +47,20 @@ public sealed class XmlDailyLogger : IDailyLogger
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        // Local date is intentional: daily files must align with the business day
-        // seen by the operator, not UTC.
+        // Local date intentional: daily files align with the operator's
+        // business day, not UTC.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.xml");
+        LogEntry normalized = LogRouter.Normalize(entry);
 
-        LogEntry normalized = new()
+        if (LogRouter.ShouldShip(_mode))
         {
-            Timestamp = entry.Timestamp,
-            JobName = entry.JobName,
-            SourceFile = ToNormalizedPath(entry.SourceFile),
-            TargetFile = ToNormalizedPath(entry.TargetFile),
-            FileSize = entry.FileSize,
-            FileTransferTimeMs = entry.FileTransferTimeMs,
-            EncryptionTimeMs = entry.EncryptionTimeMs,
-        };
+            _shipper!.Append(normalized);
+        }
+
+        if (!LogRouter.ShouldWriteLocal(_mode))
+        {
+            return;
+        }
 
         lock (_writeLock)
         {
@@ -62,9 +69,6 @@ public sealed class XmlDailyLogger : IDailyLogger
             WriteAtomic(filePath, doc);
         }
     }
-
-    private static string ToNormalizedPath(string path) =>
-        LogPathHelper.ToNormalizedPath(path);
 
     private static XDocument ReadExisting(string filePath)
     {
@@ -75,13 +79,21 @@ public sealed class XmlDailyLogger : IDailyLogger
         {
             return XDocument.Load(filePath);
         }
-        catch (Exception ex)
+        catch (XmlException ex)
         {
+            // Genuinely malformed XML — preserve the file as evidence and start fresh.
             string backupPath = $"{filePath}.corrupted-{DateTime.Now:yyyyMMddHHmmss}-{Guid.NewGuid():N}";
             File.Move(filePath, backupPath);
             Trace.TraceWarning($"[EasyLog] Corrupted XML log moved to {backupPath} - {ex.Message}");
             return new XDocument(new XElement("Logs"));
         }
+        // IOException / UnauthorizedAccessException intentionally propagated.
+        // A transient lock (antivirus, OneDrive sync, log viewer holding the file
+        // briefly) used to flow through the same arm and quarantine the live
+        // daily file, splitting the day's entries across multiple files. The
+        // convention now matches JsonDailyLogger and StateTracker / JobRepository
+        // / SettingsRepository: only the format-specific parse exception triggers
+        // quarantine; IO failures bubble up and the caller decides.
     }
 
     private static void WriteAtomic(string filePath, XDocument doc)

@@ -145,7 +145,8 @@
                                             <Button Command="{Binding $parent[ItemsControl].DataContext.EditJobCommand}"
                                                     CommandParameter="{Binding}"
                                                     Padding="10,6"
-                                                    FontSize="12">
+                                                    FontSize="12"
+                                                    IsEnabled="{Binding !IsBusy}">
                                                 <TextBlock Text="{markup:T Key=jobs.edit}" />
                                             </Button>
 
@@ -153,7 +154,8 @@
                                                     CommandParameter="{Binding}"
                                                     Padding="10,6"
                                                     FontSize="12"
-                                                    Foreground="#EF4444">
+                                                    Foreground="#EF4444"
+                                                    IsEnabled="{Binding !IsBusy}">
                                                 <TextBlock Text="{markup:T Key=jobs.delete}" />
                                             </Button>
 
@@ -173,6 +175,17 @@
                                                HorizontalAlignment="Right"
                                                Foreground="{StaticResource MutedTextBrush}"
                                                IsVisible="{Binding IsRunning}" />
+
+                                    <!-- Per-card error pill -->
+                                    <Border IsVisible="{Binding HasError}"
+                                            Background="#FEE2E2"
+                                            CornerRadius="4"
+                                            Padding="8,4">
+                                        <TextBlock Text="{Binding LastError}"
+                                                   Foreground="#B91C1C"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap" />
+                                    </Border>
 
                                 </StackPanel>
                             </Border>
