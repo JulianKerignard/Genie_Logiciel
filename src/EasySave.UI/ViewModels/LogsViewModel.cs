@@ -44,19 +44,13 @@ public sealed partial class LogsViewModel : ViewModelBase, IDisposable
 
     public LogsViewModel()
     {
-        // Re-read the active file when the user flips FR↔EN so the truncation
-        // footer baked into SelectedContent picks up the new locale, and the
-        // badge text re-renders through OnPropertyChanged(TruncatedBadge).
+        // Re-render the truncation badge when the user flips FR↔EN.
         TranslationSource.Instance.PropertyChanged += OnLocaleChanged;
         Refresh();
     }
 
     private void OnLocaleChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        OnPropertyChanged(nameof(TruncatedBadge));
-        if (SelectedFile is not null)
-            OnSelectedFileChanged(SelectedFile);
-    }
+        => OnPropertyChanged(nameof(TruncatedBadge));
 
     public void Dispose()
         => TranslationSource.Instance.PropertyChanged -= OnLocaleChanged;
@@ -113,10 +107,6 @@ public sealed partial class LogsViewModel : ViewModelBase, IDisposable
             {
                 IsTruncated = true;
                 lines.RemoveAt(MaxPreviewLines);
-                lines.Add(string.Empty);
-                lines.Add(string.Format(
-                    TranslationSource.Instance["logs.truncated_notice"],
-                    MaxPreviewLines));
             }
             SelectedContent = string.Join('\n', lines);
         }
