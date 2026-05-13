@@ -31,7 +31,7 @@
   "settings.saved": "Settings saved.",
   "settings.save_failed": "Could not save settings. Check disk access and try again.",
   "about.title": "About",
-  "about.version": "Version 2.0.0",
+  "about.version": "Version 3.0.0",
   "about.authors": "Authors: EasySave Team — CESI PGE A3 FISE INFO",
   "about.description": "Backup software developed as part of the software engineering project.",
   "edit.title_create": "New Backup Job",
