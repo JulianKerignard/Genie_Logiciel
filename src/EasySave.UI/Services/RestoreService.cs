@@ -43,7 +43,7 @@ public sealed class RestoreService : IRestoreService
     }
 
     /// <inheritdoc />
-    public async Task<string> RestoreAsync(
+    public async Task RestoreAsync(
         RestorePoint point,
         string? destination,
         IProgress<int>? onProgress,
@@ -77,8 +77,6 @@ public sealed class RestoreService : IRestoreService
                 onProgress?.Report(total == 0 ? 100 : done * 100 / total);
             }
         }, ct).ConfigureAwait(false);
-
-        return destPath;
     }
 
     private string ResolveOriginalSource(string jobName)

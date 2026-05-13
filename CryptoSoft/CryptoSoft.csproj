@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>CryptoSoft</RootNamespace>
+    <AssemblyName>CryptoSoft</AssemblyName>
+    <Description>CryptoSoft — file encryption companion for EasySave. Mono-instance per V3 cahier.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CryptoSoft.Tests" />
+  </ItemGroup>
+
+</Project>
