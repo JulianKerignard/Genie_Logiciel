@@ -75,18 +75,31 @@
                     CornerRadius="8"
                     Padding="14"
                     BoxShadow="0 1 4 0 #10000000">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Auto">
-                    <TextBox Text="{Binding SelectedContent, Mode=OneWay}"
-                             IsReadOnly="True"
-                             AcceptsReturn="True"
-                             TextWrapping="NoWrap"
-                             FontFamily="Cascadia Code, Consolas, monospace"
-                             FontSize="12"
-                             Foreground="#111827"
-                             Background="Transparent"
-                             BorderThickness="0" />
-                </ScrollViewer>
+                <DockPanel>
+                    <Border DockPanel.Dock="Top"
+                            IsVisible="{Binding IsTruncated}"
+                            Background="#FEF3C7"
+                            CornerRadius="4"
+                            Padding="8,4"
+                            Margin="0,0,0,8">
+                        <TextBlock Text="{Binding TruncatedBadge}"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   Foreground="#92400E" />
+                    </Border>
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto">
+                        <TextBox Text="{Binding SelectedContent, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="NoWrap"
+                                 FontFamily="Cascadia Code, Consolas, monospace"
+                                 FontSize="12"
+                                 Foreground="#111827"
+                                 Background="Transparent"
+                                 BorderThickness="0" />
+                    </ScrollViewer>
+                </DockPanel>
             </Border>
         </Grid>
 

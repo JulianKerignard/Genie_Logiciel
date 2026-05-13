@@ -39,6 +39,26 @@ public sealed class XmlFormatter : ILogFormatter
             element.Add(new XElement("EncryptionTimeMs", entry.EncryptionTimeMs.Value));
         }
 
+        // v3+ event category — serialized as the enum member name (e.g.
+        // "BigFileEnqueued") so the XML log stays human-readable. Omitted when
+        // null so v1 / v2 consumers continue to see the exact shape they had.
+        if (entry.EventType.HasValue)
+        {
+            element.Add(new XElement("EventType", entry.EventType.Value.ToString()));
+        }
+
+        // v1.2+ host stamping. Both fields are optional in the schema and
+        // omitted from the XML when null so v1 / v2 readers continue to see
+        // the exact element set they always had.
+        if (!string.IsNullOrEmpty(entry.MachineName))
+        {
+            element.Add(new XElement("MachineName", entry.MachineName));
+        }
+        if (!string.IsNullOrEmpty(entry.UserName))
+        {
+            element.Add(new XElement("UserName", entry.UserName));
+        }
+
         return element.ToString(SaveOptions.None);
     }
 

@@ -15,6 +15,11 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     [ObservableProperty] private string _saveConfirmation = string.Empty;
 
+    // Set to true when LoadSchedules() failed because of a transient IOException.
+    // Save() short-circuits while this flag is set so the user cannot wipe schedules.json
+    // by clicking Save on an empty grid that is empty only because the load failed.
+    private bool _persistenceFailed;
+
     public ScheduleViewModel(IBackupManagerAdapter backup, ISchedulerService scheduler)
     {
         _backup = backup;
@@ -24,7 +29,19 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     private void LoadSchedules()
     {
-        var saved = _scheduler.GetAll().ToDictionary(s => s.JobName, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, ScheduledJob> saved;
+        try
+        {
+            saved = _scheduler.GetAll().ToDictionary(s => s.JobName, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (IOException)
+        {
+            // Transient lock on schedules.json: leave the grid empty AND mark persistence
+            // as failed so Save cannot overwrite the file with the empty list.
+            _persistenceFailed = true;
+            SaveConfirmation = TranslationSource.Instance["error.persistence_unavailable"];
+            return;
+        }
 
         foreach (var job in _backup.GetJobs())
         {
@@ -38,6 +55,12 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [RelayCommand]
     private void Save()
     {
+        if (_persistenceFailed)
+        {
+            SaveConfirmation = TranslationSource.Instance["error.persistence_unavailable"];
+            return;
+        }
+
         _scheduler.SaveAll(ScheduledJobs.Select(vm => vm.ToModel()));
         SaveConfirmation = TranslationSource.Instance["schedule.saved"];
     }

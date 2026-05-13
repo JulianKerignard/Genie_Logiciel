@@ -9,11 +9,13 @@ public interface IBackupManagerAdapter : IDisposable
     void AddJob(BackupJob job);
     void RemoveJob(string name);
 
-    /// <param name="startFromIndex">
-    /// Files to skip at the start. 0 for a fresh run; non-zero when resuming a
-    /// paused Full-backup job.
+    /// <param name="resumeAfterPath">
+    /// Resume a paused Full-backup job at the file ordinal-strictly-after this
+    /// path. Null (default) means a fresh run from the start. Tracking by path
+    /// (instead of by index) is robust to source mutations between pause and
+    /// resume — files added or removed no longer offset the cursor.
     /// </param>
-    Task RunJobAsync(string jobName, int startFromIndex = 0, CancellationToken ct = default);
+    Task RunJobAsync(string jobName, string? resumeAfterPath = null, CancellationToken ct = default);
 
     /// <param name="reason">Human-readable pause reason written to state.json.</param>
     void PauseJob(string jobName, string reason = "UserRequested");

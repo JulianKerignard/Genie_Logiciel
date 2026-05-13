@@ -1,7 +1,8 @@
 # EasySave
 
 EasySave is a backup management application developed by **ProSoft** (Group 4).
-It allows users to create, configure, and run backup jobs from a console interface.
+It allows users to create, configure, and run backup jobs from a cross-platform
+Avalonia GUI (v2.0) or from the original console interface (v1.x, still shipped).
 
 ## Prerequisites
 
@@ -14,7 +15,8 @@ It allows users to create, configure, and run backup jobs from a console interfa
 EasySave.sln
 ├── src/
 │   ├── EasySave/          # Console application (entry point)
-│   └── EasyLog/           # Reusable daily JSON logger library
+│   ├── EasySave.UI/       # Avalonia GUI (v2.0, primary interface)
+│   └── EasyLog/           # Reusable daily logger library (JSON + XML)
 ├── tests/
 │   ├── EasySave.Tests/    # v1 unit and integration tests (xUnit)
 │   └── EasySave.Tests.V2/ # v2 unit and integration tests (xUnit)
@@ -26,6 +28,9 @@ EasySave.sln
 ```bash
 # Restore and build
 dotnet build EasySave.sln
+
+# Run the GUI (Avalonia, v2.0 primary interface)
+dotnet run --project src/EasySave.UI
 
 # Run the console app (interactive menu)
 dotnet run --project src/EasySave
@@ -42,54 +47,55 @@ dotnet format --severity warn
 
 ## Modules
 
+### EasySave.UI
+
+Avalonia cross-platform GUI (Windows + macOS), primary interface in v2.0.
+MVVM pattern, runtime FR/EN switch, settings editor, restore and scheduler.
+
 ### EasySave
 
-Console application providing the user interface for managing backup jobs.
+Console application — kept available for scripting, CI, and headless usage.
 
 ### EasyLog
 
-Reusable library that writes daily JSON log files (`yyyy-MM-dd.json`).
-Thread-safe, atomic writes, designed to be shared across ProSoft applications.
+Reusable library that writes daily log files (`yyyy-MM-dd.json` or `.xml`),
+with the format selectable at runtime. Thread-safe, atomic writes, designed
+to be shared across ProSoft applications. The v1.0 public API stays frozen;
+v2.0 adds the optional `EncryptionTimeMs` field and the XML formatter.
 See [src/EasyLog/README.md](src/EasyLog/README.md) for the public API, usage
 examples, and versioning policy.
 
 ## Documentation
 
 - [Architecture overview](docs/architecture.md) — layered design, patterns, persistence, execution flow
-- [User manual](docs/user-manual.md) — end-user guide (1 page)
+- [User manual v1](docs/user-manual.md) — console end-user guide (1 page)
+- [User manual v2](docs/user-manual-v2.md) — GUI end-user guide
+- [CryptoSoft integration](docs/cryptosoft-integration.md) — encryption contract and behaviour
 - [Customer support guide](docs/support-client.md) — deployment, configuration, and support contacts
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
 - [Architecture Decision Records](docs/adrs/) — design decisions and their rationale
 - [UML diagrams](docs/diagrams/) — use case, class, activity, sequence
+- [Test recipes](docs/recettes/) — manual acceptance scenarios for v2 features
 - [EasyLog DLL documentation](src/EasyLog/README.md) — public API and versioning policy
 
 ## Roadmap
 
-### v1.x (current — released)
+### v2.0 (current — released)
 
-- Console application, up to 5 backup jobs (Full / Differential).
-- `EasyLog.dll` — daily JSON logger, thread-safe, atomic writes.
-- Real-time `state.json`, configurable paths via `appsettings.json`.
-- English and French UI, hot-switchable.
-- Latest: [v1.0.1](https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/releases/tag/v1.0.1).
-- Maintained on the [`release/v1.x`](https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/tree/release/v1.x) branch.
-
-### v2.0 (in progress)
+Latest: [v2.0.0](https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/releases/tag/v2.0.0).
 
 EasySave v2.0 evolves the console tool into a graphical application while keeping
 the v1.0 services intact. The v1.x `EasyLog.dll` contract is preserved (frozen
-public API), so v2.0 reuses the library without recompilation.
+public API), so v2.0 reuses the library additively.
 
-- **Cross-platform GUI in Avalonia** (`EasySave.UI`) — replaces the console as the
-  primary interface. MVVM pattern, Windows + macOS supported. The console stays
-  available as a fallback for scripting and CI.
+- **Cross-platform GUI in Avalonia** (`EasySave.UI`) — primary interface, MVVM,
+  Windows + macOS. The console stays available as a fallback for scripting and CI.
 - **File encryption via CryptoSoft** — selected file extensions (configured in
   `appsettings.json`) are passed through the external CryptoSoft binary during a
-  backup. Encryption time and failures are recorded in the daily log. Integration
-  contract documented in `docs/cryptosoft-integration.md` (added by PR #71, lands
-  on staging once that PR merges).
+  backup. Encryption time and failures are recorded in the daily log. Contract
+  documented in [docs/cryptosoft-integration.md](docs/cryptosoft-integration.md).
 - **XML logger formatter** — `EasyLog` gains an `ILogFormatter` abstraction so
-  daily logs can be written in JSON (current) or XML (with XSD schema). Choice
+  daily logs can be written in JSON (default) or XML (with XSD schema). Choice
   exposed in `appsettings.json`.
 - **`EncryptionTimeMs` field on `LogEntry`** — nullable, optional, additive
   (forward-compatible with v1.x consumers that ignore unknown fields).
@@ -97,13 +103,21 @@ public API), so v2.0 reuses the library without recompilation.
   requirement).
 - **Settings UI** — edit `encrypted_extensions`, `business_software_list` and
   language from the GUI without manually touching `appsettings.json`.
-- **Restore** (Phase 5 bonus) — restore a backup chain (Full + subsequent Diffs),
-  with decryption when needed.
-- **Scheduler** (Phase 5 bonus) — run jobs on a recurring schedule.
+- **Pause / resume on business software detection** — running jobs auto-pause
+  when a configured business application starts, resume when it exits.
+- **Restore** — restore a backup chain (Full + subsequent Diffs), with decryption
+  when needed.
+- **Scheduler** — run jobs on a recurring schedule.
+- **Runtime FR/EN switch** — language change without restart.
 
-Tracking: see ClickUp space *EasySave v2.0*, branch
-[`v2-dev`](https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/tree/v2-dev)
-once created.
+### v1.x (maintenance)
+
+- Console application, up to 5 backup jobs (Full / Differential).
+- `EasyLog.dll` — daily JSON logger, thread-safe, atomic writes.
+- Real-time `state.json`, configurable paths via `appsettings.json`.
+- English and French UI.
+- Latest: [v1.1.0](https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/releases/tag/v1.1.0).
+- Maintained on the [`release/v1.x`](https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/tree/release/v1.x) branch.
 
 ### v3.0 (planned, scope to be confirmed)
 

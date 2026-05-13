@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>LogCentralizer.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <!-- Testcontainers for the e2e test that builds the real Docker image
+         from LogCentralizer/Dockerfile and validates the CdC requirement
+         end-to-end. Xunit.SkippableFact lets the test no-op on hosts
+         without a running Docker daemon (CI runners that don't ship one,
+         dev workstations with Docker Desktop stopped). -->
+    <PackageReference Include="Testcontainers" Version="3.10.0" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.4.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\LogCentralizer\LogCentralizer.csproj" />
+    <ProjectReference Include="..\..\src\EasyLog\EasyLog.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

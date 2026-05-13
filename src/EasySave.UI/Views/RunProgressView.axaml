@@ -30,6 +30,20 @@
             </TextBlock>
         </Border>
 
+        <!-- Error banner (shows the first job failure surfaced by JobsViewModel) -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                Background="#FEE2E2"
+                CornerRadius="6"
+                Padding="14,10"
+                Margin="0,0,0,12">
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="#B91C1C"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+        </Border>
+
         <!-- Close button -->
         <Button DockPanel.Dock="Bottom"
                 Command="{Binding CloseProgressCommand}"
@@ -50,15 +64,38 @@
                                 BoxShadow="0 1 4 0 #15000000">
                             <StackPanel Spacing="8">
 
-                                <!-- Job name + state badge -->
-                                <Grid ColumnDefinitions="*,Auto">
+                                <!-- Job name + action buttons + state badge -->
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                                     <TextBlock Grid.Column="0"
                                                Text="{Binding Name}"
                                                FontSize="15"
                                                FontWeight="SemiBold"
                                                Foreground="#111827"
                                                VerticalAlignment="Center" />
-                                    <Border Grid.Column="1"
+
+                                    <Button Grid.Column="1"
+                                            Command="{Binding $parent[UserControl].DataContext.JobsVm.PauseJobCommand}"
+                                            CommandParameter="{Binding}"
+                                            Padding="10,5"
+                                            FontSize="12"
+                                            Margin="0,0,6,0"
+                                            VerticalAlignment="Center"
+                                            IsVisible="{Binding IsRunning}">
+                                        <TextBlock Text="{markup:T Key=jobs.pause}" />
+                                    </Button>
+
+                                    <Button Grid.Column="2"
+                                            Command="{Binding $parent[UserControl].DataContext.JobsVm.ResumeJobCommand}"
+                                            CommandParameter="{Binding}"
+                                            Padding="10,5"
+                                            FontSize="12"
+                                            Margin="0,0,10,0"
+                                            VerticalAlignment="Center"
+                                            IsVisible="{Binding IsPaused}">
+                                        <TextBlock Text="{markup:T Key=jobs.resume}" />
+                                    </Button>
+
+                                    <Border Grid.Column="3"
                                             CornerRadius="12"
                                             Padding="10,4">
                                         <Border.Background>
@@ -103,6 +140,17 @@
                                                FontSize="11"
                                                Foreground="{StaticResource MutedTextBrush}" />
                                 </StackPanel>
+
+                                <!-- Per-card error pill -->
+                                <Border IsVisible="{Binding HasError}"
+                                        Background="#FEE2E2"
+                                        CornerRadius="4"
+                                        Padding="8,4">
+                                    <TextBlock Text="{Binding LastError}"
+                                               Foreground="#B91C1C"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </Border>
 
                             </StackPanel>
                         </Border>

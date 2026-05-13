@@ -20,6 +20,9 @@ public sealed class BackupManager
     private readonly JobRepository _jobRepository;
     private readonly IEncryptionService _encryption;
     private readonly HashSet<string> _encryptedExtensions;
+    private readonly HashSet<string> _priorityExtensions;
+    private readonly IBigFileGate? _bigFileGate;
+    private readonly IPriorityGate? _priorityGate;
 
     /// <summary>
     /// Wires the manager with its dependencies. All parameters are required;
@@ -32,6 +35,12 @@ public sealed class BackupManager
     /// <param name="jobRepository">Singleton repository persisting to <c>jobs.json</c>.</param>
     /// <param name="encryption">Encryption side-channel; pass a <see cref="NoOpEncryptionService"/> to disable encryption.</param>
     /// <param name="encryptedExtensions">File extensions (lowercase, leading dot) that must go through <paramref name="encryption"/> instead of a plain copy. Pass an empty list to disable.</param>
+    /// <param name="bigFileGate">
+    /// V3 gate that serializes the transfer of files >= its threshold across
+    /// every job running in parallel. Pass <c>null</c> in tests or v1/v2
+    /// hosts that do not run jobs in parallel — every file is then copied
+    /// without any cross-job coordination.
+    /// </param>
     public BackupManager(
         IDailyLogger logger,
         IBackupStrategy fullStrategy,
@@ -39,7 +48,10 @@ public sealed class BackupManager
         StateTracker stateTracker,
         JobRepository jobRepository,
         IEncryptionService encryption,
-        IEnumerable<string> encryptedExtensions)
+        IEnumerable<string> encryptedExtensions,
+        IBigFileGate? bigFileGate = null,
+        IPriorityGate? priorityGate = null,
+        IEnumerable<string>? priorityExtensions = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(fullStrategy);
@@ -56,6 +68,10 @@ public sealed class BackupManager
         _jobRepository = jobRepository;
         _encryption = encryption;
         _encryptedExtensions = new HashSet<string>(encryptedExtensions, StringComparer.OrdinalIgnoreCase);
+        _priorityExtensions = new HashSet<string>(
+            priorityExtensions ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        _bigFileGate = bigFileGate;
+        _priorityGate = priorityGate;
     }
 
     /// <summary>
@@ -115,11 +131,15 @@ public sealed class BackupManager
     /// tracker at start, per file, and on completion.
     /// </summary>
     /// <param name="name">Name of the job to execute (case-insensitive).</param>
-    /// <param name="startFromIndex">
-    /// Number of eligible files to skip at the start. Used when resuming a
-    /// previously paused Full-backup job so already-copied files are not
-    /// re-processed. Differential jobs always restart at 0 (re-scan yields
-    /// only remaining files because copied files now have matching mtime).
+    /// <param name="resumeAfterPath">
+    /// Resume a paused Full-backup job at the eligible file whose full path is
+    /// ordinal-strictly-greater than this value. Null (default) means a fresh
+    /// run from the first file. Differential jobs ignore this parameter — the
+    /// re-scan already yields only remaining files because copied files now
+    /// have matching mtime. Path-based tracking (vs. an index) survives source
+    /// mutations between pause and resume: a file added before the cursor is
+    /// still picked up on the next clean run, and removed files no longer
+    /// shift the cursor and silently skip the wrong file.
     /// </param>
     /// <param name="ct">
     /// Token that stops the job at the next file boundary (atomically —
@@ -129,7 +149,7 @@ public sealed class BackupManager
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
     /// <exception cref="KeyNotFoundException">Thrown when no job with that name exists.</exception>
     /// <exception cref="DirectoryNotFoundException">Thrown when the source directory does not exist.</exception>
-    public void ExecuteJob(string name, int startFromIndex = 0, CancellationToken ct = default)
+    public void ExecuteJob(string name, string? resumeAfterPath = null, ManualResetEventSlim? pauseGate = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -137,7 +157,7 @@ public sealed class BackupManager
         var job = jobs.FirstOrDefault(j => j.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                   ?? throw new KeyNotFoundException(name);
 
-        RunJob(job, startFromIndex, ct);
+        RunJob(job, resumeAfterPath, pauseGate, ct);
     }
 
     /// <summary>
@@ -148,7 +168,7 @@ public sealed class BackupManager
     {
         foreach (var job in _jobRepository.Load())
         {
-            try { RunJob(job, 0, CancellationToken.None); }
+            try { RunJob(job, resumeAfterPath: null, pauseGate: null, CancellationToken.None); }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[BackupManager] Job '{job.Name}' failed: {ex.Message}");
@@ -156,7 +176,7 @@ public sealed class BackupManager
         }
     }
 
-    private void RunJob(BackupJob job, int startFromIndex, CancellationToken ct)
+    private void RunJob(BackupJob job, string? resumeAfterPath, ManualResetEventSlim? pauseGate, CancellationToken ct)
     {
         var sourceDir = new DirectoryInfo(job.SourcePath);
         if (!sourceDir.Exists)
@@ -166,9 +186,8 @@ public sealed class BackupManager
 
         // Sort by full path with an ordinal comparer so the eligible list order
         // is deterministic across runs. DirectoryInfo.GetFiles makes no
-        // ordering guarantee; without this, a paused Full job resumed with
-        // startFromIndex would skip arbitrary files on filesystems that
-        // re-order between calls.
+        // ordering guarantee; without that, the resume cursor (an ordinal path)
+        // could skip files on filesystems that re-order between calls.
         var eligible = sourceDir
             .GetFiles("*", SearchOption.AllDirectories)
             .Select(f => (file: f, target: GetTargetPath(job, sourceDir, f)))
@@ -176,12 +195,30 @@ public sealed class BackupManager
             .OrderBy(x => x.file.FullName, StringComparer.Ordinal)
             .ToList();
 
-        // Differential jobs re-scan from 0: files already backed up no longer appear
-        // in eligible (mtime matches source). Full jobs skip the first startFromIndex
-        // files so an interrupted run does not re-copy completed files.
-        int effectiveStart = job.Type == BackupType.Full
-            ? Math.Clamp(startFromIndex, 0, eligible.Count)
-            : 0;
+        // Differential jobs re-scan from scratch: copied files no longer appear
+        // in eligible (mtime matches source). Full jobs that resume drop every
+        // entry up to and including the last file persisted in state.json
+        // (state.CurrentSource on the previous tick). Path-based filtering is
+        // robust to source mutations between pause and resume, where an index-
+        // based cursor would point at the wrong file.
+        var toCopy = job.Type == BackupType.Full && !string.IsNullOrEmpty(resumeAfterPath)
+            ? eligible.Where(x => StringComparer.Ordinal.Compare(x.file.FullName, resumeAfterPath) > 0).ToList()
+            : eligible;
+
+        // CdC V3: priority-extension files copy before non-priority files
+        // inside the SAME job. The cross-job barrier (PriorityGate.Wait)
+        // already prevents non-priority files of any job from starting
+        // while priorities are pending anywhere; this in-job reordering
+        // is a pure optimization that lets the gate clear faster (each
+        // job drains its priorities first instead of interleaving).
+        // When no priority extension is configured, all files are non-
+        // priority and the OrderBy is a stable no-op on the existing
+        // ordinal sort.
+        toCopy = toCopy
+            .OrderByDescending(x => IsPriority(x.file))
+            .ThenBy(x => x.file.FullName, StringComparer.Ordinal)
+            .ToList();
+        var priorityFilesRemaining = toCopy.Count(x => IsPriority(x.file));
 
         var state = new StateEntry
         {
@@ -190,24 +227,83 @@ public sealed class BackupManager
             LastActionTime = DateTimeOffset.Now,
             TotalFilesEligible = eligible.Count,
             TotalSize = eligible.Sum(x => x.file.Length),
-            FilesRemaining = eligible.Count - effectiveStart,
-            SizeRemaining = eligible.Skip(effectiveStart).Sum(x => x.file.Length),
+            FilesRemaining = toCopy.Count,
+            SizeRemaining = toCopy.Sum(x => x.file.Length),
+            FailedFiles = 0,
         };
         _stateTracker.Update(state);
+
+        // Register the job's priority count with the cross-job gate before
+        // the loop starts so a parallel non-priority file from another job
+        // sees the pending priorities and waits.
+        _priorityGate?.RegisterJob(job.Name, priorityFilesRemaining);
 
         bool succeeded = false;
         bool paused = false;
         try
         {
-            foreach (var (file, targetPath) in eligible.Skip(effectiveStart))
+            foreach (var (file, targetPath) in toCopy)
             {
                 // Check at file boundary — never mid-copy — so the target file is
                 // never left in a partial state.
                 ct.ThrowIfCancellationRequested();
 
+                bool isPriority = IsPriority(file);
+
+                // CdC V3 hard rule: « Aucune sauvegarde d'un fichier non
+                // prioritaire ne peut se faire tant qu'il y a des
+                // extensions prioritaires en attente sur au moins un
+                // travail. » The PriorityGate is signaled when every
+                // registered job has zero priority files left.
+                if (!isPriority && _priorityGate is not null)
+                    _priorityGate.WaitForNonPriorityWindow(ct);
+
+                // V3 PauseGate: if a controller (IJobController.Pause /
+                // PauseAll, business-software watcher, remote console) has
+                // reset the gate, stall here until it gets signaled again.
+                // The wait is token-aware so a concurrent Stop unblocks it
+                // with an OperationCanceledException rather than a hung
+                // worker thread. Transitions are logged and reflected in
+                // state.json so the GUI and remote consoles see the pause.
+                if (pauseGate is not null && !pauseGate.IsSet)
+                {
+                    state.State = JobState.Paused;
+                    state.LastActionTime = DateTimeOffset.Now;
+                    _stateTracker.Update(state);
+                    _logger.Append(new LogEntry
+                    {
+                        Timestamp = DateTimeOffset.Now.ToString("o"),
+                        JobName = job.Name,
+                        SourceFile = string.Empty,
+                        TargetFile = string.Empty,
+                        FileSize = 0,
+                        FileTransferTimeMs = 0,
+                        EventType = LogEvent.JobPaused,
+                    });
+
+                    pauseGate.Wait(ct);
+
+                    state.State = JobState.Active;
+                    state.LastActionTime = DateTimeOffset.Now;
+                    _stateTracker.Update(state);
+                    _logger.Append(new LogEntry
+                    {
+                        Timestamp = DateTimeOffset.Now.ToString("o"),
+                        JobName = job.Name,
+                        SourceFile = string.Empty,
+                        TargetFile = string.Empty,
+                        FileSize = 0,
+                        FileTransferTimeMs = 0,
+                        EventType = LogEvent.JobResumed,
+                    });
+                }
+
                 FileHelpers.EnsureDirectoryExists(targetPath);
 
-                var (transferMs, encryptionMs) = ProcessFile(file, targetPath);
+                var (transferMs, encryptionMs) = ProcessFile(file, targetPath, ct);
+
+                if (transferMs < 0)
+                    state.FailedFiles++;
 
                 _logger.Append(new LogEntry
                 {
@@ -226,16 +322,38 @@ public sealed class BackupManager
                 state.CurrentTarget = targetPath;
                 state.LastActionTime = DateTimeOffset.Now;
                 _stateTracker.Update(state);
+
+                // Tick the cross-job barrier unconditionally after the copy
+                // attempt. A failed transfer is still "this priority file
+                // is no longer pending" — re-trying it later won't help
+                // (ProcessFile signals failure via transferMs < 0 in the
+                // log entry, not by retrying), and leaving the slot
+                // occupied would hold every other job's non-priority
+                // files hostage forever. The CdC rule is "pending", not
+                // "successfully copied".
+                if (isPriority)
+                    _priorityGate?.MarkPriorityFileDone(job.Name);
             }
             succeeded = true;
         }
         catch (OperationCanceledException)
         {
-            paused = true;
+            // v2 callers cancel the token when they want a Pause (the
+            // adapter then restarts the job from the resume cursor). v3
+            // callers (BackupManagerJobRunner) cancel the token only for
+            // Stop and use the dedicated PauseGate for Pause, so an OCE on
+            // that path means "stop" and must leave the job Inactive, not
+            // Paused. Differentiate on whether a pauseGate was supplied.
+            paused = pauseGate is null;
             throw;
         }
         finally
         {
+            // Unregister from the priority gate regardless of how the loop
+            // exited: leftover priorities on a stopped / failed job would
+            // otherwise hold every other job's non-priority files hostage.
+            _priorityGate?.UnregisterJob(job.Name);
+
             // Always transition the state. On pause, preserve progress counters
             // so the adapter can compute the resume index from FilesRemaining.
             try
@@ -269,9 +387,23 @@ public sealed class BackupManager
     // extension is in the configured list) or through a plain File.Copy.
     // Returns the two times to log: file transfer (always set, negative on
     // failure) and encryption (null when no encryption was attempted).
-    private (long transferMs, long? encryptionMs) ProcessFile(FileInfo file, string targetPath)
+    //
+    // The big-file gate (v3, optional) serializes the transfer of files >=
+    // its threshold across every job running in parallel — prevents two
+    // multi-GB copies from saturating disk/network simultaneously. Below
+    // the threshold the gate hands back a no-op handle so small files copy
+    // freely with zero overhead.
+    private (long transferMs, long? encryptionMs) ProcessFile(FileInfo file, string targetPath, CancellationToken ct)
     {
-        if (ShouldEncrypt(file.Name) && _encryption.IsAvailable)
+        // Acquire synchronously: ProcessFile is sync and called from a
+        // worker thread (Task.Run inside BackupManagerAdapter), so
+        // GetAwaiter().GetResult() does not risk a UI-thread deadlock.
+        // The gate is null in v1/v2 hosts where there is no parallelism.
+        using var gateHandle = _bigFileGate is null
+            ? null
+            : _bigFileGate.AcquireAsync(file.Length, ct).GetAwaiter().GetResult();
+
+        if (ShouldEncrypt(file.Name))
         {
             var sw = Stopwatch.StartNew();
             var result = _encryption.Encrypt(file.FullName, targetPath);
@@ -289,24 +421,17 @@ public sealed class BackupManager
             return (transferMs, result.EncryptionTimeMs);
         }
 
-        // Plain-copy path. Used either because the file's extension is not in
-        // encrypted_extensions, or because CryptoSoft is not configured on
-        // this workstation. The cryptosoft-integration.md contract requires
-        // EncryptionTimeMs = 0 (not -1) for "encryption not performed" so
-        // operators can distinguish a missing tool from a failed run.
-        long? encryptionMs = ShouldEncrypt(file.Name) ? 0L : null;
-
         var copyTimer = Stopwatch.StartNew();
         try
         {
             File.Copy(file.FullName, targetPath, overwrite: true);
             copyTimer.Stop();
             AlignTargetMtime(file, targetPath);
-            return (copyTimer.ElapsedMilliseconds, encryptionMs);
+            return (copyTimer.ElapsedMilliseconds, null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (-1, encryptionMs);
+            return (-1, null);
         }
     }
 
@@ -333,5 +458,16 @@ public sealed class BackupManager
         if (_encryptedExtensions.Count == 0) return false;
         var ext = Path.GetExtension(fileName);
         return !string.IsNullOrEmpty(ext) && _encryptedExtensions.Contains(ext);
+    }
+
+    // True when the file's extension is configured as a CdC V3 priority
+    // extension. Used to order files inside a job (priorities first) and
+    // to count the per-job priority budget registered with the
+    // cross-job PriorityGate.
+    private bool IsPriority(FileInfo file)
+    {
+        if (_priorityExtensions.Count == 0) return false;
+        var ext = file.Extension;
+        return !string.IsNullOrEmpty(ext) && _priorityExtensions.Contains(ext);
     }
 }

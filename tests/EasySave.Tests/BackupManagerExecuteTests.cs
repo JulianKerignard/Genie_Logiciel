@@ -135,6 +135,32 @@ public class BackupManagerExecuteTests : IDisposable
         Assert.Single(logFiles);
         var logContent = File.ReadAllText(logFiles[0]);
         Assert.Contains("-1", logContent);
+
+        // state.json must surface the failure count so operators do not need
+        // to grep the daily log to spot a partially-failed run.
+        var stateJson = File.ReadAllText(Path.Combine(_dataDir, "state.json"));
+        var entries = System.Text.Json.JsonSerializer.Deserialize<List<StateEntry>>(stateJson);
+        Assert.NotNull(entries);
+        var entry = Assert.Single(entries);
+        Assert.Equal(JobState.Inactive, entry.State);
+        Assert.Equal(1, entry.FailedFiles);
+    }
+
+    [Fact]
+    public void ExecuteJob_AllFilesCopy_FailedFilesIsZero()
+    {
+        File.WriteAllText(Path.Combine(_sourceDir, "a.txt"), "aaa");
+        File.WriteAllText(Path.Combine(_sourceDir, "b.txt"), "bbb");
+
+        SeedJob("no-failure", BackupType.Full);
+        var manager = CreateManager(new FullBackupStrategy(), new DifferentialBackupStrategy());
+
+        manager.ExecuteJob("no-failure");
+
+        var stateJson = File.ReadAllText(Path.Combine(_dataDir, "state.json"));
+        var entries = System.Text.Json.JsonSerializer.Deserialize<List<StateEntry>>(stateJson);
+        var entry = Assert.Single(entries!);
+        Assert.Equal(0, entry.FailedFiles);
     }
 
     [Fact]

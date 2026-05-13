@@ -19,6 +19,11 @@ public sealed class SchedulerService : ISchedulerService
             "schedules.json");
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Transient IOException is propagated to the caller. Swallowing it and returning
+    /// an empty list would let the next SaveAll() write the empty list over the existing
+    /// file and silently wipe every persisted schedule (issue #111, same trap as #69 / #97).
+    /// </remarks>
     public IReadOnlyList<ScheduledJob> GetAll()
     {
         var path = SchedulesFilePath;
@@ -29,8 +34,9 @@ public sealed class SchedulerService : ISchedulerService
             var json = File.ReadAllText(path);
             return JsonSerializer.Deserialize<List<ScheduledJob>>(json) ?? new List<ScheduledJob>();
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (JsonException ex)
         {
+            FileHelpers.QuarantineCorruptedFile(path, ex, "SchedulerService");
             return Array.Empty<ScheduledJob>();
         }
     }

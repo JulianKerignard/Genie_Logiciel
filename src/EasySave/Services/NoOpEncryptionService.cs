@@ -9,8 +9,5 @@ namespace EasySave.Services;
 public sealed class NoOpEncryptionService : IEncryptionService
 {
     /// <inheritdoc />
-    public bool IsAvailable => false;
-
-    /// <inheritdoc />
     public EncryptResult Encrypt(string source, string dest) => EncryptResult.Failed();
 }

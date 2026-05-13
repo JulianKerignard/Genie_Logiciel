@@ -52,7 +52,7 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         lock (_lock) return _running.ContainsKey(jobName);
     }
 
-    public async Task RunJobAsync(string jobName, int startFromIndex = 0, CancellationToken ct = default)
+    public async Task RunJobAsync(string jobName, string? resumeAfterPath = null, CancellationToken ct = default)
     {
         CancellationTokenSource cts;
         lock (_lock)
@@ -67,7 +67,7 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         {
             // ExecuteJob is synchronous; run on thread pool and pass the linked token
             // so cancel requests stop the job at the next file boundary.
-            await Task.Run(() => _manager.ExecuteJob(jobName, startFromIndex, cts.Token), cts.Token)
+            await Task.Run(() => _manager.ExecuteJob(jobName, resumeAfterPath, ct: cts.Token), cts.Token)
                       .ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
@@ -126,17 +126,18 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
         lock (_lock) wasPaused = _pausedByUs.Remove(jobName);
         if (!wasPaused) return;
 
-        // Compute the resume index from the last persisted state so a Full backup
-        // continues from where it stopped rather than re-copying everything.
-        int startFromIndex = 0;
+        // Carry the path of the last successfully copied file (persisted in state.json
+        // on every tick) so RunJob can drop everything ordinal-<= it. Robust to source
+        // mutations between pause and resume — the index-based cursor we used before
+        // (TotalFilesEligible - FilesRemaining) silently skipped the wrong file when
+        // a file was added or removed between the two scans.
         var state = StateTracker.Instance.GetState(jobName);
-        if (state is { TotalFilesEligible: > 0 })
-            startFromIndex = state.TotalFilesEligible - state.FilesRemaining;
+        var resumeAfterPath = string.IsNullOrEmpty(state?.CurrentSource) ? null : state.CurrentSource;
 
         // Clear the paused marker so state.json shows Active again when the job starts.
         StateTracker.Instance.Resume(jobName);
 
-        _ = RunJobAsync(jobName, startFromIndex);
+        _ = RunJobAsync(jobName, resumeAfterPath);
     }
 
     private bool HasRunningJobs() { lock (_lock) return _running.Count > 0; }
@@ -165,7 +166,23 @@ public sealed class BackupManagerAdapter : IBackupManagerAdapter
             foreach (var entry in entries)
                 StateUpdated?.Invoke(this, entry);
         }
-        catch { /* transient I/O error — next poll will retry */ }
+        catch (IOException) { /* transient — next poll will retry */ }
+        catch (JsonException ex)
+        {
+            // Corrupt state.json keeps failing every poll until the engine rewrites it; quarantine happens write-side in StateTracker.ReadCurrentEntries.
+            System.Diagnostics.Trace.TraceWarning(
+                $"[BackupManagerAdapter] state.json deserialize failed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Backstop: an exception escaping a System.Threading.Timer
+            // callback in .NET 8 terminates the process. Cover the ACL /
+            // unknown-exception case (e.g. UnauthorizedAccessException is
+            // a SystemException, not an IOException) so the poll loop and
+            // the GUI stay alive.
+            System.Diagnostics.Trace.TraceWarning(
+                $"[BackupManagerAdapter] PollState unexpected error: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     public void Dispose()
