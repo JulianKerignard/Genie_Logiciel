@@ -34,7 +34,6 @@ public sealed partial class LogsViewModel : ViewModelBase, IDisposable
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TruncatedBadge))]
     private bool _isTruncated;
 
     public bool HasSelection => SelectedFile is not null;
@@ -68,7 +67,6 @@ public sealed partial class LogsViewModel : ViewModelBase, IDisposable
         Files.Clear();
         StatusMessage = string.Empty;
         SelectedContent = string.Empty;
-        IsTruncated = false;
         SelectedFile = null;
 
         var dir = AppConfig.Instance.LogDirectory;
