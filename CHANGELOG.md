@@ -6,6 +6,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-05-13
+
+Major release. EasySave moves from sequential to parallel backups, introduces a
+remote operator console over TCP, a Docker-based daily-log centralizer, a global
+big-file gate, cross-job priority extensions, CryptoSoft mono-instance
+enforcement, and automatic pause / resume on business-software detection.
+`EasyLog.dll` reaches v1.2 with optional `MachineName` / `UserName` / `EventType`
+fields — additive only; the v1.0 public surface and on-disk JSON / XML shape
+stay frozen for existing consumers.
+
+### Added
+
+- **Parallel backup engine** (`IParallelBackupOrchestrator` /
+  `ParallelBackupOrchestrator`): jobs selected via Run All execute concurrently
+  bounded by `max_parallel_jobs` (default 4). Per-job
+  `JobExecutionContext` (CTS + PauseGate) isolates Pause / Stop so one job
+  cannot freeze another. The legacy sequential path is gone.
+- **Big-file gate** (`IBigFileGate` / `BigFileGate`): files ≥
+  `large_file_threshold_kb` (default 4096) traverse a global `SemaphoreSlim`
+  N=1 — only one large transfer in flight across every job. Small files keep
+  running fully parallel.
+- **Priority extensions cross-job gate** (`IPriorityGate` / `PriorityGate`):
+  no non-priority file starts on any job while a priority extension is still
+  pending on any other job. Extensions configured via the new
+  `priority_extensions` setting.
+- **Pause / Play / Stop on every job and globally**: per-card buttons in the
+  Avalonia GUI and identical commands from the remote console. Pause stops
+  at the next file boundary; Stop cancels immediately; Play resumes from the
+  saved offset (Full) or re-scans (Differential).
+- **Business-software auto-pause/auto-resume** (V3 semantics): when a process
+  in `business_software` is detected, every running job pauses at its next
+  file boundary; when the process exits, the watcher resumes them
+  automatically. Replaces the V2 "refuse to launch" rule. The event is
+  consigned in the daily log.
+- **CryptoSoft mono-instance**: a named system mutex
+  (`Global\ProSoft.CryptoSoft`) guarantees only one CryptoSoft process runs
+  at a time on the machine; concurrent encrypt requests serialize transparently.
+- **Daily-log centralizer** (`src/LogCentralizer`): ASP.NET Core minimal API
+  shipped as a Docker image (`docker-compose.yml`). Receives `LogEntry`
+  rows from every workstation and writes a single daily file per host or per
+  fleet, demultiplexed by the new `MachineName` / `UserName` fields.
+- **`LogMode` routing** (`Local` / `Centralized` / `Both`): `JsonDailyLogger`
+  and `XmlDailyLogger` accept an `ILogShipper`; `HttpLogShipper` posts to
+  `log_centralized_endpoint` with retry + bounded buffer. Local writes preserved
+  in `Both` mode, dropped in `Centralized`.
+- **Remote operator console** (`EasySave.RemoteConsole`): standalone Avalonia
+  client that connects to `TcpRemoteConsoleServer` over newline-delimited
+  JSON / TCP. Live job board (progress, state, current file) and Pause / Play /
+  Stop commands. Optional TLS via self-signed certificate + TOFU
+  `known_hosts`. Multi-console broadcast (`CommandReceived` event audits
+  which console issued which command). Auto-reconnect 1 s → 2 s → 5 s → 10 s.
+- **Thread-safe `IStateRepository`** (`StateTracker`): atomic per-job updates
+  for the concurrent V3 multi-job runs; `state.json` no longer corrupts under
+  parallel writes.
+- **`StateEntry.FailedFilesCount`**: surfaces the number of files that failed
+  during a job so the GUI / state.json reflect a partial-success outcome
+  instead of presenting an all-or-nothing result.
+- **`EasyLog` v1.2 fields** (additive, all nullable): `MachineName`,
+  `UserName`, and `EventType` (`LogEvent` enum covering V3 events —
+  `RemoteConsoleConnected`, `ParallelJobStarted`, `BigFileEnqueued`,
+  `JobPaused`, `BusinessSoftwareAutoPaused`, etc.). Omitted from output when
+  null so v1 / v2 consumers see the same JSON / XML shape they always have.
+- **V3 settings** in `appsettings.json`: `max_parallel_jobs`,
+  `large_file_threshold_kb`, `priority_extensions`, `log_mode`,
+  `log_centralized_endpoint`, `remote_console_enabled`, `remote_console_port`,
+  `remote_console_tls_enabled`.
+
+### Changed
+
+- `JsonDailyLogger` switches to a single-writer **`Channel<T>`** consumer.
+  Concurrent `Append` calls from N parallel jobs no longer trigger N file
+  rewrites — the writer batches them and writes once per drain (4 jobs ×
+  1000 entries = a handful of writes instead of 4000). `Append` stays
+  synchronous and durable: it blocks until the entry is on disk.
+- `XmlDailyLogger` adopts the same `LogRouter.Normalize` helper as the JSON
+  writer for host-field stamping, so both formats produce identical
+  `MachineName` / `UserName` semantics.
+- `BackupManagerAdapter.PauseJob` and `ResumeJob` route through the new
+  `IJobController` contract; `JobsViewModel.PauseJob` calls both the adapter
+  and the orchestrator so Run-All-launched jobs honor the manual Pause / Stop
+  buttons.
+- Sidebar version label promoted from `v2.0` to `v3.0`.
+- `CryptoSoft` CLI exits with a documented error code when the mono-instance
+  mutex is already held — callers retry transparently within
+  `crypto_soft.timeout_ms`.
+
+### Fixed
+
+- **`JsonDailyLogger.ReadExisting`** survives a transient `IOException` on
+  the day file (writer-task no longer dies, closes #155).
+- **`TcpRemoteConsoleServer`** clean-up race on brutal client disconnect:
+  the connection state is published exactly once even when `BroadcastAsync`
+  and the client `HandleClient` finally block race.
+- **`TcpRemoteConsoleClient.ConnectAsync`** publishes the `Error` state when
+  the initial connect throws — the UI no longer shows "connecting…" forever.
+- **Read-line guard** in the remote protocol caps inbound payloads at 64 KB
+  to prevent OOM on a hostile / malformed client.
+- **State cache** (`StateTracker`) clears `_cacheDirty` after a successful
+  write and guards the timer callback against re-entrancy on Dispose.
+- **LogCentralizer Docker image** runs as a non-root user with correct write
+  permissions on the mounted journal volume.
+- **HttpLogShipper** order-preserving retry: entries published in order A, B,
+  C arrive in order A, B, C even when A's first POST fails and is retried.
+
+### Documentation
+
+- V3 UML diagrams (`docs/diagrams/`): Class · Activity · Deployment ·
+  Sequence (Parallel + BigFileGate) · Sequence (Play-Pause-Stop) ·
+  Sequence (Remote Console).
+- V3 acceptance recettes (`docs/recettes/`): parallelism, pause / resume on
+  Run All, priority extensions, business-software auto-pause, CryptoSoft
+  mono-instance, remote console, backward compatibility with v1 / v2.
+- V3 user manual (one page) generated by `docs/generate-manuel.js` —
+  sections updated to cover parallelism, priority files, big-file gate,
+  pause / play / stop, business-software auto-pause, CryptoSoft mono-instance,
+  log centralization, JSON / XML format switch.
+- `docs/v3-log-centralizer-admin.md` — administrator handbook for the Docker
+  centralizer (deployment, retention, troubleshooting).
+- `docs/v3-remote-console-tls.md` — TLS configuration handbook.
+- `src/EasySave/Services/README.md` — taxonomy of the five concurrency
+  primitives used in V3 (`Channel<T>`, `SemaphoreSlim`, named `Mutex`,
+  `ManualResetEventSlim`, `CancellationTokenSource`) and when each applies.
+
+### Tests
+
+- `ParallelBackupOrchestratorTests`: deterministic concurrency tests on the
+  `max_parallel_jobs` cap, Pause / Resume / Stop isolation, and faulted-job
+  containment.
+- `BigFileGateTests`, `PriorityGateTests`: semaphore-N=1 contract and
+  cross-job priority ordering.
+- `TcpRemoteConsoleServerTests`: brutal-disconnect cleanup and the
+  `BroadcastAsync` / `HandleClient` finally race.
+- `HttpLogShipperTests`: retry order, zero-loss, throughput.
+- `LogCentralizerE2ETests`: Testcontainers end-to-end round-trip of a
+  `LogEntry` from the shipper to the centralized daily file.
+- `StateTrackerConcurrencyTests`: N-writer race on `state.json`.
+- `ChannelEventBusTests`: faulted-handler isolation between subscribers.
+
 ## [2.1.0] — 2026-05-05
 
 Maintenance release on `release/v2.x` rolling up the fixes and small UX
@@ -144,7 +282,8 @@ the v1.x console and `EasyLog.dll` contracts fully intact.
   as paused — the job now stops at the next file boundary (no partial writes).
 - Resuming a paused Full-backup job no longer re-copies already-transferred files.
 
-[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...v2.0.0
 
