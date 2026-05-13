@@ -28,6 +28,12 @@ public sealed partial class BackupJobVM : ObservableObject, IDisposable
     [ObservableProperty] private string _currentFile = string.Empty;
     [ObservableProperty] private int _filesRemaining;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasError))]
+    private string _lastError = string.Empty;
+
+    public bool HasError => !string.IsNullOrEmpty(LastError);
+
     public bool IsRunning => UiState == UiJobState.Running;
     public bool IsPaused => UiState == UiJobState.Paused;
 
@@ -42,6 +48,7 @@ public sealed partial class BackupJobVM : ObservableObject, IDisposable
         UiJobState.Running => TranslationSource.Instance["jobs.state.active"],
         UiJobState.Paused => TranslationSource.Instance["jobs.state.paused"],
         UiJobState.Completed => TranslationSource.Instance["jobs.state.done"],
+        UiJobState.Failed => TranslationSource.Instance["jobs.state.failed"],
         _ => TranslationSource.Instance["jobs.state.idle"],
     };
 
