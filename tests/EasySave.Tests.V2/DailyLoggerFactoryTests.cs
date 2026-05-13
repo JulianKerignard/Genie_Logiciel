@@ -41,8 +41,11 @@ public class DailyLoggerFactoryTests : IDisposable
 
         Assert.NotNull(logger);
         Assert.NotNull(shipper);
-        await shipper!.DisposeAsync();
+        // Dispose order mirrors production (Program.cs / DisposeServices):
+        // logger first so its writer loop forwards pending entries, then
+        // shipper so the HTTP queue drains.
         if (logger is IDisposable d) d.Dispose();
+        await shipper!.DisposeAsync();
     }
 
     [Fact]
