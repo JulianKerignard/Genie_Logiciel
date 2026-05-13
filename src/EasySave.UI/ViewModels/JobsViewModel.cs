@@ -24,6 +24,11 @@ public sealed partial class JobsViewModel : ViewModelBase
     // path). Needed to route the resume back through orchestrator.RunAsync
     // instead of _backup.ResumeJob, which is a no-op for orchestrator-tracked jobs.
     private readonly HashSet<string> _watcherOrchestratorStoppedJobs = new();
+    // Names currently executing inside the orchestrator (added at RunAllAsync start,
+    // removed in its finally). Used by OnBusinessSoftwareDetected to distinguish
+    // orchestrator-tracked from adapter-tracked jobs — only the former must be
+    // recorded in _watcherOrchestratorStoppedJobs to avoid double-starting.
+    private readonly HashSet<string> _orchestratorTrackedJobs = new();
 
     // Set by MainWindowViewModel after construction.
     public Action<BackupJob?>? RequestOpenJobEdit { get; set; }
@@ -104,6 +109,7 @@ public sealed partial class JobsViewModel : ViewModelBase
                     ? UiJobState.Completed
                     : UiJobState.Idle;
                 _watcherPausedJobs.Remove(vm.Name);
+                _watcherOrchestratorStoppedJobs.Remove(vm.Name);
             }
         });
     }
@@ -126,12 +132,13 @@ public sealed partial class JobsViewModel : ViewModelBase
             if (_orchestrator is not null)
             {
                 _orchestrator.Stop(job.Name);
-                _watcherOrchestratorStoppedJobs.Add(job.Name);
+                if (_orchestratorTrackedJobs.Contains(job.Name))
+                    _watcherOrchestratorStoppedJobs.Add(job.Name);
             }
         }
     }
 
-    private void OnBusinessSoftwareGone(object? sender, EventArgs e)
+    private void OnBusinessSoftwareGone(object? sender, EventArgs _)
     {
         IsBusinessSoftwareDetected = false;
         DetectedSoftwareName = string.Empty;
@@ -154,8 +161,11 @@ public sealed partial class JobsViewModel : ViewModelBase
         // Orchestrator-tracked jobs were stopped (one-way). Restart them.
         // Limitation: restarts from the beginning of the job (resumeAfterPath is
         // not propagated by BackupManagerJobRunner in this iteration — see PR #180).
+        // CS4014: intentional fire-and-forget; errors surface via StatusMessage.
         if (orchestratorRestart.Count > 0)
-            _ = RunWatcherOrchestratorJobsAsync(orchestratorRestart);
+#pragma warning disable CS4014
+            RunWatcherOrchestratorJobsAsync(orchestratorRestart);
+#pragma warning restore CS4014
     }
 
     private async Task RunWatcherOrchestratorJobsAsync(IReadOnlyList<string> jobNames)
@@ -264,6 +274,7 @@ public sealed partial class JobsViewModel : ViewModelBase
         // ViewModel) keeps the original Task.WhenAll loop via the adapter.
         if (_orchestrator is not null)
         {
+            foreach (var vm in eligible) _orchestratorTrackedJobs.Add(vm.Name);
             try
             {
                 await _orchestrator.RunAsync(
@@ -285,6 +296,7 @@ public sealed partial class JobsViewModel : ViewModelBase
                 // moved to Paused / Completed alone.
                 foreach (var vm in eligible)
                 {
+                    _orchestratorTrackedJobs.Remove(vm.Name);
                     if (vm.UiState == UiJobState.Running)
                     {
                         vm.UiState = UiJobState.Idle;
