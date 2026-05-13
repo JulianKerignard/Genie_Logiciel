@@ -9,7 +9,7 @@ module.exports = function section4() {
       "EasySave.RemoteConsole se connecte à EasySave en TCP (Host + Port). Elle affiche " +
       "en temps réel l'état de tous les jobs et envoie les commandes Pause / Play / Stop. " +
       "Reconnexion automatique (1 s → 2 s → 5 s → 10 s). TLS optionnel via " +
-      "remote_console_tls."
+      "remote_console_tls_enabled."
     ),
     body(
       "Journaux : un fichier par jour (yyyy-MM-dd.json ou .xml) ; format paramétrable. " +

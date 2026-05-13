@@ -49,7 +49,7 @@ stay frozen for existing consumers.
   fleet, demultiplexed by the new `MachineName` / `UserName` fields.
 - **`LogMode` routing** (`Local` / `Centralized` / `Both`): `JsonDailyLogger`
   and `XmlDailyLogger` accept an `ILogShipper`; `HttpLogShipper` posts to
-  `log_centralizer_url` with retry + bounded buffer. Local writes preserved
+  `log_centralized_endpoint` with retry + bounded buffer. Local writes preserved
   in `Both` mode, dropped in `Centralized`.
 - **Remote operator console** (`EasySave.RemoteConsole`): standalone Avalonia
   client that connects to `TcpRemoteConsoleServer` over newline-delimited
@@ -70,8 +70,8 @@ stay frozen for existing consumers.
   null so v1 / v2 consumers see the same JSON / XML shape they always have.
 - **V3 settings** in `appsettings.json`: `max_parallel_jobs`,
   `large_file_threshold_kb`, `priority_extensions`, `log_mode`,
-  `log_centralizer_url`, `remote_console_enabled`, `remote_console_port`,
-  `remote_console_tls`.
+  `log_centralized_endpoint`, `remote_console_enabled`, `remote_console_port`,
+  `remote_console_tls_enabled`.
 
 ### Changed
 
@@ -143,8 +143,6 @@ stay frozen for existing consumers.
   `LogEntry` from the shipper to the centralized daily file.
 - `StateTrackerConcurrencyTests`: N-writer race on `state.json`.
 - `ChannelEventBusTests`: faulted-handler isolation between subscribers.
-
-[3.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.1.0...v3.0.0
 
 ## [2.1.0] — 2026-05-05
 
@@ -285,6 +283,7 @@ the v1.x console and `EasyLog.dll` contracts fully intact.
 - Resuming a paused Full-backup job no longer re-copies already-transferred files.
 
 [Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...v2.0.0
 
