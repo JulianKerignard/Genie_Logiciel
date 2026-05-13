@@ -219,9 +219,10 @@ public partial class App : Application
     {
         var server = services.GetRequiredService<IRemoteConsoleServer>();
         var backup = services.GetRequiredService<IBackupManagerAdapter>();
+        var orchestrator = services.GetRequiredService<IParallelBackupOrchestrator>();
         var logger = services.GetRequiredService<IDailyLogger>();
 
-        server.CommandReceived += cmd => HandleRemoteCommandAsync(cmd, backup, logger);
+        server.CommandReceived += cmd => HandleRemoteCommandAsync(cmd, backup, orchestrator, logger);
 
         services.GetRequiredService<StateTrackerEventBridge>().Start();
         services.GetRequiredService<RemoteConsoleBroadcastBridge>().Start();
@@ -241,7 +242,7 @@ public partial class App : Application
             }, TaskScheduler.Default);
     }
 
-    private static Task HandleRemoteCommandAsync(CommandDto cmd, IBackupManagerAdapter backup, IDailyLogger logger)
+    private static Task HandleRemoteCommandAsync(CommandDto cmd, IBackupManagerAdapter backup, IParallelBackupOrchestrator orchestrator, IDailyLogger logger)
     {
         // Route the command into the same adapter the GUI uses, so a remote
         // operator sees identical job behaviour to a local one.
@@ -273,12 +274,13 @@ public partial class App : Application
                         }, TaskScheduler.Default);
                     break;
                 case CommandType.Stop:
-                    // No native Stop on the adapter yet — Pause with a
-                    // dedicated reason is the closest available behaviour:
-                    // the job halts at the next file boundary. The engine
-                    // still marks the job Paused (not Inactive) in
-                    // state.json; the recette flags this as a known gap.
-                    backup.PauseJob(cmd.JobName, "Stopped");
+                    // Cancel the per-job CTS via the orchestrator. The worker
+                    // halts at the next file boundary and the job transitions
+                    // to Inactive (not Paused) — matching the CdC v3 contract
+                    // « Stop = arrêt immédiat du travail et de la tache en
+                    // cours ». A subsequent Play starts a fresh run from the
+                    // first file, not a resume from the saved offset.
+                    orchestrator.Stop(cmd.JobName);
                     break;
             }
         }
