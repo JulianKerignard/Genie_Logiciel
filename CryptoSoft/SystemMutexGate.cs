@@ -24,9 +24,18 @@ internal sealed class SystemMutexGate : IMonoInstanceGate
     private bool _heldByUs;
     private bool _disposed;
 
-    public SystemMutexGate()
+    public SystemMutexGate() : this(MutexName) { }
+
+    /// <summary>
+    /// Test seam: lets unit tests pass an isolated, per-run mutex name so
+    /// they never collide with a CryptoSoft binary running on the same
+    /// machine (a shared CI agent would otherwise flake on the production
+    /// name). Production code uses the parameterless constructor.
+    /// </summary>
+    internal SystemMutexGate(string mutexName)
     {
-        _mutex = new Mutex(initiallyOwned: false, name: MutexName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mutexName);
+        _mutex = new Mutex(initiallyOwned: false, name: mutexName);
     }
 
     public bool TryAcquire()

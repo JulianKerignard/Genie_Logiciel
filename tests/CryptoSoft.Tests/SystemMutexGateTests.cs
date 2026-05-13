@@ -9,13 +9,20 @@ namespace CryptoSoft.Tests;
 /// thread, which is enough to catch regressions in the wrapper itself
 /// without depending on platform-specific mutex implementation details
 /// across Windows / Linux / macOS.
+///
+/// Each test uses an isolated per-run mutex name so the suite never
+/// collides with a CryptoSoft binary running on the same machine — the
+/// production name would otherwise make these tests flake on shared CI.
 /// </summary>
 public sealed class SystemMutexGateTests
 {
+    private static string IsolatedMutexName(string suffix) =>
+        $@"Global\CryptoSoft.Tests.{Guid.NewGuid():N}.{suffix}";
+
     [Fact]
     public void Acquire_Release_Acquire_Cycle_Succeeds()
     {
-        using var gate = new SystemMutexGate();
+        using var gate = new SystemMutexGate(IsolatedMutexName(nameof(Acquire_Release_Acquire_Cycle_Succeeds)));
 
         Assert.True(gate.TryAcquire());
         gate.Release();
@@ -26,7 +33,7 @@ public sealed class SystemMutexGateTests
     [Fact]
     public void Release_WithoutPriorAcquire_IsNoOp()
     {
-        using var gate = new SystemMutexGate();
+        using var gate = new SystemMutexGate(IsolatedMutexName(nameof(Release_WithoutPriorAcquire_IsNoOp)));
 
         // Must not throw, even though the gate never owned the mutex.
         gate.Release();
@@ -35,7 +42,7 @@ public sealed class SystemMutexGateTests
     [Fact]
     public void Dispose_IsIdempotent()
     {
-        var gate = new SystemMutexGate();
+        var gate = new SystemMutexGate(IsolatedMutexName(nameof(Dispose_IsIdempotent)));
         gate.TryAcquire();
 
         gate.Dispose();
