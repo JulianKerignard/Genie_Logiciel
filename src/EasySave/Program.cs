@@ -22,9 +22,15 @@ var (logger, logShipper) = DailyLoggerFactory.Create(
 // ProcessExit is sync — an async lambda would be async void and the
 // runtime would not wait for the channel drain, losing buffered entries
 // on shutdown. Block here so DisposeAsync completes before the process
-// exits.
+// exits. Dispose order matters: the logger's writer loop forwards
+// entries to the shipper, so the logger must finish draining BEFORE
+// the shipper is torn down — otherwise a late forward hits a disposed
+// HttpClient and the entry is lost in centralized mode.
 AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+{
+    (logger as IDisposable)?.Dispose();
     logShipper?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+};
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)
     ? new NoOpEncryptionService()
     : new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft);
