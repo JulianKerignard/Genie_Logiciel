@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EasySave.Services;
@@ -11,7 +12,7 @@ namespace EasySave.UI.ViewModels;
 /// EasyLog (JSON or XML) and shows a bounded preview of the selected file
 /// so a huge daily log does not block the UI thread or balloon memory.
 /// </summary>
-public sealed partial class LogsViewModel : ViewModelBase
+public sealed partial class LogsViewModel : ViewModelBase, IDisposable
 {
     // Hard cap on lines streamed into SelectedContent. A pretty-printed JSON
     // backup-row entry is ~11 lines, so 150 lines is ~13 entries — enough to
@@ -44,8 +45,22 @@ public sealed partial class LogsViewModel : ViewModelBase
 
     public LogsViewModel()
     {
+        // Re-read the active file when the user flips FR↔EN so the truncation
+        // footer baked into SelectedContent picks up the new locale, and the
+        // badge text re-renders through OnPropertyChanged(TruncatedBadge).
+        TranslationSource.Instance.PropertyChanged += OnLocaleChanged;
         Refresh();
     }
+
+    private void OnLocaleChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(TruncatedBadge));
+        if (SelectedFile is not null)
+            OnSelectedFileChanged(SelectedFile);
+    }
+
+    public void Dispose()
+        => TranslationSource.Instance.PropertyChanged -= OnLocaleChanged;
 
     [RelayCommand]
     private void Refresh()
