@@ -56,7 +56,7 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         var diskBefore = File.ReadAllText(_settingsFile);
 
         // 0.05 MB = 51 KB → below the 64 KB floor.
-        vm.LargeFileThresholdMb = 0.05;
+        vm.LargeFileThresholdValue = 0.05;
         vm.SaveCommand.Execute(null);
 
         Assert.Equal(diskBefore, File.ReadAllText(_settingsFile));
@@ -71,7 +71,7 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         var diskBefore = File.ReadAllText(_settingsFile);
 
         // 20480 MB = 20 GB → above the 10 GB ceiling.
-        vm.LargeFileThresholdMb = 20480;
+        vm.LargeFileThresholdValue = 20480;
         vm.SaveCommand.Execute(null);
 
         Assert.Equal(diskBefore, File.ReadAllText(_settingsFile));
@@ -85,7 +85,7 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         var vm = new SettingsViewModel(SettingsRepository.Instance);
 
         // 8 MB → 8192 KB on disk.
-        vm.LargeFileThresholdMb = 8;
+        vm.LargeFileThresholdValue = 8;
         vm.SaveCommand.Execute(null);
 
         Assert.Equal(8192, ReadSettingsFromDisk().LargeFileThresholdKb);
@@ -118,7 +118,7 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         WriteSettingsOnDisk(preserved);
 
         var vm = new SettingsViewModel(SettingsRepository.Instance);
-        vm.LargeFileThresholdMb = 16; // 16 MB → 16384 KB
+        vm.LargeFileThresholdValue = 16; // 16 MB → 16384 KB
         vm.SaveCommand.Execute(null);
 
         var after = ReadSettingsFromDisk();
@@ -142,7 +142,7 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         var fakeGate = new RecordingGate();
         var vm = new SettingsViewModel(SettingsRepository.Instance, fakeGate);
 
-        vm.LargeFileThresholdMb = 2; // 2 MB = 2048 KB = 2_097_152 bytes
+        vm.LargeFileThresholdValue = 2; // 2 MB = 2048 KB = 2_097_152 bytes
         vm.SaveCommand.Execute(null);
 
         Assert.Equal(2L * 1024 * 1024, fakeGate.LastSetThresholdBytes);
@@ -155,10 +155,83 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         var fakeGate = new RecordingGate();
         var vm = new SettingsViewModel(SettingsRepository.Instance, fakeGate);
 
-        vm.LargeFileThresholdMb = 0.001; // ~1 KB → below floor
+        vm.LargeFileThresholdValue = 0.001; // ~1 KB → below floor
         vm.SaveCommand.Execute(null);
 
         Assert.Null(fakeGate.LastSetThresholdBytes);
+    }
+
+    [Fact]
+    public void Load_PicksMb_WhenStoredKbIsAMultipleOf1024()
+    {
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+
+        Assert.Equal("MB", vm.LargeFileThresholdUnit);
+        Assert.Equal(4.0, vm.LargeFileThresholdValue);
+    }
+
+    [Fact]
+    public void Load_PicksGb_WhenStoredKbIsAMultipleOf1Mi()
+    {
+        // 2 GB = 2 * 1024 * 1024 KB = 2 097 152 KB
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 2 * 1024 * 1024 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+
+        Assert.Equal("GB", vm.LargeFileThresholdUnit);
+        Assert.Equal(2.0, vm.LargeFileThresholdValue);
+    }
+
+    [Fact]
+    public void Load_PicksKb_WhenStoredKbDoesNotDivideEvenly()
+    {
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 100 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+
+        Assert.Equal("KB", vm.LargeFileThresholdUnit);
+        Assert.Equal(100, vm.LargeFileThresholdValue);
+    }
+
+    [Fact]
+    public void ChangingUnit_RescalesValue_PreservingUnderlyingByteCount()
+    {
+        // 4 MB → switch to KB → 4096 KB (same physical size, different unit).
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+        Assert.Equal("MB", vm.LargeFileThresholdUnit);
+        Assert.Equal(4.0, vm.LargeFileThresholdValue);
+
+        vm.LargeFileThresholdUnit = "KB";
+        Assert.Equal(4096.0, vm.LargeFileThresholdValue);
+
+        vm.LargeFileThresholdUnit = "GB";
+        Assert.Equal(4096.0 / (1024.0 * 1024.0), vm.LargeFileThresholdValue, precision: 10);
+    }
+
+    [Fact]
+    public void Save_HonorsSelectedUnit_KbDirectMapping()
+    {
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+
+        vm.LargeFileThresholdUnit = "KB";
+        vm.LargeFileThresholdValue = 512;
+        vm.SaveCommand.Execute(null);
+
+        Assert.Equal(512, ReadSettingsFromDisk().LargeFileThresholdKb);
+    }
+
+    [Fact]
+    public void Save_HonorsSelectedUnit_GbConversion()
+    {
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+
+        vm.LargeFileThresholdUnit = "GB";
+        vm.LargeFileThresholdValue = 1; // 1 GB = 1 048 576 KB
+        vm.SaveCommand.Execute(null);
+
+        Assert.Equal(1024 * 1024, ReadSettingsFromDisk().LargeFileThresholdKb);
     }
 
     private sealed class RecordingGate : EasySave.Services.IBigFileGate

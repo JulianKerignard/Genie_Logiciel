@@ -152,18 +152,18 @@
                                Foreground="#6B7280"
                                TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <NumericUpDown Value="{Binding LargeFileThresholdMb}"
-                                       Minimum="0.0625"
-                                       Maximum="10240"
+                        <NumericUpDown Value="{Binding LargeFileThresholdValue}"
+                                       Minimum="0"
+                                       Maximum="99999"
                                        Increment="1"
-                                       FormatString="0.##"
+                                       FormatString="0.####"
                                        ShowButtonSpinner="True"
                                        MinWidth="200"
                                        HorizontalAlignment="Left" />
-                        <TextBlock Text="MB"
-                                   VerticalAlignment="Center"
-                                   FontWeight="SemiBold"
-                                   Foreground="#374151" />
+                        <ComboBox ItemsSource="{Binding LargeFileThresholdUnitOptions}"
+                                  SelectedItem="{Binding LargeFileThresholdUnit}"
+                                  MinWidth="80"
+                                  VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>
             </Border>

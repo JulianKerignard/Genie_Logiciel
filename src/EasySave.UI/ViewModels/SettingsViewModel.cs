@@ -35,13 +35,22 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private string _cryptosoftPath = string.Empty;
 
     /// <summary>
-    /// Large-file threshold in megabytes. Files at or above this size are
-    /// transferred one at a time across parallel jobs (BigFileGate). The
-    /// JSON key on disk is <c>large_file_threshold_kb</c>; the conversion
-    /// happens in <see cref="LoadFromRepository"/> and <see cref="Save"/>.
+    /// Large-file threshold value, expressed in <see cref="LargeFileThresholdUnit"/>.
+    /// Files at or above this size are transferred one at a time across
+    /// parallel jobs (BigFileGate). The JSON key on disk is
+    /// <c>large_file_threshold_kb</c>; the conversion happens in
+    /// <see cref="LoadFromRepository"/> and <see cref="Save"/>.
     /// </summary>
     [ObservableProperty]
-    private double _largeFileThresholdMb = DefaultThresholdKb / 1024.0;
+    private double _largeFileThresholdValue = DefaultThresholdKb / 1024.0;
+
+    /// <summary>
+    /// Unit shown next to <see cref="LargeFileThresholdValue"/>: "KB", "MB", or "GB".
+    /// Switching the unit re-scales the displayed value so the underlying byte
+    /// count stays the same (4 MB → switch to GB → 0.0039 GB).
+    /// </summary>
+    [ObservableProperty]
+    private string _largeFileThresholdUnit = UnitMb;
 
     /// <summary>Confirmation message shown after a successful save.</summary>
     [ObservableProperty]
@@ -58,6 +67,24 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>Available log format options for the ComboBox.</summary>
     public IReadOnlyList<string> LogFormatOptions { get; } = new[] { "json", "xml" };
 
+    /// <summary>Available units for the large-file threshold ComboBox.</summary>
+    public IReadOnlyList<string> LargeFileThresholdUnitOptions { get; } = new[] { UnitKb, UnitMb, UnitGb };
+
+    // Unit names used both as ComboBox options and dictionary keys for
+    // KB-conversion factors. Kept as constants so XAML and tests can
+    // reference them without typo risk.
+    internal const string UnitKb = "KB";
+    internal const string UnitMb = "MB";
+    internal const string UnitGb = "GB";
+
+    // Multiplier from each unit into KB (the on-disk storage unit).
+    private static readonly Dictionary<string, double> UnitToKb = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [UnitKb] = 1.0,
+        [UnitMb] = 1024.0,
+        [UnitGb] = 1024.0 * 1024.0,
+    };
+
     // Bounds enforced on Save (defense in depth — the NumericUpDown already
     // clamps spinner clicks, but a typed value can land outside the range).
     // 64 KB floor stops pathological "every file is large" serialization;
@@ -65,6 +92,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
     internal const int MinThresholdKb = 64;
     internal const int MaxThresholdKb = 10 * 1024 * 1024; // 10 GB
     internal const int DefaultThresholdKb = 4096;
+
+    // Set while LargeFileThresholdUnit is converting LargeFileThresholdValue
+    // so the partial Value/Unit state does not double-fire conversions.
+    private bool _suppressUnitConversion;
 
     private readonly SettingsRepository _repository;
     private readonly IBigFileGate? _gate;
@@ -99,11 +130,45 @@ public sealed partial class SettingsViewModel : ViewModelBase
         BusinessSoftwareList = new ObservableCollection<string>(settings.BusinessSoftware);
         LogFormat = string.IsNullOrWhiteSpace(settings.LogFormat) ? "json" : settings.LogFormat;
         CryptosoftPath = settings.CryptoSoft.Path;
-        // Display in MB; clamp on read so a hand-edited out-of-range value
-        // surfaces as the closest valid value in the spinner instead of
-        // tripping the NumericUpDown's own bounds.
+        // Pick the largest unit where the value rounds cleanly. Clamp on read
+        // so a hand-edited out-of-range value surfaces as the closest valid
+        // value instead of tripping the NumericUpDown's own bounds.
         int kbOnDisk = Math.Clamp(settings.LargeFileThresholdKb, MinThresholdKb, MaxThresholdKb);
-        LargeFileThresholdMb = kbOnDisk / 1024.0;
+        var (value, unit) = PickNaturalUnit(kbOnDisk);
+        _suppressUnitConversion = true;
+        LargeFileThresholdUnit = unit;
+        LargeFileThresholdValue = value;
+        _suppressUnitConversion = false;
+    }
+
+    // Picks the friendliest unit for the on-disk KB value: GB if it divides
+    // evenly into 1024*1024, else MB if it divides into 1024, else KB. Avoids
+    // showing "0.00390625 GB" by default for the canonical 4 MB threshold.
+    private static (double value, string unit) PickNaturalUnit(int kb)
+    {
+        if (kb >= 1024 * 1024 && kb % (1024 * 1024) == 0)
+            return (kb / (1024.0 * 1024.0), UnitGb);
+        if (kb >= 1024 && kb % 1024 == 0)
+            return (kb / 1024.0, UnitMb);
+        return (kb, UnitKb);
+    }
+
+    // CommunityToolkit.Mvvm partial method invoked by the generated
+    // LargeFileThresholdUnit setter. Re-scales the displayed value so the
+    // underlying byte count survives the unit switch (4 MB → switch GB →
+    // 0.00390625 GB, not "4 GB"). Suppressed during LoadFromRepository so
+    // the initial assignment doesn't try to convert from a stale unit.
+    partial void OnLargeFileThresholdUnitChanged(string oldValue, string newValue)
+    {
+        if (_suppressUnitConversion) return;
+        if (string.Equals(oldValue, newValue, StringComparison.OrdinalIgnoreCase)) return;
+        if (!UnitToKb.TryGetValue(oldValue ?? string.Empty, out var oldFactor)) return;
+        if (!UnitToKb.TryGetValue(newValue ?? string.Empty, out var newFactor)) return;
+
+        double kb = LargeFileThresholdValue * oldFactor;
+        _suppressUnitConversion = true;
+        LargeFileThresholdValue = kb / newFactor;
+        _suppressUnitConversion = false;
     }
 
     // ── Extension commands ────────────────────────────────────────────────────
@@ -147,12 +212,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
         // Validate the new threshold before touching disk: a 0 or negative
         // value crashes BigFileGate at the next boot (the ctor throws), and
         // anything > 10 GB silently disables the gate.
-        int thresholdKb = (int)Math.Round(LargeFileThresholdMb * 1024);
-        if (thresholdKb < MinThresholdKb || thresholdKb > MaxThresholdKb)
+        if (!UnitToKb.TryGetValue(LargeFileThresholdUnit ?? string.Empty, out var unitFactor))
         {
             SaveConfirmation = TranslationSource.Instance["settings.large_file.invalid"];
             return;
         }
+        double kbExact = LargeFileThresholdValue * unitFactor;
+        if (double.IsNaN(kbExact) || kbExact < MinThresholdKb || kbExact > MaxThresholdKb)
+        {
+            SaveConfirmation = TranslationSource.Instance["settings.large_file.invalid"];
+            return;
+        }
+        int thresholdKb = (int)Math.Round(kbExact);
 
         // Preserve fields not surfaced by the GUI by reading them back from
         // the on-disk source of truth before overwriting. Without this, every
