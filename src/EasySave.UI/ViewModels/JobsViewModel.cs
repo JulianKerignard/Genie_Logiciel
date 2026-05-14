@@ -20,22 +20,10 @@ public sealed partial class JobsViewModel : ViewModelBase
     private readonly IParallelBackupOrchestrator? _orchestrator;
     // Tracks jobs paused by the watcher (distinct from user-initiated pauses).
     private readonly HashSet<string> _watcherPausedJobs = new();
-    // Subset of _watcherPausedJobs: jobs stopped via the orchestrator (Run All
-    // path). Needed to route the resume back through orchestrator.RunAsync
-    // instead of _backup.ResumeJob, which is a no-op for orchestrator-tracked jobs.
-    private readonly HashSet<string> _watcherOrchestratorStoppedJobs = new();
     // Names currently executing inside the orchestrator (added at RunAllAsync start,
-    // removed in its finally). Used by OnBusinessSoftwareDetected to distinguish
-    // orchestrator-tracked from adapter-tracked jobs — only the former must be
-    // recorded in _watcherOrchestratorStoppedJobs to avoid double-starting.
+    // removed in its finally). Used to route Pause/Resume to the orchestrator's
+    // PauseGate instead of the adapter, which doesn't know about Run-All jobs.
     private readonly HashSet<string> _orchestratorTrackedJobs = new();
-    // User-paused jobs from the orchestrator path. Resume restarts them via
-    // orchestrator.RunAsync (the adapter doesn't know them). Restart is from
-    // file 0 until PR #180 wires resumeAfterPath into BackupManagerJobRunner.
-    private readonly HashSet<string> _orchestratorPausedJobs = new();
-    // Resume catch-up floor: holds the bar at the paused value while the
-    // engine re-walks the file list; cleared once entry.Progress >= floor.
-    private readonly Dictionary<string, int> _orchestratorResumeProgressFloor = new();
 
     // Set by MainWindowViewModel after construction.
     public Action<BackupJob?>? RequestOpenJobEdit { get; set; }
@@ -98,30 +86,13 @@ public sealed partial class JobsViewModel : ViewModelBase
         {
             var vm = Jobs.FirstOrDefault(j => j.Name == entry.Name);
             if (vm is null) return;
-            // orchestrator.Stop flushes an Inactive snapshot with
-            // FilesRemaining=0 → Progress=100; without this guard the bar
-            // would jump to 100 % under a Paused badge. Same race for Failed:
-            // the queued snapshot arrives after the run-loop finally has
-            // stamped Failed + Progress=0.
+            // Paused / Failed badges are owned by the UI controller (Pause click,
+            // exception path). Don't let a queued backend snapshot clobber them:
+            // on Pause the engine writes state=Paused but FilesRemaining is
+            // preserved, so vm.Progress stays accurate from the previous Active tick.
             if (vm.UiState is not (UiJobState.Paused or UiJobState.Failed))
             {
-                int reported = (int)entry.Progress;
-                if (_orchestratorResumeProgressFloor.TryGetValue(entry.Name, out var floor))
-                {
-                    if (reported >= floor)
-                    {
-                        _orchestratorResumeProgressFloor.Remove(entry.Name);
-                        vm.Progress = reported;
-                    }
-                    else
-                    {
-                        vm.Progress = floor;
-                    }
-                }
-                else
-                {
-                    vm.Progress = reported;
-                }
+                vm.Progress = (int)entry.Progress;
                 vm.CurrentFile = entry.CurrentSource;
                 vm.FilesRemaining = entry.FilesRemaining;
             }
@@ -131,17 +102,11 @@ public sealed partial class JobsViewModel : ViewModelBase
                 if (vm.UiState is UiJobState.Idle or UiJobState.Completed or UiJobState.Failed)
                     vm.UiState = UiJobState.Running;
             }
-            else
+            else if (entry.State == JobState.Inactive)
             {
-                // Backend finished (Inactive): mark Completed when the job ran to
-                // its end (no remaining files), otherwise fall back to Idle so a
-                // job that exited via pause/cancel doesn't claim success.
-                // Skip when the run-loop already stamped Failed or Paused — those
-                // badges are owned by the UI controller (exception path / Pause
-                // button) and the backend's Inactive snapshot must not clobber
-                // them. Pause on the Run-All path triggers orchestrator.Stop()
-                // which immediately flushes Inactive; without this guard the
-                // badge flashed from Paused to Idle/Completed within one tick.
+                // Backend finished: mark Completed when the job ran to its end,
+                // otherwise Idle. Skip when the run-loop already stamped Failed
+                // or Paused — those badges are owned by the UI controller.
                 if (vm.UiState is not (UiJobState.Failed or UiJobState.Paused))
                 {
                     vm.UiState = entry.FilesRemaining == 0 && entry.TotalFilesEligible > 0
@@ -149,10 +114,6 @@ public sealed partial class JobsViewModel : ViewModelBase
                         : UiJobState.Idle;
                 }
                 _watcherPausedJobs.Remove(vm.Name);
-                _watcherOrchestratorStoppedJobs.Remove(vm.Name);
-                // _orchestratorPausedJobs is owned by Pause/Resume — clearing
-                // it here would happen on the post-Stop Inactive snapshot and
-                // break the next Resume.
             }
         });
     }
@@ -167,17 +128,13 @@ public sealed partial class JobsViewModel : ViewModelBase
         {
             _watcherPausedJobs.Add(job.Name);
             job.UiState = UiJobState.Paused;
+            // Adapter PauseJob: no-op for orchestrator-tracked jobs, real pause for
+            // single-run jobs. Orchestrator.Pause resets the per-job PauseGate so
+            // Run-All-launched jobs stall at the next file boundary without giving up
+            // their slot — Resume continues from the same offset, no restart.
             _backup.PauseJob(job.Name, $"BusinessSoftwareDetected: {name}");
-            // Mirror the wiring already in place for the manual Pause button:
-            // jobs launched by Run All are tracked in the orchestrator, not in
-            // the adapter, so PauseJob above is a no-op for them. Stop() cancels
-            // the per-job CTS and halts the worker at the next file boundary.
-            if (_orchestrator is not null)
-            {
-                _orchestrator.Stop(job.Name);
-                if (_orchestratorTrackedJobs.Contains(job.Name))
-                    _watcherOrchestratorStoppedJobs.Add(job.Name);
-            }
+            if (_orchestrator is not null && _orchestratorTrackedJobs.Contains(job.Name))
+                _orchestrator.Pause(job.Name);
         }
     }
 
@@ -189,60 +146,15 @@ public sealed partial class JobsViewModel : ViewModelBase
         var toResume = Jobs
             .Where(j => j.UiState == UiJobState.Paused && _watcherPausedJobs.Contains(j.Name))
             .ToList();
-        var orchestratorRestart = toResume
-            .Where(j => _watcherOrchestratorStoppedJobs.Contains(j.Name))
-            .Select(j => j.Name)
-            .ToList();
         foreach (var job in toResume)
         {
             _watcherPausedJobs.Remove(job.Name);
-            _watcherOrchestratorStoppedJobs.Remove(job.Name);
             job.UiState = UiJobState.Running;
-            // Resumes adapter-tracked jobs (single-run path); no-op for orchestrator-tracked.
+            // Adapter ResumeJob handles single-run jobs; for orchestrator-tracked
+            // jobs the adapter is a no-op and the PauseGate signal does the work.
             _backup.ResumeJob(job.Name);
-        }
-        // Orchestrator-tracked jobs were stopped (one-way). Restart them.
-        // Limitation: restarts from the beginning of the job (resumeAfterPath is
-        // not propagated by BackupManagerJobRunner in this iteration — see PR #180).
-        // CS4014: intentional fire-and-forget; errors surface via StatusMessage.
-        if (orchestratorRestart.Count > 0)
-#pragma warning disable CS4014
-            RunWatcherOrchestratorJobsAsync(orchestratorRestart);
-#pragma warning restore CS4014
-    }
-
-    private async Task RunWatcherOrchestratorJobsAsync(IReadOnlyList<string> jobNames)
-    {
-        // Register the jobs as orchestrator-tracked so a subsequent user Pause
-        // click correctly routes through orchestrator.Stop and adds the job to
-        // _orchestratorPausedJobs. Without this, a Pause→Resume cycle launched
-        // by ResumeJob would leave the second Pause invisible to the engine —
-        // the badge would flip to Paused while the engine kept copying files.
-        foreach (var name in jobNames) _orchestratorTrackedJobs.Add(name);
-        try
-        {
-            await _orchestrator!.RunAsync(jobNames, CancellationToken.None).ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = ex.Message;
-        }
-        finally
-        {
-            foreach (var name in jobNames)
-            {
-                _orchestratorTrackedJobs.Remove(name);
-                var vm = Jobs.FirstOrDefault(j => j.Name == name);
-                if (vm?.UiState == UiJobState.Running)
-                {
-                    // If we end up here while still Running, the orchestrator
-                    // threw before publishing the final state. Drop the floor
-                    // so a future fresh Run is not clamped by it.
-                    _orchestratorResumeProgressFloor.Remove(name);
-                    vm.UiState = UiJobState.Idle;
-                    vm.Progress = 0;
-                }
-            }
+            if (_orchestrator is not null && _orchestratorTrackedJobs.Contains(job.Name))
+                _orchestrator.Resume(job.Name);
         }
     }
 
@@ -306,9 +218,6 @@ public sealed partial class JobsViewModel : ViewModelBase
             else if (vm.UiState == UiJobState.Running)
             {
                 vm.UiState = UiJobState.Idle;
-                // The job exited mid-flight (exception or external cancel) — wipe
-                // the leftover progress so the bar doesn't stay at e.g. 47% with
-                // an Idle badge until the next run starts.
                 vm.Progress = 0;
             }
             vm.CurrentFile = string.Empty;
@@ -339,10 +248,6 @@ public sealed partial class JobsViewModel : ViewModelBase
 
         // V3 path: when the parallel orchestrator is wired (GUI host), run
         // every eligible job concurrently bounded by max_parallel_jobs.
-        // Progress updates still flow through StateTracker → adapter
-        // .StateUpdated → OnStateUpdated, so the cards refresh as usual.
-        // Fallback (no orchestrator injected — e.g. unit tests of this
-        // ViewModel) keeps the original Task.WhenAll loop via the adapter.
         if (_orchestrator is not null)
         {
             foreach (var vm in eligible) _orchestratorTrackedJobs.Add(vm.Name);
@@ -352,9 +257,6 @@ public sealed partial class JobsViewModel : ViewModelBase
                     eligible.Select(j => j.Name),
                     CancellationToken.None).ConfigureAwait(true);
 
-                // Per-job results: stamp Failed/Cancelled messages on the
-                // matching card so the user sees which job failed and why
-                // even while the progress view is still open.
                 var resultByName = results.ToDictionary(r => r.JobName, StringComparer.Ordinal);
                 foreach (var vm in eligible)
                 {
@@ -363,7 +265,6 @@ public sealed partial class JobsViewModel : ViewModelBase
                     {
                         if (!string.IsNullOrEmpty(result.Message))
                             vm.LastError = result.Message;
-                        _orchestratorResumeProgressFloor.Remove(vm.Name);
                         vm.UiState = UiJobState.Failed;
                         vm.Progress = 0;
                     }
@@ -379,13 +280,6 @@ public sealed partial class JobsViewModel : ViewModelBase
             }
             finally
             {
-                // If the orchestrator threw (ObjectDisposedException on
-                // shutdown, ArgumentException on duplicate names) before
-                // the engine could publish its final state, the cards we
-                // promoted to Running above would otherwise stay stuck
-                // there. Reset only the cards we touched and only if they
-                // are still Running — leave cards the engine has already
-                // moved to Paused / Completed alone.
                 foreach (var vm in eligible)
                 {
                     _orchestratorTrackedJobs.Remove(vm.Name);
@@ -407,16 +301,12 @@ public sealed partial class JobsViewModel : ViewModelBase
     private void PauseJob(BackupJobVM vm)
     {
         vm.UiState = UiJobState.Paused;
-        // Run-All jobs (in the orchestrator): the v3 BackupManagerJobRunner
-        // does not honor ctx.PauseGate today, so orchestrator.Pause() would
-        // be a no-op. Use orchestrator.Stop() which cancels the per-job CTS
-        // and stops the worker at the next file boundary. Resume on the
-        // same card restarts from the beginning of the job via the
-        // orchestrator (see ResumeJob).
+        // Run-All jobs (in the orchestrator): resetting the PauseGate stalls the
+        // worker at the next file boundary without releasing its slot, so Resume
+        // continues from the same offset — no restart, no progress floor needed.
         if (_orchestrator is not null && _orchestratorTrackedJobs.Contains(vm.Name))
         {
-            _orchestratorPausedJobs.Add(vm.Name);
-            _orchestrator.Stop(vm.Name);
+            _orchestrator.Pause(vm.Name);
             return;
         }
         // Single-Run jobs (in the adapter): a real pause that stops the
@@ -430,21 +320,12 @@ public sealed partial class JobsViewModel : ViewModelBase
     {
         if (IsBusinessSoftwareDetected) return;
         vm.UiState = UiJobState.Running;
-        // Run-All-launched jobs: Pause was actually a Stop on the orchestrator
-        // (one-way), so Resume cannot continue from the saved offset. Restart
-        // the job from scratch via the orchestrator — same pattern as the
-        // business-software watcher resume path. Limitation: progress restarts
-        // at 0 until BackupManagerJobRunner honours resumeAfterPath (PR #180).
-        if (_orchestrator is not null && _orchestratorPausedJobs.Remove(vm.Name))
+        // Run-All-launched jobs: signal the PauseGate so the worker thread
+        // (still parked at its file boundary) continues from where it stopped.
+        if (_orchestrator is not null && _orchestratorTrackedJobs.Contains(vm.Name))
         {
-            // Hold the bar at the paused-value while the engine re-copies
-            // up to that file. OnStateUpdated lifts the floor once
-            // entry.Progress catches up.
-            _orchestratorResumeProgressFloor[vm.Name] = vm.Progress;
             vm.LastError = string.Empty;
-#pragma warning disable CS4014
-            RunWatcherOrchestratorJobsAsync(new[] { vm.Name });
-#pragma warning restore CS4014
+            _orchestrator.Resume(vm.Name);
             return;
         }
         // Single-Run-launched jobs: the adapter holds the pause offset.
