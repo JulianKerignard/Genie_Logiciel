@@ -40,9 +40,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// parallel jobs (BigFileGate). The JSON key on disk is
     /// <c>large_file_threshold_kb</c>; the conversion happens in
     /// <see cref="LoadFromRepository"/> and <see cref="Save"/>.
+    /// Nullable because Avalonia's NumericUpDown.Value is <c>decimal?</c>
+    /// — clearing the field sends null through the binding, and a non-
+    /// nullable double would surface as an InvalidCastException in the
+    /// validation overlay. Save treats null the same as an out-of-range
+    /// value (rejects, banners, no disk write).
     /// </summary>
     [ObservableProperty]
-    private double _largeFileThresholdValue = DefaultThresholdKb / 1024.0;
+    private double? _largeFileThresholdValue = DefaultThresholdKb / 1024.0;
 
     /// <summary>
     /// Unit shown next to <see cref="LargeFileThresholdValue"/>: "KB", "MB", or "GB".
@@ -183,8 +188,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (string.Equals(oldValue, newValue, StringComparison.OrdinalIgnoreCase)) return;
         if (!UnitToKb.TryGetValue(oldValue ?? string.Empty, out var oldFactor)) return;
         if (!UnitToKb.TryGetValue(newValue ?? string.Empty, out var newFactor)) return;
+        if (LargeFileThresholdValue is null) return;
 
-        double kb = LargeFileThresholdValue * oldFactor;
+        double kb = LargeFileThresholdValue.Value * oldFactor;
         _suppressUnitConversion = true;
         LargeFileThresholdValue = kb / newFactor;
         _suppressUnitConversion = false;
@@ -230,14 +236,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         // Validate the new threshold before touching disk: a 0 or negative
         // value crashes BigFileGate at the next boot (the ctor throws), and
-        // anything > 10 GB silently disables the gate.
-        if (!UnitToKb.TryGetValue(LargeFileThresholdUnit ?? string.Empty, out var unitFactor))
+        // anything > 10 GB silently disables the gate. A null value (cleared
+        // input field) is also rejected — same banner.
+        if (LargeFileThresholdValue is null
+            || !UnitToKb.TryGetValue(LargeFileThresholdUnit ?? string.Empty, out var unitFactor))
         {
             SaveIsError = true;
             SaveConfirmation = TranslationSource.Instance["settings.large_file.invalid"];
             return;
         }
-        double kbExact = LargeFileThresholdValue * unitFactor;
+        double kbExact = LargeFileThresholdValue.Value * unitFactor;
         if (double.IsNaN(kbExact) || kbExact < MinThresholdKb || kbExact > MaxThresholdKb)
         {
             SaveIsError = true;

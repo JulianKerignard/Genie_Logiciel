@@ -205,7 +205,8 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         Assert.Equal(4096.0, vm.LargeFileThresholdValue);
 
         vm.LargeFileThresholdUnit = "GB";
-        Assert.Equal(4096.0 / (1024.0 * 1024.0), vm.LargeFileThresholdValue, precision: 10);
+        Assert.NotNull(vm.LargeFileThresholdValue);
+        Assert.Equal(4096.0 / (1024.0 * 1024.0), vm.LargeFileThresholdValue!.Value, precision: 10);
     }
 
     [Fact]
@@ -219,6 +220,25 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
         vm.SaveCommand.Execute(null);
 
         Assert.Equal(512, ReadSettingsFromDisk().LargeFileThresholdKb);
+    }
+
+    [Fact]
+    public void Save_NullValue_RejectsAndFlagsSaveIsError()
+    {
+        // Avalonia's NumericUpDown sends null when the operator clears the
+        // input; the ViewModel must reject that the same way as an out-of-
+        // range value. Without this, the binding pipeline would surface an
+        // InvalidCastException in the validation overlay.
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+        var diskBefore = File.ReadAllText(_settingsFile);
+
+        vm.LargeFileThresholdValue = null;
+        vm.SaveCommand.Execute(null);
+
+        Assert.Equal(diskBefore, File.ReadAllText(_settingsFile));
+        Assert.True(vm.SaveIsError);
+        Assert.Equal("settings.large_file.invalid", vm.SaveConfirmation);
     }
 
     [Fact]
