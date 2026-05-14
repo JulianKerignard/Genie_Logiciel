@@ -29,4 +29,8 @@
     <ProjectReference Include="..\EasySave\EasySave.csproj" />
     <ProjectReference Include="..\EasyLog\EasyLog.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EasySave.Tests.V2" />
+  </ItemGroup>
 </Project>

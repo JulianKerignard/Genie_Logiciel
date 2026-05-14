@@ -134,6 +134,40 @@
                           MinWidth="200" />
             </Border>
 
+            <!-- ── Section: Large File Threshold ─────────────────────────── -->
+            <TextBlock Text="{markup:T Key=settings.large_file_threshold}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="#111827"
+                       Margin="0,16,0,10" />
+
+            <Border Background="{StaticResource CardBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="16"
+                    Margin="0,0,0,8"
+                    BoxShadow="0 1 4 0 #10000000">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{markup:T Key=settings.large_file_threshold.hint}"
+                               FontSize="12"
+                               Foreground="#6B7280"
+                               TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <NumericUpDown Value="{Binding LargeFileThresholdValue}"
+                                       Minimum="0"
+                                       Maximum="99999"
+                                       Increment="1"
+                                       FormatString="0.####"
+                                       ShowButtonSpinner="True"
+                                       MinWidth="200"
+                                       HorizontalAlignment="Left" />
+                        <ComboBox ItemsSource="{Binding LargeFileThresholdUnitOptions}"
+                                  SelectedItem="{Binding LargeFileThresholdUnit}"
+                                  MinWidth="80"
+                                  VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- ── Section: CryptoSoft Path ──────────────────────────────── -->
             <TextBlock Text="{markup:T Key=settings.cryptosoft_path}"
                        FontSize="15"
@@ -159,12 +193,18 @@
                 </Grid>
             </Border>
 
-            <!-- Save button + confirmation -->
+            <!-- Save button + confirmation. Two TextBlocks with mutually
+                 exclusive IsVisible bindings — keeps the foreground colour
+                 declarative without a custom IValueConverter. -->
             <StackPanel Spacing="10" HorizontalAlignment="Right">
                 <TextBlock Text="{Binding SaveConfirmation}"
                            Foreground="#22C55E"
                            HorizontalAlignment="Right"
-                           IsVisible="{Binding SaveConfirmation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                           IsVisible="{Binding ShowSaveSuccessMessage}" />
+                <TextBlock Text="{Binding SaveConfirmation}"
+                           Foreground="#EF4444"
+                           HorizontalAlignment="Right"
+                           IsVisible="{Binding ShowSaveErrorMessage}" />
                 <Button Command="{Binding SaveCommand}"
                         Background="{StaticResource AccentBrush}"
                         Foreground="White"

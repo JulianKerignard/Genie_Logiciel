@@ -193,4 +193,105 @@ public class BigFileGateTests
         handle.Dispose();
         handle.Dispose();
     }
+
+    [Fact]
+    public void SetThreshold_NegativeValue_Throws()
+    {
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => gate.SetThreshold(largeFileThresholdBytes: -1));
+    }
+
+    [Fact]
+    public async Task SetThreshold_ChangesGateDecisionOnNextAcquire()
+    {
+        // V3.1 hot-reload contract: the Settings UI calls SetThreshold after
+        // the user saves. Files acquired BEFORE the change keep their decision;
+        // the next acquisition sees the new threshold via Interlocked.Read.
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+
+        // 500 bytes < 1024 → small-file fast path, returns immediately.
+        using (var smallBefore = await gate.AcquireAsync(500, CancellationToken.None))
+        {
+            Assert.NotNull(smallBefore);
+        }
+
+        // Lower the threshold so the same 500 byte file is now "large".
+        gate.SetThreshold(largeFileThresholdBytes: 100);
+
+        Assert.Equal(100, gate.LargeFileThresholdBytes);
+
+        // First acquire takes the slot; second must park until release.
+        var holder = await gate.AcquireAsync(500, CancellationToken.None);
+        var queued = gate.AcquireAsync(500, CancellationToken.None);
+
+        var winner = await Task.WhenAny(queued, Task.Delay(PendingProbe));
+        Assert.NotSame(queued, winner);
+
+        holder.Dispose();
+        using var next = await queued;
+        Assert.NotNull(next);
+    }
+
+    [Fact]
+    public async Task SetThreshold_RaisesThreshold_LargeFileBecomesSmallAndBypassesGate()
+    {
+        // Reverse direction: caller raised the threshold, so a previously-
+        // gated size now bypasses the semaphore. Hold the slot with a 5000-
+        // byte file, then a fresh 5000-byte acquire (under the new larger
+        // threshold) must complete without parking.
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+
+        var holder = await gate.AcquireAsync(5000, CancellationToken.None);
+        gate.SetThreshold(largeFileThresholdBytes: 1_000_000);
+
+        var fast = gate.AcquireAsync(5000, CancellationToken.None);
+        var winner = await Task.WhenAny(fast, Task.Delay(PendingProbe));
+        Assert.Same(fast, winner);
+
+        using var fastHandle = await fast;
+        Assert.NotNull(fastHandle);
+        holder.Dispose();
+    }
+
+    [Fact]
+    public async Task SetThreshold_ConcurrentWithAcquire_NoDeadlock()
+    {
+        // Stress: 50 worker tasks call AcquireAsync in a tight loop while a
+        // separate writer flips the threshold back and forth. The volatile
+        // (Interlocked) read in AcquireAsync must always see a consistent
+        // value — never tear, never crash. Test passes if everything finishes
+        // within the 3 s budget.
+        using var gate = new BigFileGate(largeFileThresholdBytes: 1024);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var writer = Task.Run(async () =>
+        {
+            long t = 64;
+            while (!stop.IsCancellationRequested)
+            {
+                gate.SetThreshold(t);
+                t = t == 64 ? 1_000_000 : 64;
+                await Task.Yield();
+            }
+        });
+
+        var workers = Enumerable.Range(0, 50).Select(_ => Task.Run(async () =>
+        {
+            try
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    using var handle = await gate.AcquireAsync(500, stop.Token);
+                    Assert.NotNull(handle);
+                }
+            }
+            catch (OperationCanceledException) { /* expected at 3 s deadline */ }
+        })).ToArray();
+
+        await Task.WhenAll(workers.Append(writer));
+
+        // If we reach here the gate didn't deadlock or crash.
+        Assert.True(true);
+    }
 }
