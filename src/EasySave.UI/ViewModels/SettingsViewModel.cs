@@ -54,7 +54,26 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     /// <summary>Confirmation message shown after a successful save.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSaveSuccessMessage))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveErrorMessage))]
     private string _saveConfirmation = string.Empty;
+
+    /// <summary>
+    /// True when <see cref="SaveConfirmation"/> carries a validation /
+    /// failure message. Bound by the XAML to switch the message colour from
+    /// success-green to error-red so a rejected save is not displayed in
+    /// the same green as a successful one.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSaveSuccessMessage))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveErrorMessage))]
+    private bool _saveIsError;
+
+    /// <summary>True when the success-green message TextBlock should be visible.</summary>
+    public bool ShowSaveSuccessMessage => !SaveIsError && !string.IsNullOrEmpty(SaveConfirmation);
+
+    /// <summary>True when the error-red message TextBlock should be visible.</summary>
+    public bool ShowSaveErrorMessage => SaveIsError && !string.IsNullOrEmpty(SaveConfirmation);
 
     /// <summary>Input buffer for a new extension entry.</summary>
     [ObservableProperty]
@@ -158,7 +177,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // underlying byte count survives the unit switch (4 MB → switch GB →
     // 0.00390625 GB, not "4 GB"). Suppressed during LoadFromRepository so
     // the initial assignment doesn't try to convert from a stale unit.
-    partial void OnLargeFileThresholdUnitChanged(string oldValue, string newValue)
+    partial void OnLargeFileThresholdUnitChanged(string? oldValue, string newValue)
     {
         if (_suppressUnitConversion) return;
         if (string.Equals(oldValue, newValue, StringComparison.OrdinalIgnoreCase)) return;
@@ -214,12 +233,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
         // anything > 10 GB silently disables the gate.
         if (!UnitToKb.TryGetValue(LargeFileThresholdUnit ?? string.Empty, out var unitFactor))
         {
+            SaveIsError = true;
             SaveConfirmation = TranslationSource.Instance["settings.large_file.invalid"];
             return;
         }
         double kbExact = LargeFileThresholdValue * unitFactor;
         if (double.IsNaN(kbExact) || kbExact < MinThresholdKb || kbExact > MaxThresholdKb)
         {
+            SaveIsError = true;
             SaveConfirmation = TranslationSource.Instance["settings.large_file.invalid"];
             return;
         }
@@ -266,10 +287,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
             // path resolves the singleton from App.Services.
             _gate?.SetThreshold(thresholdKb * 1024L);
 
+            SaveIsError = false;
             SaveConfirmation = TranslationSource.Instance["settings.saved"];
         }
         catch (IOException)
         {
+            SaveIsError = true;
             SaveConfirmation = TranslationSource.Instance["settings.save_failed"];
         }
     }

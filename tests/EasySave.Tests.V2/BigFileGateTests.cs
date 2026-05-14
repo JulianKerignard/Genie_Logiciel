@@ -278,15 +278,18 @@ public class BigFileGateTests
 
         var workers = Enumerable.Range(0, 50).Select(_ => Task.Run(async () =>
         {
-            while (!stop.IsCancellationRequested)
+            try
             {
-                using var handle = await gate.AcquireAsync(500, CancellationToken.None);
-                Assert.NotNull(handle);
+                while (!stop.IsCancellationRequested)
+                {
+                    using var handle = await gate.AcquireAsync(500, stop.Token);
+                    Assert.NotNull(handle);
+                }
             }
+            catch (OperationCanceledException) { /* expected at 3 s deadline */ }
         })).ToArray();
 
-        try { await Task.WhenAll(workers.Append(writer)); }
-        catch (OperationCanceledException) { /* expected at 3 s deadline */ }
+        await Task.WhenAll(workers.Append(writer));
 
         // If we reach here the gate didn't deadlock or crash.
         Assert.True(true);

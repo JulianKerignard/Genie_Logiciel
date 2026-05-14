@@ -222,6 +222,44 @@ public sealed class SettingsViewModelLargeFileThresholdTests : IDisposable
     }
 
     [Fact]
+    public void Save_OutOfRangeValue_FlagsSaveIsError()
+    {
+        // Regression guard: validation banner used to be shown in success-green
+        // because SaveIsError didn't exist. The XAML now branches on it; the
+        // ViewModel must set it true on every error path and false on success.
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+        Assert.False(vm.SaveIsError);
+
+        vm.LargeFileThresholdValue = 0.001; // 0.001 MB ≈ 1 KB → below floor
+        vm.SaveCommand.Execute(null);
+
+        Assert.True(vm.SaveIsError);
+        Assert.True(vm.ShowSaveErrorMessage);
+        Assert.False(vm.ShowSaveSuccessMessage);
+    }
+
+    [Fact]
+    public void Save_ValidValue_ClearsSaveIsError()
+    {
+        WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });
+        var vm = new SettingsViewModel(SettingsRepository.Instance);
+
+        // First, trip the error state.
+        vm.LargeFileThresholdValue = 0.001;
+        vm.SaveCommand.Execute(null);
+        Assert.True(vm.SaveIsError);
+
+        // Then a valid save must clear it.
+        vm.LargeFileThresholdValue = 8;
+        vm.SaveCommand.Execute(null);
+
+        Assert.False(vm.SaveIsError);
+        Assert.True(vm.ShowSaveSuccessMessage);
+        Assert.False(vm.ShowSaveErrorMessage);
+    }
+
+    [Fact]
     public void Save_HonorsSelectedUnit_GbConversion()
     {
         WriteSettingsOnDisk(new AppSettings { LargeFileThresholdKb = 4096 });

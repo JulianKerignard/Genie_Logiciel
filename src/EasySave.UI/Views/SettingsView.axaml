@@ -193,12 +193,18 @@
                 </Grid>
             </Border>
 
-            <!-- Save button + confirmation -->
+            <!-- Save button + confirmation. Two TextBlocks with mutually
+                 exclusive IsVisible bindings — keeps the foreground colour
+                 declarative without a custom IValueConverter. -->
             <StackPanel Spacing="10" HorizontalAlignment="Right">
                 <TextBlock Text="{Binding SaveConfirmation}"
                            Foreground="#22C55E"
                            HorizontalAlignment="Right"
-                           IsVisible="{Binding SaveConfirmation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                           IsVisible="{Binding ShowSaveSuccessMessage}" />
+                <TextBlock Text="{Binding SaveConfirmation}"
+                           Foreground="#EF4444"
+                           HorizontalAlignment="Right"
+                           IsVisible="{Binding ShowSaveErrorMessage}" />
                 <Button Command="{Binding SaveCommand}"
                         Background="{StaticResource AccentBrush}"
                         Foreground="White"
