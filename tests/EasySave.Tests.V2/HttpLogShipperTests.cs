@@ -357,6 +357,77 @@ public class HttpLogShipperTests : IDisposable
             $"(observed {sw.ElapsedMilliseconds} ms for {totalEntries} calls; target >= 1000/s).");
     }
 
+    [Fact]
+    public async Task Append_DropsEntry_OnPermanent4xx_AndDeliversFollowingEntries()
+    {
+        // Regression guard for issue #215: a 4xx (collector schema mismatch,
+        // auth, wrong route, payload too large, …) must not pin the writer
+        // task forever. The head entry is dropped, traced, and the next
+        // queued entry must reach the collector.
+        int call = 0;
+        var handler = new RecordingHandler(_ =>
+        {
+            int current = Interlocked.Increment(ref call);
+            return current == 1
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+                : new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+
+        await using var shipper = new HttpLogShipper(
+            new Uri("http://collector.local/logs"),
+            new HttpClient(handler));
+
+        shipper.Append(new LogEntry { JobName = "rejected", Timestamp = "t" });
+        shipper.Append(new LogEntry { JobName = "delivered", Timestamp = "t" });
+
+        // Only two handler calls expected: the 400 (entry A dropped without
+        // retry) and the 204 (entry B delivered). If the bug regressed,
+        // entry A would still be retrying and entry B would never ship.
+        await handler.WaitForRequestsAsync(2);
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal("rejected",
+            JsonDocument.Parse(handler.Requests[0].Body)
+                .RootElement.GetProperty("JobName").GetString());
+        Assert.Equal("delivered",
+            JsonDocument.Parse(handler.Requests[1].Body)
+                .RootElement.GetProperty("JobName").GetString());
+    }
+
+    [Fact]
+    public async Task Append_RetriesEntry_OnTransient5xx_UntilCollectorRecovers()
+    {
+        // 5xx is transient — the shipper must keep retrying the same entry
+        // with backoff until it succeeds. Two failures (1s + 2s = 3s) then
+        // success on the third attempt; cap the wait at the backoff replay
+        // deadline already used by the network-recovery test above.
+        int call = 0;
+        var handler = new RecordingHandler(_ =>
+        {
+            int current = Interlocked.Increment(ref call);
+            return current <= 2
+                ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                : new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+
+        await using var shipper = new HttpLogShipper(
+            new Uri("http://collector.local/logs"),
+            new HttpClient(handler));
+
+        shipper.Append(new LogEntry { JobName = "retry-5xx", Timestamp = "t" });
+
+        await handler.WaitForRequestsAsync(3, BackoffReplayDeadline);
+
+        Assert.Equal(3, handler.Requests.Count);
+        // Every attempt carries the SAME entry — no advance until success.
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.Equal("retry-5xx",
+                JsonDocument.Parse(handler.Requests[i].Body)
+                    .RootElement.GetProperty("JobName").GetString());
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Recording handler — captures outgoing requests so tests can assert
     // method, URI and JSON body without spinning a real HTTP listener.
