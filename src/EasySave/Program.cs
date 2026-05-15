@@ -20,18 +20,7 @@ var (logger, logShipper) = DailyLoggerFactory.Create(
     AppConfig.Instance.Settings.LogFormat,
     AppConfig.Instance.Settings.LogMode,
     AppConfig.Instance.Settings.LogCentralizedEndpoint);
-// ProcessExit is sync — an async lambda would be async void and the
-// runtime would not wait for the channel drain, losing buffered entries
-// on shutdown. Block here so DisposeAsync completes before the process
-// exits. Dispose order matters: the logger's writer loop forwards
-// entries to the shipper, so the logger must finish draining BEFORE
-// the shipper is torn down — otherwise a late forward hits a disposed
-// HttpClient and the entry is lost in centralized mode.
-AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-{
-    (logger as IDisposable)?.Dispose();
-    logShipper?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-};
+
 IEncryptionService encryption = string.IsNullOrWhiteSpace(AppConfig.Instance.Settings.CryptoSoft.Path)
     ? new NoOpEncryptionService()
     : new CryptoSoftAdapter(AppConfig.Instance.Settings.CryptoSoft);
@@ -62,6 +51,16 @@ var backupManager = new BackupManager(
     AppConfig.Instance.Settings.PriorityExtensions);
 var langService = new LanguageService(AppConfig.Instance.Settings);
 
+// V3 remote-console wiring. Conditional disposables hoisted to top scope
+// so the consolidated ProcessExit handler below can tear them down in the
+// correct order (server first, then bridges/bus, then orchestrator, then
+// gates, then logger/shipper last).
+CancellationTokenSource? serverCts = null;
+IRemoteConsoleServer? server = null;
+StateTrackerEventBridge? stateBridge = null;
+IEventBus? eventBus = null;
+IParallelBackupOrchestrator? orchestrator = null;
+
 if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
 {
     // V3 real parallel orchestrator + EventBus chain. Mirrors the GUI
@@ -73,7 +72,7 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
     // dropped, and clients received zero progress events because no
     // bridge published StateTracker updates onto the bus.
     IJobRunner runner = new BackupManagerJobRunner(backupManager);
-    var orchestrator = new ParallelBackupOrchestrator(
+    orchestrator = new ParallelBackupOrchestrator(
         runner,
         _ => logger,
         Math.Max(1, AppConfig.Instance.Settings.MaxParallelJobs));
@@ -81,31 +80,24 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
     var cert = AppConfig.Instance.Settings.RemoteConsoleTlsEnabled
         ? SelfSignedCertProvider.LoadOrCreate(SelfSignedCertProvider.DefaultCertPath())
         : null;
-    IRemoteConsoleServer server = new TcpRemoteConsoleServer(logger, cert);
+    server = new TcpRemoteConsoleServer(logger, cert);
 
-    IEventBus eventBus = new ChannelEventBus();
-    var stateBridge = new StateTrackerEventBridge(StateTracker.Instance, eventBus);
+    eventBus = new ChannelEventBus();
+    stateBridge = new StateTrackerEventBridge(StateTracker.Instance, eventBus);
     var broadcastBridge = new RemoteConsoleBroadcastBridge(eventBus, server);
     stateBridge.Start();
     broadcastBridge.Start();
 
     server.CommandReceived += cmd => HandleRemoteCommandAsync(cmd, orchestrator, logger);
 
-    using var serverCts = new CancellationTokenSource();
-    Console.CancelKeyPress += (_, e) => { e.Cancel = true; serverCts.Cancel(); };
-    AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-    {
-        serverCts.Cancel();
-        // Drain the bus + bridges before shipping logs out. Same dispose
-        // order as App.axaml.cs:DisposeServices: server first, then the
-        // bridges' bus, then the orchestrator + gates.
-        try { server.StopAsync().GetAwaiter().GetResult(); } catch { /* best-effort */ }
-        stateBridge.Dispose();
-        (eventBus as IDisposable)?.Dispose();
-        orchestrator.Dispose();
-        (bigFileGate as IDisposable)?.Dispose();
-        (priorityGate as IDisposable)?.Dispose();
-    };
+    // Plain `var`: a `using var` here would scope-dispose the CTS at the
+    // end of the if-block, and the consolidated ProcessExit handler below
+    // would then call Cancel/Dispose on a disposed CTS. Lifetime is owned
+    // by the ProcessExit handler instead.
+    serverCts = new CancellationTokenSource();
+    var ctsForCancel = serverCts;
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; ctsForCancel.Cancel(); };
+
     _ = server.StartAsync(AppConfig.Instance.Settings.RemoteConsolePort, serverCts.Token)
         .ContinueWith(t =>
         {
@@ -132,12 +124,17 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
                     orchestrator.Pause(cmd.JobName);
                     break;
                 case CommandType.Play:
-                    // Two paths: if the job is already running and paused,
-                    // signal its gate (Resume). Otherwise launch a fresh run
-                    // via RunAsync so the job becomes orchestrator-tracked
-                    // and is controllable by subsequent Pause/Stop. RunAsync
-                    // is fire-and-forget; observe the task so async failures
-                    // (job not found, runner throws) surface to Trace.
+                    // Two-path Play (matches App.axaml.cs:268-281):
+                    //  - If the job is currently parked (Pause was sent earlier),
+                    //    Resume() signals its PauseGate and the worker continues
+                    //    from the same offset.
+                    //  - If the job is not running, RunAsync starts a fresh run
+                    //    so the job becomes orchestrator-tracked and is then
+                    //    controllable by Pause/Stop.
+                    // When the job is already running (paused or active), the
+                    // RunAsync call returns a Failed JobResult ("already running")
+                    // which we silently discard — not a fault, no Trace warning.
+                    // The continuation only logs genuine async exceptions.
                     orchestrator.Resume(cmd.JobName);
                     _ = orchestrator.RunAsync(new[] { cmd.JobName }, CancellationToken.None)
                         .ContinueWith(t =>
@@ -177,6 +174,37 @@ if (AppConfig.Instance.Settings.RemoteConsoleEnabled)
         return Task.CompletedTask;
     }
 }
+
+// Single ProcessExit handler covering BOTH paths (with / without
+// RemoteConsole) in correct teardown order. ProcessExit fires handlers in
+// FIFO registration order: registering the logger separately upstream
+// would dispose it first while the server/bridges were still alive, and
+// any in-flight CommandReceived audit Append would be silently dropped
+// (post-Dispose Append is a documented no-op in JsonDailyLogger).
+//
+// Order matches App.axaml.cs:DisposeServices: stop accepting new work,
+// drain consumers, dispose engine primitives, then logger + shipper last
+// so any "shutting down" entry the engine produces still reaches disk.
+//
+// Sync handler — async lambdas would be async void and the runtime would
+// not wait for the channel drain, losing buffered entries on shutdown.
+AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+{
+    serverCts?.Cancel();
+    try { server?.StopAsync().GetAwaiter().GetResult(); } catch { /* best-effort shutdown */ }
+    stateBridge?.Dispose();
+    (eventBus as IDisposable)?.Dispose();
+    orchestrator?.Dispose();
+    (bigFileGate as IDisposable)?.Dispose();
+    (priorityGate as IDisposable)?.Dispose();
+    // Logger first, then shipper: the logger's writer loop forwards entries
+    // to the shipper, so the logger must finish draining BEFORE the shipper
+    // is torn down — otherwise a late forward hits a disposed HttpClient and
+    // the entry is lost in centralized mode.
+    (logger as IDisposable)?.Dispose();
+    logShipper?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    serverCts?.Dispose();
+};
 
 var cliArgs = Environment.GetCommandLineArgs().Skip(1).ToArray();
 if (cliArgs.Length > 0)
