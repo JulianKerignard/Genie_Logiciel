@@ -15,23 +15,39 @@ public sealed class BigFileGate : IBigFileGate, IDisposable
 
     private readonly SemaphoreSlim _gate = new(initialCount: 1, maxCount: 1);
 
-    public long LargeFileThresholdBytes { get; }
+    // Mutated by SetThreshold from the UI thread, read by every AcquireAsync
+    // caller from the worker pool. Interlocked.Read/Exchange on long is the
+    // canonical lock-free pattern (the `volatile` keyword cannot be applied
+    // to long since long is not guaranteed atomic on 32-bit platforms).
+    private long _thresholdBytes;
+
+    public long LargeFileThresholdBytes => Interlocked.Read(ref _thresholdBytes);
 
     public BigFileGate(long largeFileThresholdBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(largeFileThresholdBytes);
-        LargeFileThresholdBytes = largeFileThresholdBytes;
+        _thresholdBytes = largeFileThresholdBytes;
     }
 
     public async Task<IDisposable> AcquireAsync(long fileSizeBytes, CancellationToken ct)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(fileSizeBytes);
 
-        if (fileSizeBytes < LargeFileThresholdBytes)
+        // Snapshot once: a concurrent SetThreshold should not change the
+        // decision mid-method. The next AcquireAsync call will see the new
+        // value via Interlocked.Read in the LargeFileThresholdBytes getter.
+        long threshold = Interlocked.Read(ref _thresholdBytes);
+        if (fileSizeBytes < threshold)
             return _smallFileHandle;
 
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         return new ReleaseHandle(_gate);
+    }
+
+    public void SetThreshold(long largeFileThresholdBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(largeFileThresholdBytes);
+        Interlocked.Exchange(ref _thresholdBytes, largeFileThresholdBytes);
     }
 
     // The host is expected to stop every running job (and let their gate

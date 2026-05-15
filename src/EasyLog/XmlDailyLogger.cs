@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading.Channels;
 using System.Xml;
 using System.Xml.Linq;
 
@@ -10,16 +11,41 @@ namespace EasyLog;
 /// Each file is a valid document with a <c>&lt;Logs&gt;</c> root element and
 /// one <c>&lt;Entry&gt;</c> child per logged operation, conforming to the
 /// schema in <c>EasyLog.Schemas.easysave-log.xsd</c>.
-/// Writes are serialized with a lock and performed atomically via a temporary
-/// file so concurrent backup jobs never corrupt the daily file.
 /// </summary>
-public sealed class XmlDailyLogger : IDailyLogger
+/// <remarks>
+/// <para>
+/// Concurrent <see cref="Append"/> calls are funneled through an in-memory
+/// <see cref="Channel{T}"/> consumed by a single writer task — same pattern
+/// as <see cref="JsonDailyLogger"/>. The writer drains everything currently
+/// queued, groups by day file, mutates a per-day in-memory <see cref="XDocument"/>
+/// cache, and writes the file atomically. So 4 jobs publishing 1000 entries
+/// concurrently triggers a handful of file writes instead of 4000 reparse-
+/// rewrite cycles. The previous implementation reloaded + re-serialized the
+/// full DOM under a global lock at every Append, producing O(n²) behaviour
+/// on long-running jobs.
+/// </para>
+/// <para>
+/// <see cref="Append"/> stays <c>void</c> and synchronous: each call blocks
+/// until its entry has been flushed (or the writer reports an error), so the
+/// v1.0 durability contract is preserved — no log loss on crash between
+/// Append return and the next backup step.
+/// </para>
+/// </remarks>
+public sealed class XmlDailyLogger : IDailyLogger, IDisposable
 {
     private readonly string _logDirectory;
     private readonly XmlFormatter _formatter = new();
-    private readonly object _writeLock = new();
+    private readonly Channel<WriteRequest> _queue;
+    private readonly Task _writerLoop;
     private readonly ILogShipper? _shipper;
     private readonly LogMode _mode;
+
+    // Per-day cache of the live XDocument so a busy day does not re-parse
+    // the file from disk on every flush. The writer task is the only thread
+    // that touches it, so no extra synchronization is needed.
+    private readonly Dictionary<string, XDocument> _cachePerDay = new(StringComparer.OrdinalIgnoreCase);
+
+    private volatile bool _disposed;
 
     /// <summary>
     /// Initializes a new logger writing to <paramref name="logDirectory"/>.
@@ -37,6 +63,14 @@ public sealed class XmlDailyLogger : IDailyLogger
         Directory.CreateDirectory(_logDirectory);
         _shipper = shipper;
         _mode = LogRouter.Effective(shipper, mode);
+
+        _queue = Channel.CreateUnbounded<WriteRequest>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false,
+        });
+
+        _writerLoop = Task.Run(WriterLoopAsync);
     }
 
     /// <summary>Absolute path of the directory where daily log files are written.</summary>
@@ -47,8 +81,8 @@ public sealed class XmlDailyLogger : IDailyLogger
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        // Local date intentional: daily files align with the operator's
-        // business day, not UTC.
+        // Day file decided here so an entry produced just before midnight
+        // lands in the right file even if the writer task drains it later.
         string filePath = Path.Combine(_logDirectory, $"{DateTime.Now:yyyy-MM-dd}.xml");
         LogEntry normalized = LogRouter.Normalize(entry);
 
@@ -62,11 +96,108 @@ public sealed class XmlDailyLogger : IDailyLogger
             return;
         }
 
-        lock (_writeLock)
+        var ack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_queue.Writer.TryWrite(new WriteRequest(filePath, normalized, ack)))
         {
-            XDocument doc = ReadExisting(filePath);
-            doc.Root!.Add(XElement.Parse(_formatter.Format(normalized)));
-            WriteAtomic(filePath, doc);
+            // Queue is closed (post-Dispose). Same convention as JsonDailyLogger:
+            // drop silently rather than throw across host-shutdown code paths.
+            return;
+        }
+
+        // Block until the writer task signals durability (or surfaces the
+        // I/O error) — keeps Append's v1 sync contract.
+        ack.Task.GetAwaiter().GetResult();
+    }
+
+    private async Task WriterLoopAsync()
+    {
+        try
+        {
+            while (await _queue.Reader.WaitToReadAsync().ConfigureAwait(false))
+            {
+                var batch = new List<WriteRequest>();
+                while (_queue.Reader.TryRead(out var req))
+                {
+                    batch.Add(req);
+                }
+
+                try
+                {
+                    FlushBatch(batch);
+                }
+                catch (Exception ex)
+                {
+                    // Belt-and-braces — FlushBatch swallows per-group failures
+                    // itself; any future throw escaping it would otherwise
+                    // kill the writer and hang every Append on its TCS.
+                    foreach (var req in batch) req.Ack.TrySetException(ex);
+                }
+            }
+        }
+        finally
+        {
+            // Safety net for any forced-cancellation / unexpected exception
+            // path: route survivors through FlushBatch so callers either see
+            // their entry on disk or get a surfaced exception — never a
+            // silent TrySetResult that would claim durability for entries
+            // that never reached the file.
+            var leftover = new List<WriteRequest>();
+            while (_queue.Reader.TryRead(out var req)) leftover.Add(req);
+            if (leftover.Count > 0)
+            {
+                try { FlushBatch(leftover); }
+                catch (Exception ex)
+                {
+                    foreach (var req in leftover) req.Ack.TrySetException(ex);
+                }
+            }
+        }
+    }
+
+    private void FlushBatch(List<WriteRequest> batch)
+    {
+        // Group by day file: a midnight rollover inside one batch would
+        // otherwise mix entries across two files.
+        foreach (var group in batch.GroupBy(r => r.FilePath, StringComparer.OrdinalIgnoreCase))
+        {
+            string filePath = group.Key;
+
+            int addedThisGroup = 0;
+            XDocument? doc = null;
+            try
+            {
+                if (!_cachePerDay.TryGetValue(filePath, out doc))
+                {
+                    doc = ReadExisting(filePath);
+                    _cachePerDay[filePath] = doc;
+                }
+
+                foreach (var req in group)
+                {
+                    doc.Root!.Add(XElement.Parse(_formatter.Format(req.Entry)));
+                    addedThisGroup++;
+                }
+
+                WriteAtomic(filePath, doc);
+                foreach (var req in group) req.Ack.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                // Roll back the in-memory cache so the next flush retries
+                // the same entries cleanly. addedThisGroup is 0 when the
+                // throw came from ReadExisting (doc was never mutated)
+                // or when doc is still null (initial assignment failed).
+                if (doc?.Root is not null && addedThisGroup > 0)
+                {
+                    var children = doc.Root.Elements().ToList();
+                    int removeFrom = children.Count - addedThisGroup;
+                    for (int i = children.Count - 1; i >= removeFrom; i--)
+                    {
+                        children[i].Remove();
+                    }
+                }
+                foreach (var req in group) req.Ack.TrySetException(ex);
+            }
         }
     }
 
@@ -110,4 +241,27 @@ public sealed class XmlDailyLogger : IDailyLogger
             throw;
         }
     }
+
+    /// <summary>
+    /// Stops accepting new entries, waits for the writer task to drain any
+    /// in-flight batch, and releases the channel. Safe to call multiple times.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        _queue.Writer.TryComplete();
+
+        // GetAwaiter().GetResult() unwraps AggregateException, so a writer-task
+        // fault reaches the catch site as the inner exception. Catch Exception,
+        // not AggregateException, so Dispose actually swallows everything as
+        // intended. Per-entry failures still surface to callers via ack TCS;
+        // this catch only protects shutdown from a writer that escaped the
+        // FlushBatch try/catch (e.g. an OOM in the channel reader path).
+        try { _writerLoop.GetAwaiter().GetResult(); }
+        catch (Exception) { /* surfaced through individual ack TCS */ }
+    }
+
+    private sealed record WriteRequest(string FilePath, LogEntry Entry, TaskCompletionSource Ack);
 }

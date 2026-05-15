@@ -91,12 +91,8 @@ public sealed partial class RestoreViewModel : ViewModelBase
 
         try
         {
-            var effectiveDestination = await _restoreService
-                .RestoreAsync(SelectedRestorePoint, dest, progress)
-                .ConfigureAwait(true);
-            SuccessMessage = string.Format(
-                TranslationSource.Instance["restore.success"],
-                effectiveDestination);
+            await _restoreService.RestoreAsync(SelectedRestorePoint, dest, progress).ConfigureAwait(true);
+            SuccessMessage = TranslationSource.Instance["restore.success"];
         }
         catch (Exception ex)
         {

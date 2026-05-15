@@ -132,14 +132,12 @@
             <TextBlock Text="{Binding ErrorMessage}"
                        Foreground="#EF4444"
                        FontSize="13"
-                       TextWrapping="Wrap"
                        Margin="0,0,0,8"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             <TextBlock Text="{Binding SuccessMessage}"
                        Foreground="#22C55E"
                        FontSize="13"
-                       TextWrapping="Wrap"
                        Margin="0,0,0,8"
                        IsVisible="{Binding SuccessMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 

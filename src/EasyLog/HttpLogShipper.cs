@@ -121,17 +121,30 @@ public sealed class HttpLogShipper : ILogShipper
         }
     }
 
-    // Retries a single entry with exponential backoff until POST succeeds
-    // or shutdown is requested. Order is preserved — we never advance to
-    // the next queued entry while the current one is still pending.
+    // Retries a single entry with exponential backoff until POST succeeds,
+    // a permanent error is observed, or shutdown is requested. Order is
+    // preserved — we never advance to the next queued entry while the
+    // current one is still pending a transient retry.
     private async Task ProcessSingleEntryAsync(LogEntry entry, CancellationToken ct)
     {
         int backoffIndex = 0;
         while (!ct.IsCancellationRequested)
         {
-            if (await TrySendAsync(entry, ct).ConfigureAwait(false))
+            var outcome = await TrySendAsync(entry, ct).ConfigureAwait(false);
+            switch (outcome)
             {
-                return;
+                case SendOutcome.Success:
+                    return;
+                case SendOutcome.DropPermanent:
+                    // 4xx: collector rejected the entry (schema mismatch,
+                    // auth, wrong route, payload too large, …). Retrying
+                    // can never succeed — drop the entry, trace it for
+                    // operators, and advance to the next queued one so
+                    // the channel does not grow unbounded behind it.
+                    return;
+                case SendOutcome.RetryTransient:
+                default:
+                    break;
             }
 
             TimeSpan delay = BackoffSchedule[Math.Min(backoffIndex, BackoffSchedule.Length - 1)];
@@ -147,28 +160,49 @@ public sealed class HttpLogShipper : ILogShipper
         }
     }
 
-    private async Task<bool> TrySendAsync(LogEntry entry, CancellationToken ct)
+    // Classifies the POST attempt into one of three buckets so
+    // ProcessSingleEntryAsync can decide between retry, drop, and advance.
+    // 2xx → Success; 5xx / network → RetryTransient; 4xx → DropPermanent.
+    private async Task<SendOutcome> TrySendAsync(LogEntry entry, CancellationToken ct)
     {
         try
         {
             using var content = JsonContent.Create(entry, options: PayloadOptions);
             using var response = await _http.PostAsync(_endpoint, content, ct).ConfigureAwait(false);
-            return response.IsSuccessStatusCode;
+            if (response.IsSuccessStatusCode) return SendOutcome.Success;
+            int status = (int)response.StatusCode;
+            if (status >= 500)
+            {
+                return SendOutcome.RetryTransient;
+            }
+            // 4xx (and any other non-2xx, non-5xx): permanent reject.
+            Trace.TraceError(
+                $"[EasyLog] HttpLogShipper dropping entry (job='{entry.JobName}', " +
+                $"source='{entry.SourceFile}'): collector returned {status} {response.ReasonPhrase}. " +
+                $"Retrying would not succeed — fix the endpoint, payload shape, or auth.");
+            return SendOutcome.DropPermanent;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return false;
+            return SendOutcome.RetryTransient;
         }
         catch (HttpRequestException)
         {
-            return false;
+            return SendOutcome.RetryTransient;
         }
         catch (TaskCanceledException)
         {
             // Per-request timeout from HttpClient.Timeout — same handling
             // as a network failure.
-            return false;
+            return SendOutcome.RetryTransient;
         }
+    }
+
+    private enum SendOutcome
+    {
+        Success,
+        RetryTransient,
+        DropPermanent,
     }
 
     /// <inheritdoc />

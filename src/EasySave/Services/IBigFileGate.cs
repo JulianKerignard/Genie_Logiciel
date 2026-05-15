@@ -36,4 +36,13 @@ public interface IBigFileGate
     // Cancelling the token while waiting throws OperationCanceledException
     // and does not consume the slot.
     Task<IDisposable> AcquireAsync(long fileSizeBytes, CancellationToken ct);
+
+    // Updates the threshold used by subsequent AcquireAsync calls. Files
+    // whose decision was already made (small-file fast path returned, or
+    // already parked on the gate) are unaffected — the new value applies
+    // from the next acquisition onward. Lets the GUI Settings screen apply
+    // a new threshold without restarting the app. Throws
+    // ArgumentOutOfRangeException on negative values; the concrete
+    // implementation may add an upper bound.
+    void SetThreshold(long largeFileThresholdBytes);
 }

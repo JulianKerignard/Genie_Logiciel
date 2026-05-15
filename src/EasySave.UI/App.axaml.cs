@@ -138,8 +138,15 @@ public partial class App : Application
         // V3 big-file gate. SemaphoreSlim(N=1) shared across the engine —
         // when parallel jobs each try to copy a file >= threshold, the gate
         // serializes them so disk/network bandwidth is not saturated.
+        // Clamp the JSON value into [64 KB, 10 GB] before constructing the
+        // gate: a hand-edited 0 / negative value would crash the ctor on
+        // boot, and a 100 GB value would silently disable the gate. The
+        // Settings UI enforces the same range; this is defense in depth.
+        const int MinThresholdKb = 64;
+        const int MaxThresholdKb = 10 * 1024 * 1024; // 10 GB
+        int clampedKb = Math.Clamp(userSettings.LargeFileThresholdKb, MinThresholdKb, MaxThresholdKb);
         services.AddSingleton<IBigFileGate>(_ =>
-            new BigFileGate(userSettings.LargeFileThresholdKb * 1024L));
+            new BigFileGate(clampedKb * 1024L));
 
         // V3 priority gate. Cross-job barrier enforcing the CdC rule
         // « Aucune sauvegarde d'un fichier non prioritaire ne peut se
