@@ -35,7 +35,7 @@
   "settings.large_file_threshold.hint": "Files at or above this size are transferred one at a time across parallel jobs to avoid saturating disk or network. Allowed range: 64 KB to 10 GB.",
   "settings.large_file.invalid": "Threshold must be between 64 KB and 10 GB.",
   "about.title": "About",
-  "about.version": "Version 3.0.0",
+  "about.version": "Version 3.0.2",
   "about.authors": "Authors: EasySave Team — CESI PGE A3 FISE INFO",
   "about.description": "Backup software developed as part of the software engineering project.",
   "edit.title_create": "New Backup Job",

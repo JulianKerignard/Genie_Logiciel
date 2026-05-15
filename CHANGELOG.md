@@ -6,6 +6,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] — 2026-05-15
+
+Hardening + perf patch on top of v3.0.1. Four real bug fixes (one of them
+critical for the V3 demo: console-mode remote console was silently dropping
+every command), one performance refactor (XML logger now uses the same
+Channel pattern as JSON, killing an O(n²) DOM rewrite), and one small UI
+addition (the BigFileGate threshold is now editable from Settings instead
+of requiring a hand-edit of `appsettings.json`). No breaking changes.
+`EasyLog.dll` v1.0 surface unchanged. v3 wire-format DTOs unchanged.
+
+### Added
+
+- **Settings UI: large-file threshold input** (`SettingsView`) — operator
+  can now configure the `BigFileGate` threshold directly from the GUI with
+  a unit selector (KB / MB / GB). Validation enforces `[64 KB, 10 GB]`;
+  out-of-range or empty inputs surface a red error banner. Hot reload via
+  `IBigFileGate.SetThreshold` (`Interlocked.Exchange` on the threshold
+  field) — the new value applies on the next file boundary across every
+  running job, no app restart required. Defense-in-depth clamp in
+  `App.axaml.cs` DI registration so a hand-edited `appsettings.json` with
+  `0` or a negative value cannot crash the gate constructor at boot.
+
+### Fixed
+
+- **`fix(v3)` — console-mode remote console was a no-op (PR #219)**:
+  `Program.cs` instantiated `ParallelBackupOrchestratorStub` whose
+  `Pause / Resume / Stop` were empty methods, and never wired the
+  `ChannelEventBus` / `StateTrackerEventBridge` /
+  `RemoteConsoleBroadcastBridge` chain. Result: launching the console
+  binary with `RemoteConsoleEnabled=true` accepted client commands and
+  silently dropped them, and connected clients received zero progress
+  events. Now mirrors the GUI wiring (`App.axaml.cs:170-235`) end-to-end:
+  real orchestrator + `BigFileGate` + `PriorityGate` + bus + both
+  bridges. `HandleRemoteCommandAsync` routes commands through the real
+  orchestrator. `ParallelBackupOrchestratorStub.cs` is deleted. Single
+  consolidated `ProcessExit` handler tears down in correct order
+  (server → bridges/bus → orchestrator → gates → logger → shipper) so
+  no audit entry is dropped on shutdown.
+- **`fix(easylog)` — `HttpLogShipper` retried 4xx forever (PR #217,
+  closes #215)**: `TrySendAsync` collapsed every non-2xx into "not sent"
+  and `ProcessSingleEntryAsync` retried with exponential backoff until
+  success. A permanent 4xx (collector schema mismatch, auth, wrong
+  route, payload too large, …) pinned the writer task on the head entry
+  forever and grew the unbounded channel behind it. In `LogMode.Centralized`
+  every subsequent `Append` was silently lost — caller-side returned
+  success but nothing reached the collector. Now classifies into
+  `SendOutcome { Success, RetryTransient, DropPermanent }`: 2xx →
+  Success, 5xx + network → RetryTransient, 4xx → DropPermanent (logged
+  to `Trace`, advance to next entry).
+- **`fix(ui)` — pause/resume on Run-All-launched jobs restarted from
+  scratch (PR #214)**: `JobsViewModel.PauseJob` called
+  `_orchestrator.Stop` (cancels CTS, kills the worker), then `ResumeJob`
+  re-launched the job from file 0. The progress bar dropped to 0 % at
+  every Resume, masked by a `_orchestratorResumeProgressFloor` clamp
+  that froze the bar visually. Now uses `_orchestrator.Pause/Resume` which
+  signals the per-job `PauseGate` — the worker thread parks at the next
+  file boundary and resumes from the same offset. Drops 120 lines of
+  workaround logic (`_orchestratorPausedJobs`,
+  `_watcherOrchestratorStoppedJobs`, `_orchestratorResumeProgressFloor`,
+  `RunWatcherOrchestratorJobsAsync`).
+- **`fix(ui)` — `SettingsViewModel.Save` silently reset most fields
+  (regression caught while landing the threshold input)**: the original
+  `Save()` built a fresh `AppSettings` preserving only `Language` and
+  `CryptoSoft.TimeoutMs`. Every other field (`MaxParallelJobs`,
+  `RemoteConsole*`, `LogMode`, `LogCentralizedEndpoint`,
+  `PriorityExtensions`) was overwritten with defaults on every Save —
+  one click in Settings could wipe the operator's V3 configuration.
+  Now preserves all non-GUI fields, with a dedicated regression test
+  (`Save_PreservesMaxParallelJobsAndRemoteConsoleAndLogModeSettings`).
+
+### Performance
+
+- **`perf(easylog)` — `XmlDailyLogger` no more O(n²) DOM rewrite (PR #220)**:
+  `Append` took a global lock, reparsed the full `XDocument` from disk,
+  added one `Entry`, then re-serialized + atomic-rewrote the whole file.
+  For N entries on the same day, every Append did O(N) work on the DOM
+  and O(file-size) work on disk — total O(N²) per job. Under V3 multi-job
+  runs (4 jobs × 1000 entries) the global lock serialized them all and
+  the user picking `log_format=xml` saw a multi-second freeze. Now uses
+  the same Channel pattern as `JsonDailyLogger`: `Channel<WriteRequest>`
+  + writer task + per-day `XDocument` cache + `TaskCompletionSource` ack
+  preserving the v1 sync durability contract. Concurrent appends collapse
+  into one disk write per day. Schema-conformant XML output unchanged.
+
+### Changed
+
+- **`refactor(easylog)` — `Dispose` catch type on both daily loggers**:
+  `GetAwaiter().GetResult()` unwraps `AggregateException`, so the previous
+  `catch (AggregateException)` only caught nested aggregates. Switched
+  to `catch (Exception)` on `JsonDailyLogger` and `XmlDailyLogger` so
+  `Dispose` truly swallows every shutdown-time fault as intended.
+- **About box version label** bumped from `Version 3.0.0` to `Version 3.0.2`
+  in both EN and FR resources.
+
+## [3.0.1] — 2026-05-13
+
+Patch release. Adds the missing **CryptoSoft companion binary** alongside
+the existing `CryptoSoftAdapter` integration in EasySave. The adapter was
+shipped in v2.0 but the standalone executable it talks to was relying on
+an external download — v3.0.1 ships it built from the same solution so
+the encryption flow works out of the box on every operator workstation.
+No EasySave engine change, no v3 wire-format change, no `EasyLog.dll`
+surface change.
+
+### Added
+
+- **`CryptoSoft` project** (`CryptoSoft/CryptoSoft.csproj`): standalone
+  console executable invoked by `CryptoSoftAdapter` per-file. Single-byte
+  XOR cipher (demo-grade, key `0xA5` documented as such in source).
+  Mono-instance enforcement via `SystemMutexGate` on
+  `Global\ProSoft.CryptoSoft.SingleInstance` — concurrent invocations
+  return exit code `-2` (`AlreadyRunning`) and the adapter retries on the
+  configured timeout. SOLID structure (`ICryptoAlgorithm` + `XorCryptoAlgorithm`,
+  `IMonoInstanceGate` + `SystemMutexGate`, pure-orchestration
+  `CryptoSoftRunner`) so a future `AesGcmCryptoAlgorithm` swaps in
+  without touching the orchestrator or the mutex.
+- **`tests/CryptoSoft.Tests`**: 14 unit tests covering algorithm
+  round-trip + immutability, runner happy-path / missing source / refused
+  gate / IO failure, and isolated-mutex `SystemMutexGate` lifecycle
+  (acquire / release / dispose / abandoned-mutex inheritance).
+
+[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.2...HEAD
+[3.0.2]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.1...v3.0.2
+[3.0.1]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.0...v3.0.1
+
 ## [3.0.0] — 2026-05-13
 
 Major release. EasySave moves from sequential to parallel backups, introduces a
@@ -282,7 +407,6 @@ the v1.x console and `EasyLog.dll` contracts fully intact.
   as paused — the job now stops at the next file boundary (no partial writes).
 - Resuming a paused Full-backup job no longer re-copies already-transferred files.
 
-[Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.0...HEAD
 [3.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v1.0.1...v2.0.0
