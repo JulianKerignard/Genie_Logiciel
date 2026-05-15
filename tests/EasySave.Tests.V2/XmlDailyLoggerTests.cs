@@ -288,8 +288,10 @@ public class XmlDailyLoggerTests : IDisposable
         // Channel pattern it collapses into a small handful of batches. The
         // assertion is correctness (zero loss), not throughput — but the test
         // also catches a regression where the writer task drops a batch on
-        // exception or hangs an Append.
-        IDailyLogger logger = new XmlDailyLogger(_tempDir);
+        // exception or hangs an Append. `using` so the writer task exits
+        // at end of test instead of staying parked on WaitToReadAsync for
+        // the rest of the test-run lifetime.
+        using var logger = new XmlDailyLogger(_tempDir);
         const int threadCount = 8;
         const int perThread = 100;
 
@@ -313,7 +315,7 @@ public class XmlDailyLoggerTests : IDisposable
         // Channel writer drains in FIFO order so a single thread that calls
         // Append(A1) → Append(A2) → Append(A3) sees them in that order in
         // the daily file (cross-thread order is intentionally not guaranteed).
-        var logger = new XmlDailyLogger(_tempDir);
+        using var logger = new XmlDailyLogger(_tempDir);
 
         for (int i = 0; i < 50; i++)
             logger.Append(NewEntry($"seq-{i:D3}"));
@@ -336,7 +338,7 @@ public class XmlDailyLoggerTests : IDisposable
         // future refactor accidentally returned from Append before the flush,
         // a host crash between Append and the next backup step would lose
         // the entry. Lock that contract here.
-        var logger = new XmlDailyLogger(_tempDir);
+        using var logger = new XmlDailyLogger(_tempDir);
 
         logger.Append(new LogEntry { JobName = "synchronous", FileTransferTimeMs = 1 });
 
@@ -347,13 +349,18 @@ public class XmlDailyLoggerTests : IDisposable
     }
 
     [Fact]
-    public void Dispose_DrainsInFlightEntries_BeforeReturning()
+    public void Dispose_PreservesPersistedEntries_DoesNotCorruptFile()
     {
-        // Dispose closes the channel and waits on the writer loop. Any entry
-        // still queued at Dispose-time must reach disk (the loop drains on
-        // WaitToReadAsync false → finally block fallback). Without this, a
-        // host shutdown could lose the last few entries.
-        var logger = new XmlDailyLogger(_tempDir);
+        // Note on scope: because Append is synchronous (TCS blocks until the
+        // writer flushes), the 20 entries below are already on disk before
+        // Dispose runs — the finally-block "leftover drain" path inside
+        // WriterLoopAsync is NOT exercised by this test. That path is a
+        // safety net for forced-cancellation scenarios (Channel.Writer
+        // completed mid-batch with pending readers), which the public API
+        // cannot reach from a normal Append call. What this test actually
+        // locks is the dispose-correctness contract: closing the channel
+        // and joining the writer must not corrupt or truncate the file.
+        using var logger = new XmlDailyLogger(_tempDir);
         for (int i = 0; i < 20; i++)
             logger.Append(NewEntry($"pre-dispose-{i:D2}"));
 

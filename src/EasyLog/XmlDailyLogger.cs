@@ -253,8 +253,14 @@ public sealed class XmlDailyLogger : IDailyLogger, IDisposable
 
         _queue.Writer.TryComplete();
 
+        // GetAwaiter().GetResult() unwraps AggregateException, so a writer-task
+        // fault reaches the catch site as the inner exception. Catch Exception,
+        // not AggregateException, so Dispose actually swallows everything as
+        // intended. Per-entry failures still surface to callers via ack TCS;
+        // this catch only protects shutdown from a writer that escaped the
+        // FlushBatch try/catch (e.g. an OOM in the channel reader path).
         try { _writerLoop.GetAwaiter().GetResult(); }
-        catch (AggregateException) { /* surfaced through individual ack TCS */ }
+        catch (Exception) { /* surfaced through individual ack TCS */ }
     }
 
     private sealed record WriteRequest(string FilePath, LogEntry Entry, TaskCompletionSource Ack);
