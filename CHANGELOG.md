@@ -102,30 +102,60 @@ of requiring a hand-edit of `appsettings.json`). No breaking changes.
 
 ## [3.0.1] — 2026-05-13
 
-Patch release. Adds the missing **CryptoSoft companion binary** alongside
-the existing `CryptoSoftAdapter` integration in EasySave. The adapter was
-shipped in v2.0 but the standalone executable it talks to was relying on
-an external download — v3.0.1 ships it built from the same solution so
-the encryption flow works out of the box on every operator workstation.
-No EasySave engine change, no v3 wire-format change, no `EasyLog.dll`
-surface change.
+Patch release shipped a few hours after `v3.0.0`. EasySave's
+`encrypted_extensions` flow was fully wired in v3.0 but the companion
+binary it depends on was never bundled — operators had to install
+`CryptoSoft.exe` manually, and a missing path left flagged files with
+`EncryptionTimeMs = -1`. This release adds the companion binary as a
+first-class project of the solution.
 
 ### Added
 
-- **`CryptoSoft` project** (`CryptoSoft/CryptoSoft.csproj`): standalone
-  console executable invoked by `CryptoSoftAdapter` per-file. Single-byte
-  XOR cipher (demo-grade, key `0xA5` documented as such in source).
-  Mono-instance enforcement via `SystemMutexGate` on
-  `Global\ProSoft.CryptoSoft.SingleInstance` — concurrent invocations
-  return exit code `-2` (`AlreadyRunning`) and the adapter retries on the
-  configured timeout. SOLID structure (`ICryptoAlgorithm` + `XorCryptoAlgorithm`,
-  `IMonoInstanceGate` + `SystemMutexGate`, pure-orchestration
-  `CryptoSoftRunner`) so a future `AesGcmCryptoAlgorithm` swaps in
-  without touching the orchestrator or the mutex.
-- **`tests/CryptoSoft.Tests`**: 14 unit tests covering algorithm
-  round-trip + immutability, runner happy-path / missing source / refused
-  gate / IO failure, and isolated-mutex `SystemMutexGate` lifecycle
-  (acquire / release / dispose / abandoned-mutex inheritance).
+- **`CryptoSoft/` project** — minimal .NET 8 console binary that fulfils
+  the integration contract documented in
+  `docs/cryptosoft-integration.md`. SOLID structure mirrors the rest of
+  the solution:
+  - `Program.cs` wires the dependency graph in three lines.
+  - `CryptoSoftRunner` orchestrates *acquire gate → read → encrypt →
+    write → return elapsed ms*.
+  - `ICryptoAlgorithm` + `XorCryptoAlgorithm` — Strategy pattern. XOR is
+    demo-grade; an AES implementation can land without touching the
+    orchestrator.
+  - `IMonoInstanceGate` + `SystemMutexGate` — cross-process gate
+    backed by a named system `Mutex`. CryptoSoft itself owns the
+    cahier-V3 mono-instance constraint
+    (`Global\ProSoft.CryptoSoft.SingleInstance`); a second launch
+    returns exit code `-2` without touching the target file.
+  - `ExitCodes` — named negative-exit-code constants.
+- **`tests/CryptoSoft.Tests/`** — 14 xUnit tests covering the XOR
+  round-trip, runner happy/error/gate paths with test-double gates, and
+  smoke acquire/release/dispose cycles on the production gate (each
+  test isolates itself with a per-run Guid-suffixed mutex name to avoid
+  CI flake).
+
+### Changed
+
+- **`CryptoSoftAdapter` mutex renamed** from
+  `Global\ProSoft.CryptoSoft.SingleInstance` to
+  `Global\EasySave.CryptoSoftSpawnGate`. The adapter's mutex is the
+  EasySave-side defensive serialization layer; CryptoSoft itself owns
+  the cahier-aligned mono-instance gate on the original name. The two
+  layers must use distinct names so both can fire independently
+  without dead-locking each other. `docs/cryptosoft-integration.md`
+  documents the two-layer design.
+
+### Documentation
+
+- `docs/cryptosoft-integration.md` updated with the two-layer mono-
+  instance design and the new adapter mutex name.
+- `CryptoSoft/README.md` added — architecture overview, build / run
+  instructions, encryption details.
+
+### Tests
+
+- 14 / 14 CryptoSoft tests passing.
+- Existing 8 / 8 `CryptoSoftAdapterTests` still passing after the
+  adapter mutex rename.
 
 [Unreleased]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.2...HEAD
 [3.0.2]: https://github.com/JulianKerignard/Genie_Logiciel_Groupe4/compare/v3.0.1...v3.0.2
