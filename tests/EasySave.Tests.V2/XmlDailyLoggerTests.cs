@@ -269,4 +269,122 @@ public class XmlDailyLoggerTests : IDisposable
         // Still a single quarantine — the IOException path did not create one.
         Assert.Single(Directory.GetFiles(_tempDir, "*.corrupted-*"));
     }
+
+    // ── V3.1: Channel-based writer pattern (mirrors JsonDailyLogger).
+    //
+    // The previous XmlDailyLogger reparsed and re-serialized the full DOM under
+    // a global lock at every Append, producing O(n²) behaviour on long jobs and
+    // a noticeable freeze when the user picked log_format=xml in Settings. The
+    // refactor funnels Append calls through a Channel<WriteRequest> consumed by
+    // a single writer task that batches concurrent appends into one disk write
+    // per day file. These tests lock the new contract: zero loss under heavy
+    // concurrency, durability on Dispose, per-thread order preserved.
+
+    [Fact]
+    public void Append_StressFromManyThreads_NoEntryLost_FilePerJobBatched()
+    {
+        // 8 threads × 100 entries = 800 entries. Under the previous global-lock
+        // design this would trigger 800 reparse-rewrite cycles; under the
+        // Channel pattern it collapses into a small handful of batches. The
+        // assertion is correctness (zero loss), not throughput — but the test
+        // also catches a regression where the writer task drops a batch on
+        // exception or hangs an Append. `using` so the writer task exits
+        // at end of test instead of staying parked on WaitToReadAsync for
+        // the rest of the test-run lifetime.
+        using var logger = new XmlDailyLogger(_tempDir);
+        const int threadCount = 8;
+        const int perThread = 100;
+
+        var threads = Enumerable.Range(0, threadCount).Select(t =>
+            new Thread(() =>
+            {
+                for (int i = 0; i < perThread; i++)
+                    logger.Append(NewEntry($"T{t}-{i}"));
+            })).ToArray();
+
+        foreach (var th in threads) th.Start();
+        foreach (var th in threads) th.Join();
+
+        var doc = XDocument.Load(DailyFilePath());
+        Assert.Equal(threadCount * perThread, doc.Root!.Elements("Entry").Count());
+    }
+
+    [Fact]
+    public void Append_PreservesPerCallerOrder()
+    {
+        // Channel writer drains in FIFO order so a single thread that calls
+        // Append(A1) → Append(A2) → Append(A3) sees them in that order in
+        // the daily file (cross-thread order is intentionally not guaranteed).
+        using var logger = new XmlDailyLogger(_tempDir);
+
+        for (int i = 0; i < 50; i++)
+            logger.Append(NewEntry($"seq-{i:D3}"));
+
+        var doc = XDocument.Load(DailyFilePath());
+        var jobNames = doc.Root!.Elements("Entry")
+            .Select(e => e.Element("JobName")?.Value)
+            .ToArray();
+
+        var expected = Enumerable.Range(0, 50).Select(i => $"seq-{i:D3}").ToArray();
+        Assert.Equal(expected, jobNames);
+    }
+
+    [Fact]
+    public void Append_BlocksUntilWriterTaskFlushes_DurabilityContract()
+    {
+        // The v1.0 sync contract on Append: when the call returns, the entry
+        // is on disk. The new Channel pattern preserves this via
+        // TaskCompletionSource — Append blocks on the writer's ack. If a
+        // future refactor accidentally returned from Append before the flush,
+        // a host crash between Append and the next backup step would lose
+        // the entry. Lock that contract here.
+        using var logger = new XmlDailyLogger(_tempDir);
+
+        logger.Append(new LogEntry { JobName = "synchronous", FileTransferTimeMs = 1 });
+
+        // No sleep, no wait — the file must already contain the entry.
+        var doc = XDocument.Load(DailyFilePath());
+        Assert.Single(doc.Root!.Elements("Entry"));
+        Assert.Equal("synchronous", doc.Root!.Element("Entry")!.Element("JobName")!.Value);
+    }
+
+    [Fact]
+    public void Dispose_PreservesPersistedEntries_DoesNotCorruptFile()
+    {
+        // Note on scope: because Append is synchronous (TCS blocks until the
+        // writer flushes), the 20 entries below are already on disk before
+        // Dispose runs — the finally-block "leftover drain" path inside
+        // WriterLoopAsync is NOT exercised by this test. That path is a
+        // safety net for forced-cancellation scenarios (Channel.Writer
+        // completed mid-batch with pending readers), which the public API
+        // cannot reach from a normal Append call. What this test actually
+        // locks is the dispose-correctness contract: closing the channel
+        // and joining the writer must not corrupt or truncate the file.
+        using var logger = new XmlDailyLogger(_tempDir);
+        for (int i = 0; i < 20; i++)
+            logger.Append(NewEntry($"pre-dispose-{i:D2}"));
+
+        logger.Dispose();
+
+        var doc = XDocument.Load(DailyFilePath());
+        Assert.Equal(20, doc.Root!.Elements("Entry").Count());
+    }
+
+    [Fact]
+    public void Append_AfterDispose_DropsSilently()
+    {
+        // Same contract as JsonDailyLogger: post-Dispose Append is a silent
+        // no-op so a host-shutdown code path that emits a final log line
+        // does not throw across the disposal sequence.
+        var logger = new XmlDailyLogger(_tempDir);
+        logger.Append(new LogEntry { JobName = "before", FileTransferTimeMs = 1 });
+        logger.Dispose();
+
+        // Should not throw.
+        logger.Append(new LogEntry { JobName = "after", FileTransferTimeMs = 1 });
+
+        var doc = XDocument.Load(DailyFilePath());
+        var jobs = doc.Root!.Elements("Entry").Select(e => e.Element("JobName")?.Value).ToArray();
+        Assert.Equal(new[] { "before" }, jobs);
+    }
 }
